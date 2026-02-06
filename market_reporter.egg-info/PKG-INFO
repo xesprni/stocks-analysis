@@ -1,0 +1,166 @@
+Metadata-Version: 2.4
+Name: market-reporter
+Version: 0.2.0
+Summary: Finance & policy news + A/HK/US fund-flow analytics with FastAPI admin console.
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+Requires-Dist: fastapi>=0.115.0
+Requires-Dist: uvicorn[standard]>=0.30.0
+Requires-Dist: httpx>=0.27.0
+Requires-Dist: feedparser>=6.0.11
+Requires-Dist: pydantic>=2.8.0
+Requires-Dist: pydantic-settings>=2.4.0
+Requires-Dist: pyyaml>=6.0.2
+Requires-Dist: typer>=0.12.3
+Requires-Dist: rich>=13.7.1
+Requires-Dist: orjson>=3.10.7
+Requires-Dist: sqlmodel>=0.0.22
+Requires-Dist: alembic>=1.13.2
+Requires-Dist: cryptography>=43.0.0
+Requires-Dist: keyring>=25.3.0
+Requires-Dist: openai>=1.43.0
+Requires-Dist: akshare>=1.15.70
+Requires-Dist: yfinance>=0.2.44
+Requires-Dist: tenacity>=8.5.0
+Requires-Dist: apscheduler>=3.10.4
+
+# Market Reporter Pro
+
+模块化多实现的财经系统，支持：
+
+1. 财经/政策新闻采集
+2. A/H/US 资金流采集
+3. Watchlist 管理
+4. 个股实时交易曲线与 K 线（1m/5m/1d）
+5. 多 Provider / 多 Model 分析引擎（OpenAI 兼容 + Mock）
+6. 报告生成与查看
+
+## 架构
+
+```text
+market_reporter/
+  core/                      # 协议、类型、注册器、错误定义
+  modules/
+    news/                    # 新闻模块（可插拔 provider）
+    fund_flow/               # 资金流模块（可插拔 provider）
+    market_data/             # 行情模块（akshare/yfinance/composite）
+    watchlist/               # watchlist 服务
+    analysis_engine/         # 模型分析引擎（mock/openai-compatible）
+    reports/                 # 报告生成模块
+  infra/
+    db/                      # SQLModel + repository
+    http/                    # HTTP 适配
+    security/                # Keychain + AES-GCM
+  api.py                     # FastAPI 路由
+  cli.py                     # Typer CLI
+
+frontend/
+  src/pages/                 # Dashboard / Watchlist / StockTerminal / Providers / Reports
+  src/components/charts/     # CandlestickChart / TradeCurveChart
+```
+
+## 依赖管理（uv）
+
+```bash
+UV_CACHE_DIR=.uv-cache uv sync
+```
+
+## 配置
+
+默认配置：`/Users/miracle/workspace/project/github/stocks-anaylsis/config/settings.yaml`
+
+已包含：
+
+- `modules.news.default_provider`
+- `modules.fund_flow.providers`
+- `modules.market_data.default_provider`
+- `modules.market_data.poll_seconds`
+- `analysis.default_provider/default_model/providers`
+- `watchlist.default_market_scope`
+- `database.url`
+
+## 数据库
+
+### 快速初始化
+
+```bash
+uv run market-reporter db init
+```
+
+### Alembic
+
+```bash
+uv run alembic upgrade head
+```
+
+## 启动
+
+### 后端
+
+```bash
+uv run market-reporter serve --reload
+```
+
+### 前端
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+## CLI
+
+```bash
+uv run market-reporter init-config
+uv run market-reporter run
+uv run market-reporter db init
+
+uv run market-reporter watchlist list
+uv run market-reporter watchlist add --symbol AAPL --market US
+uv run market-reporter watchlist remove --item-id 1
+
+uv run market-reporter providers list
+uv run market-reporter providers set-default --provider mock --model market-default
+
+uv run market-reporter analyze stock --symbol AAPL --market US
+```
+
+## API
+
+保留：
+
+1. `GET /api/config`
+2. `PUT /api/config`
+3. `POST /api/reports/run`
+4. `GET /api/reports`
+5. `GET /api/reports/{run_id}`
+
+新增：
+
+1. `GET /api/watchlist`
+2. `POST /api/watchlist`
+3. `PATCH /api/watchlist/{item_id}`
+4. `DELETE /api/watchlist/{item_id}`
+5. `GET /api/stocks/{symbol}/quote?market=US|HK|CN`
+6. `GET /api/stocks/{symbol}/kline?market=...&interval=1m|5m|1d&limit=300`
+7. `GET /api/stocks/{symbol}/curve?market=...&window=1d`
+8. `GET /api/providers/analysis`
+9. `PUT /api/providers/analysis/default`
+10. `PUT /api/providers/analysis/{provider_id}/secret`
+11. `DELETE /api/providers/analysis/{provider_id}/secret`
+12. `POST /api/analysis/stocks/{symbol}/run`
+13. `GET /api/analysis/stocks/{symbol}/history?market=US&limit=20`
+
+## 安全
+
+- Provider API Key 不写入 YAML。
+- API Key 加密后保存到 SQLite。
+- 主密钥保存在 macOS Keychain：
+  - service: `market-reporter`
+  - account: `master-key`
+
+## 注意
+
+1. 免费行情源可能存在延迟或限频。
+2. 在无外网环境下，网络型 provider 将失败，系统会返回告警。

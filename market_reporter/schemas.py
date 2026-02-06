@@ -1,0 +1,89 @@
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+from pydantic import BaseModel, Field
+
+from market_reporter.config import AppConfig, NewsSource
+
+
+class ReportRunSummary(BaseModel):
+    run_id: str
+    generated_at: str
+    report_path: Path
+    raw_data_path: Path
+    warnings_count: int = 0
+    news_total: int = 0
+    provider_id: str = ""
+    model: str = ""
+
+
+class ReportRunDetail(BaseModel):
+    summary: ReportRunSummary
+    report_markdown: str
+    raw_data: Dict[str, Any]
+
+
+class RunRequest(BaseModel):
+    news_limit: Optional[int] = Field(default=None, ge=1, le=100)
+    flow_periods: Optional[int] = Field(default=None, ge=1, le=120)
+    timezone: Optional[str] = None
+    provider_id: Optional[str] = None
+    model: Optional[str] = None
+
+
+class RunResult(BaseModel):
+    summary: ReportRunSummary
+    warnings: List[str]
+
+
+class ConfigUpdateRequest(BaseModel):
+    output_root: Path
+    timezone: str
+    news_limit: int = Field(ge=1, le=100)
+    flow_periods: int = Field(ge=1, le=120)
+    request_timeout_seconds: int = Field(ge=3, le=120)
+    user_agent: str
+    modules: Dict[str, Any]
+    analysis: Dict[str, Any]
+    watchlist: Dict[str, Any]
+    news_listener: Optional[Dict[str, Any]] = None
+    symbol_search: Optional[Dict[str, Any]] = None
+    database: Dict[str, Any]
+    news_sources: List[NewsSource]
+
+    def to_config(self, current: AppConfig) -> AppConfig:
+        payload = current.model_dump(mode="python")
+        patch_data = {
+            "output_root": self.output_root,
+            "timezone": self.timezone,
+            "news_limit": self.news_limit,
+            "flow_periods": self.flow_periods,
+            "request_timeout_seconds": self.request_timeout_seconds,
+            "user_agent": self.user_agent,
+            "modules": self.modules,
+            "analysis": self.analysis,
+            "watchlist": self.watchlist,
+            "database": self.database,
+            "news_sources": self.news_sources,
+        }
+        if self.news_listener is not None:
+            patch_data["news_listener"] = self.news_listener
+        if self.symbol_search is not None:
+            patch_data["symbol_search"] = self.symbol_search
+        payload.update(patch_data)
+        return AppConfig.model_validate(payload)
+
+
+class UIOptionsResponse(BaseModel):
+    markets: List[str]
+    intervals: List[str]
+    timezones: List[str]
+    news_providers: List[str]
+    fund_flow_providers: List[str]
+    market_data_providers: List[str]
+    analysis_providers: List[str]
+    analysis_models_by_provider: Dict[str, List[str]]
+    listener_threshold_presets: List[float]
+    listener_intervals: List[int]

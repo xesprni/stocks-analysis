@@ -1,0 +1,52 @@
+0 verbose cli /Users/miracle/.nvm/versions/node/v18.20.8/bin/node /Users/miracle/.nvm/versions/node/v18.20.8/bin/npm
+1 info using npm@10.8.2
+2 info using node@v18.20.8
+3 silly config load:file:/Users/miracle/.nvm/versions/node/v18.20.8/lib/node_modules/npm/npmrc
+4 silly config load:file:/Users/miracle/workspace/project/github/stocks-anaylsis/frontend/.npmrc
+5 silly config load:file:/Users/miracle/.npmrc
+6 silly config load:file:/Users/miracle/.nvm/versions/node/v18.20.8/etc/npmrc
+7 verbose title npm install
+8 verbose argv "install" "--no-audit" "--no-fund" "--fetch-retries" "1" "--fetch-timeout" "5000"
+9 verbose logfile logs-max:10 dir:/Users/miracle/workspace/project/github/stocks-anaylsis/frontend/.npm-cache/_logs/2026-02-06T09_50_09_397Z-
+10 verbose logfile /Users/miracle/workspace/project/github/stocks-anaylsis/frontend/.npm-cache/_logs/2026-02-06T09_50_09_397Z-debug-0.log
+11 silly packumentCache heap:4345298944 maxSize:1086324736 maxEntrySize:543162368
+12 silly logfile done cleaning log files
+13 http fetch GET https://registry.npmjs.org/npm attempt 1 failed with ENOTFOUND
+14 silly idealTree buildDeps
+15 silly fetch manifest @radix-ui/react-label@^2.1.0
+16 silly packumentCache full:https://registry.npmjs.org/@radix-ui%2freact-label cache-miss
+17 verbose shrinkwrap failed to load node_modules/.package-lock.json out of date, updated: node_modules
+18 http fetch GET https://registry.npmjs.org/@radix-ui%2freact-label attempt 1 failed with ENOTFOUND
+19 http fetch GET https://registry.npmjs.org/npm attempt 2 failed with ENOTFOUND
+20 http fetch GET https://registry.npmjs.org/@radix-ui%2freact-label attempt 2 failed with ENOTFOUND
+21 silly fetch manifest @radix-ui/react-select@^2.1.1
+22 silly packumentCache full:https://registry.npmjs.org/@radix-ui%2freact-select cache-miss
+23 http fetch GET https://registry.npmjs.org/@radix-ui%2freact-select attempt 1 failed with ENOTFOUND
+24 http fetch GET https://registry.npmjs.org/@radix-ui%2freact-select attempt 2 failed with ENOTFOUND
+25 silly placeDep ROOT @radix-ui/react-label@ OK for: market-reporter-admin@0.1.0 want: ^2.1.0
+26 silly placeDep ROOT @radix-ui/react-select@ OK for: market-reporter-admin@0.1.0 want: ^2.1.1
+27 verbose type system
+28 verbose stack FetchError: request to https://registry.npmjs.org/@radix-ui%2freact-label failed, reason: getaddrinfo ENOTFOUND registry.npmjs.org
+28 verbose stack     at ClientRequest.<anonymous> (/Users/miracle/.nvm/versions/node/v18.20.8/lib/node_modules/npm/node_modules/minipass-fetch/lib/index.js:130:14)
+28 verbose stack     at ClientRequest.emit (node:events:517:28)
+28 verbose stack     at _destroy (node:_http_client:882:13)
+28 verbose stack     at onSocketNT (node:_http_client:902:5)
+28 verbose stack     at process.processTicksAndRejections (node:internal/process/task_queues:83:21)
+29 error code ENOTFOUND
+30 error syscall getaddrinfo
+31 error errno ENOTFOUND
+32 error network request to https://registry.npmjs.org/@radix-ui%2freact-label failed, reason: getaddrinfo ENOTFOUND registry.npmjs.org
+33 error network This is a problem related to network connectivity.
+33 error network In most cases you are behind a proxy or have bad network settings.
+33 error network
+33 error network If you are behind a proxy, please make sure that the
+33 error network 'proxy' config is set properly.  See: 'npm help config'
+34 silly unfinished npm timer reify 1770371409693
+35 silly unfinished npm timer reify:loadTrees 1770371409720
+36 verbose cwd /Users/miracle/workspace/project/github/stocks-anaylsis/frontend
+37 verbose os Darwin 25.2.0
+38 verbose node v18.20.8
+39 verbose npm  v10.8.2
+40 verbose exit 1
+41 verbose code 1
+42 error A complete log of this run can be found in: /Users/miracle/workspace/project/github/stocks-anaylsis/frontend/.npm-cache/_logs/2026-02-06T09_50_09_397Z-debug-0.log
