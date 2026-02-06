@@ -5,7 +5,7 @@ from typing import Any, Dict
 
 import yaml
 
-from market_reporter.config import AppConfig, default_app_config
+from market_reporter.config import AppConfig, default_app_config, normalize_source_id
 
 
 class ConfigStore:
@@ -26,6 +26,8 @@ class ConfigStore:
             raise ValueError(f"Invalid config file content: {self.config_path}")
         config = AppConfig.model_validate(raw).normalized()
         config.ensure_data_root()
+        if self._should_rewrite_news_sources(raw):
+            self.save(config)
         return config
 
     def save(self, config: AppConfig) -> AppConfig:
@@ -45,3 +47,25 @@ class ConfigStore:
         payload.update(patch_data)
         merged = AppConfig.model_validate(payload)
         return self.save(merged)
+
+    @staticmethod
+    def _should_rewrite_news_sources(raw_config: Dict[str, Any]) -> bool:
+        raw_sources = raw_config.get("news_sources")
+        if not isinstance(raw_sources, list):
+            return False
+        seen: set[str] = set()
+        for row in raw_sources:
+            if not isinstance(row, dict):
+                return True
+            if "enabled" not in row:
+                return True
+            raw_source_id = row.get("source_id")
+            if not isinstance(raw_source_id, str) or not raw_source_id.strip():
+                return True
+            normalized_id = normalize_source_id(raw_source_id)
+            if normalized_id != raw_source_id.strip():
+                return True
+            if normalized_id in seen:
+                return True
+            seen.add(normalized_id)
+        return False

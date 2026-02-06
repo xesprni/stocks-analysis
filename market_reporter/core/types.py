@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 
 class NewsItem(BaseModel):
+    source_id: str = ""
     category: str
     source: str
     title: str

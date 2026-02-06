@@ -3,18 +3,23 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 from typing import List, Optional
+from urllib.parse import urlparse
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, ORJSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
-from market_reporter.config import AppConfig
+from market_reporter.config import AppConfig, NewsSource, normalize_source_id
 from market_reporter.core.registry import ProviderRegistry
 from market_reporter.infra.db.session import init_db
 from market_reporter.infra.http.client import HttpClient
 from market_reporter.modules.analysis_engine.schemas import (
     AnalysisProviderView,
+    ProviderAuthStartRequest,
+    ProviderAuthStartResponse,
+    ProviderAuthStatusView,
+    ProviderModelsView,
     ProviderModelSelectionRequest,
     ProviderSecretRequest,
     StockAnalysisHistoryItem,
@@ -25,6 +30,13 @@ from market_reporter.modules.analysis_engine.service import AnalysisService
 from market_reporter.modules.fund_flow.service import FundFlowService
 from market_reporter.modules.market_data.service import MarketDataService
 from market_reporter.modules.news.service import NewsService
+from market_reporter.modules.news.schemas import (
+    NewsFeedResponse,
+    NewsFeedSourceOptionView,
+    NewsSourceCreateRequest,
+    NewsSourceUpdateRequest,
+    NewsSourceView,
+)
 from market_reporter.modules.news_listener.schemas import (
     NewsAlertStatusUpdateRequest,
     NewsAlertView,
@@ -134,6 +146,35 @@ def create_app() -> FastAPI:
         scheduler.start()
         app.state.news_listener_scheduler = scheduler
 
+    @staticmethod
+    def _validate_source_url(raw_url: str) -> str:
+        url = raw_url.strip()
+        parsed = urlparse(url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("Invalid source url. Only http/https URLs are supported.")
+        return url
+
+    @staticmethod
+    def _next_source_id(existing: List[NewsSource], name: str) -> str:
+        used_ids = {source.source_id for source in existing if source.source_id}
+        base_id = normalize_source_id(name)
+        source_id = base_id
+        cursor = 2
+        while source_id in used_ids:
+            source_id = f"{base_id}-{cursor}"
+            cursor += 1
+        return source_id
+
+    @staticmethod
+    def _to_news_source_view(source: NewsSource) -> NewsSourceView:
+        return NewsSourceView(
+            source_id=source.source_id or "",
+            name=source.name,
+            category=source.category,
+            url=source.url,
+            enabled=source.enabled,
+        )
+
     @app.on_event("startup")
     async def startup_event() -> None:
         config = config_store.load()
@@ -162,6 +203,110 @@ def create_app() -> FastAPI:
         init_db(saved.database.url)
         _restart_listener_scheduler(saved)
         return saved
+
+    @app.get("/api/news-sources", response_model=List[NewsSourceView])
+    async def list_news_sources() -> List[NewsSourceView]:
+        config = config_store.load()
+        return [_to_news_source_view(source) for source in config.news_sources]
+
+    @app.post("/api/news-sources", response_model=NewsSourceView)
+    async def create_news_source(payload: NewsSourceCreateRequest) -> NewsSourceView:
+        config = config_store.load()
+        try:
+            source = NewsSource(
+                source_id=_next_source_id(config.news_sources, payload.name),
+                name=payload.name.strip(),
+                category=payload.category.strip(),
+                url=_validate_source_url(payload.url),
+                enabled=payload.enabled,
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        next_config = config.model_copy(update={"news_sources": [*config.news_sources, source]})
+        saved = config_store.save(next_config)
+        init_db(saved.database.url)
+        created = next((item for item in saved.news_sources if item.source_id == source.source_id), source)
+        return _to_news_source_view(created)
+
+    @app.patch("/api/news-sources/{source_id}", response_model=NewsSourceView)
+    async def update_news_source(source_id: str, payload: NewsSourceUpdateRequest) -> NewsSourceView:
+        config = config_store.load()
+        normalized_source_id = normalize_source_id(source_id)
+        target = next((item for item in config.news_sources if item.source_id == normalized_source_id), None)
+        if target is None:
+            raise HTTPException(status_code=404, detail=f"News source not found: {source_id}")
+
+        try:
+            updated = target.model_copy(
+                update={
+                    "name": payload.name.strip() if payload.name is not None else target.name,
+                    "category": payload.category.strip() if payload.category is not None else target.category,
+                    "url": _validate_source_url(payload.url) if payload.url is not None else target.url,
+                    "enabled": payload.enabled if payload.enabled is not None else target.enabled,
+                }
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        next_sources = [
+            updated if item.source_id == normalized_source_id else item
+            for item in config.news_sources
+        ]
+        saved = config_store.save(config.model_copy(update={"news_sources": next_sources}))
+        init_db(saved.database.url)
+        item = next((row for row in saved.news_sources if row.source_id == normalized_source_id), updated)
+        return _to_news_source_view(item)
+
+    @app.delete("/api/news-sources/{source_id}")
+    async def delete_news_source(source_id: str) -> dict:
+        config = config_store.load()
+        normalized_source_id = normalize_source_id(source_id)
+        next_sources = [row for row in config.news_sources if row.source_id != normalized_source_id]
+        if len(next_sources) == len(config.news_sources):
+            raise HTTPException(status_code=404, detail=f"News source not found: {source_id}")
+        saved = config_store.save(config.model_copy(update={"news_sources": next_sources}))
+        init_db(saved.database.url)
+        _restart_listener_scheduler(saved)
+        return {"deleted": True}
+
+    @app.get("/api/news-feed/options", response_model=List[NewsFeedSourceOptionView])
+    async def news_feed_options() -> List[NewsFeedSourceOptionView]:
+        config = config_store.load()
+        return [
+            NewsFeedSourceOptionView(
+                source_id=source.source_id or "",
+                name=source.name,
+                enabled=source.enabled,
+            )
+            for source in config.news_sources
+        ]
+
+    @app.get("/api/news-feed", response_model=NewsFeedResponse)
+    async def news_feed(
+        source_id: str = Query("ALL", min_length=1, max_length=120),
+        limit: int = Query(50, ge=1, le=200),
+    ) -> NewsFeedResponse:
+        config = config_store.load()
+        selected_source_id = "ALL" if source_id.upper() == "ALL" else normalize_source_id(source_id)
+        async with HttpClient(
+            timeout_seconds=config.request_timeout_seconds,
+            user_agent=config.user_agent,
+        ) as client:
+            service = NewsService(config=config, client=client, registry=ProviderRegistry())
+            try:
+                items, warnings, selected = await service.collect_feed(
+                    limit=limit,
+                    source_id=selected_source_id,
+                )
+            except Exception as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        return NewsFeedResponse(
+            items=items,
+            warnings=warnings,
+            selected_source_id=selected,
+        )
 
     @app.post("/api/reports/run", response_model=RunResult)
     async def run_report(payload: Optional[RunRequest] = None) -> RunResult:
@@ -329,7 +474,10 @@ def create_app() -> FastAPI:
         config = config_store.load()
         service = AnalysisService(config=config, registry=ProviderRegistry())
         try:
-            service.ensure_provider_ready(provider_id=payload.provider_id, model=payload.model)
+            service.ensure_provider_ready(provider_id=payload.provider_id, model=None)
+            models_view = await service.list_provider_models(provider_id=payload.provider_id)
+            if models_view.models and payload.model not in models_view.models:
+                raise ValueError(f"Model not found in provider models: {payload.model}")
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -354,6 +502,99 @@ def create_app() -> FastAPI:
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"ok": True}
+
+    @app.post(
+        "/api/providers/analysis/{provider_id}/auth/start",
+        response_model=ProviderAuthStartResponse,
+    )
+    async def start_analysis_auth(
+        provider_id: str,
+        request: Request,
+        payload: Optional[ProviderAuthStartRequest] = None,
+    ) -> ProviderAuthStartResponse:
+        config = config_store.load()
+        service = AnalysisService(config=config, registry=ProviderRegistry())
+        callback_url = str(request.url_for("analysis_auth_callback", provider_id=provider_id))
+        try:
+            return await service.start_provider_auth(
+                provider_id=provider_id,
+                callback_url=callback_url,
+                redirect_to=payload.redirect_to if payload else None,
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get(
+        "/api/providers/analysis/{provider_id}/auth/status",
+        response_model=ProviderAuthStatusView,
+    )
+    async def analysis_auth_status(provider_id: str) -> ProviderAuthStatusView:
+        config = config_store.load()
+        service = AnalysisService(config=config, registry=ProviderRegistry())
+        try:
+            return service.get_provider_auth_status(provider_id=provider_id)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get(
+        "/api/providers/analysis/{provider_id}/auth/callback",
+        response_class=HTMLResponse,
+        name="analysis_auth_callback",
+    )
+    async def analysis_auth_callback(
+        provider_id: str,
+        request: Request,
+        state: str = Query(..., min_length=8),
+        code: Optional[str] = Query(None),
+        error: Optional[str] = Query(None),
+    ) -> str:
+        if error:
+            return (
+                "<html><body><h3>Login failed</h3>"
+                f"<p>{error}</p><p>You can close this page.</p></body></html>"
+            )
+
+        config = config_store.load()
+        service = AnalysisService(config=config, registry=ProviderRegistry())
+        callback_url = str(request.url_for("analysis_auth_callback", provider_id=provider_id))
+        params = {key: value for key, value in request.query_params.items()}
+        try:
+            await service.complete_provider_auth(
+                provider_id=provider_id,
+                state=state,
+                code=code,
+                callback_url=callback_url,
+                query_params=params,
+            )
+            return (
+                "<html><body><h3>Login succeeded</h3>"
+                "<p>You can close this page and return to the app.</p>"
+                "<script>window.close();</script></body></html>"
+            )
+        except Exception as exc:
+            return (
+                "<html><body><h3>Login failed</h3>"
+                f"<p>{str(exc)}</p><p>You can close this page.</p></body></html>"
+            )
+
+    @app.post("/api/providers/analysis/{provider_id}/auth/logout")
+    async def logout_analysis_auth(provider_id: str) -> dict:
+        config = config_store.load()
+        service = AnalysisService(config=config, registry=ProviderRegistry())
+        deleted = service.logout_provider_auth(provider_id=provider_id)
+        return {"deleted": deleted}
+
+    @app.get(
+        "/api/providers/analysis/{provider_id}/models",
+        response_model=ProviderModelsView,
+    )
+    async def analysis_provider_models(provider_id: str) -> ProviderModelsView:
+        config = config_store.load()
+        service = AnalysisService(config=config, registry=ProviderRegistry())
+        try:
+            return await service.list_provider_models(provider_id=provider_id)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.delete("/api/providers/analysis/{provider_id}/secret")
     async def delete_analysis_secret(provider_id: str) -> dict:
@@ -405,9 +646,7 @@ def create_app() -> FastAPI:
     @app.get("/api/options/ui", response_model=UIOptionsResponse)
     async def ui_options() -> UIOptionsResponse:
         config = config_store.load()
-        analysis_models = {
-            provider.provider_id: provider.models for provider in config.analysis.providers if provider.enabled
-        }
+        analysis_provider_ids = sorted(provider.provider_id for provider in config.analysis.providers)
         return UIOptionsResponse(
             markets=["ALL", "CN", "HK", "US"],
             intervals=["1m", "5m", "1d"],
@@ -415,8 +654,8 @@ def create_app() -> FastAPI:
             news_providers=["rss"],
             fund_flow_providers=["eastmoney", "fred"],
             market_data_providers=["composite", "akshare", "yfinance"],
-            analysis_providers=sorted(analysis_models.keys()),
-            analysis_models_by_provider=analysis_models,
+            analysis_providers=analysis_provider_ids,
+            analysis_models_by_provider={},
             listener_threshold_presets=[1.0, 1.5, 2.0, 3.0, 5.0],
             listener_intervals=[5, 10, 15, 30, 60],
         )

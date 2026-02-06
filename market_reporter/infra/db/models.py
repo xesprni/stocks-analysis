@@ -63,6 +63,31 @@ class AnalysisProviderSecretTable(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class AnalysisProviderAccountTable(SQLModel, table=True):
+    __tablename__ = "analysis_provider_accounts"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    provider_id: str = Field(index=True, unique=True)
+    account_type: str = Field(default="chatgpt")
+    credential_ciphertext: str
+    nonce: str
+    expires_at: Optional[datetime] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class AnalysisProviderAuthStateTable(SQLModel, table=True):
+    __tablename__ = "analysis_provider_auth_states"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    state: str = Field(index=True, unique=True)
+    provider_id: str = Field(index=True)
+    redirect_to: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    expires_at: datetime
+    used: bool = Field(default=False, index=True)
+
+
 class StockAnalysisRunTable(SQLModel, table=True):
     __tablename__ = "stock_analysis_runs"
 

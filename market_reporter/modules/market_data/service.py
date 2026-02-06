@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import List, Optional
 
 from market_reporter.config import AppConfig
@@ -44,8 +45,26 @@ class MarketDataService:
     async def get_quote(self, symbol: str, market: str, provider_id: Optional[str] = None) -> Quote:
         normalized_symbol = normalize_symbol(symbol, market)
         provider = self._provider(provider_id=provider_id)
-        quote = await provider.get_quote(symbol=normalized_symbol, market=market.upper())
-        return quote
+        resolved_market = market.upper()
+        try:
+            quote = await provider.get_quote(symbol=normalized_symbol, market=resolved_market)
+            return quote
+        except Exception:
+            cached = self._quote_from_cache(symbol=normalized_symbol, market=resolved_market)
+            if cached is not None:
+                return cached
+            now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            return Quote(
+                symbol=normalized_symbol,
+                market=resolved_market,
+                ts=now,
+                price=0.0,
+                change=None,
+                change_percent=None,
+                volume=None,
+                currency=self._currency_by_market(resolved_market),
+                source="unavailable",
+            )
 
     async def get_kline(
         self,
@@ -121,3 +140,59 @@ class MarketDataService:
 
     def provider_ids(self) -> List[str]:
         return self.registry.list_ids(self.MODULE_NAME)
+
+    def _quote_from_cache(self, symbol: str, market: str) -> Optional[Quote]:
+        with session_scope(self.config.database.url) as session:
+            repo = MarketDataRepo(session)
+            points = repo.list_curve_points(symbol=symbol, market=market, limit=2)
+            if points:
+                latest = points[-1]
+                previous = points[-2] if len(points) > 1 else None
+                change = None
+                change_percent = None
+                if previous and previous.price != 0:
+                    change = latest.price - previous.price
+                    change_percent = change / previous.price * 100
+                return Quote(
+                    symbol=symbol,
+                    market=market,
+                    ts=latest.ts,
+                    price=latest.price,
+                    change=change,
+                    change_percent=change_percent,
+                    volume=latest.volume,
+                    currency=self._currency_by_market(market),
+                    source=f"cache:{latest.source}",
+                )
+
+            for interval in ("1m", "5m", "1d"):
+                bars = repo.list_kline(symbol=symbol, market=market, interval=interval, limit=2)
+                if not bars:
+                    continue
+                latest_bar = bars[-1]
+                previous_bar = bars[-2] if len(bars) > 1 else None
+                change = None
+                change_percent = None
+                if previous_bar and previous_bar.close != 0:
+                    change = latest_bar.close - previous_bar.close
+                    change_percent = change / previous_bar.close * 100
+                return Quote(
+                    symbol=symbol,
+                    market=market,
+                    ts=latest_bar.ts,
+                    price=latest_bar.close,
+                    change=change,
+                    change_percent=change_percent,
+                    volume=latest_bar.volume,
+                    currency=self._currency_by_market(market),
+                    source=f"cache:{latest_bar.source}",
+                )
+        return None
+
+    @staticmethod
+    def _currency_by_market(market: str) -> str:
+        return {
+            "CN": "CNY",
+            "HK": "HKD",
+            "US": "USD",
+        }.get(market.upper(), "")

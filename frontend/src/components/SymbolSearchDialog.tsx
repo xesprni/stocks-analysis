@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useNotifier } from "@/components/ui/notifier";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 type Props = {
@@ -25,6 +26,7 @@ export function SymbolSearchDialog({
   onSelect,
   title = "搜索股票",
 }: Props) {
+  const notifier = useNotifier();
   const [query, setQuery] = useState("");
   const [market, setMarket] = useState("ALL");
   const [loading, setLoading] = useState(false);
@@ -61,8 +63,13 @@ export function SymbolSearchDialog({
         }
       } catch (exc) {
         if (!cancelled) {
+          const message = (exc as Error).message;
           setResults([]);
-          setError((exc as Error).message);
+          setError(message);
+          notifier.warning("股票搜索失败", message, {
+            dedupeKey: `symbol-search-${market}`,
+            durationMs: 2400,
+          });
         }
       } finally {
         if (!cancelled) {
@@ -75,7 +82,7 @@ export function SymbolSearchDialog({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [open, query, market, onSearch]);
+  }, [open, query, market, onSearch, notifier]);
 
   if (!open) {
     return null;

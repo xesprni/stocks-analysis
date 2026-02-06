@@ -35,6 +35,16 @@ class SymbolSearchServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0].symbol, "AAPL")
 
+    async def test_composite_all_failed_returns_empty(self):
+        provider = CompositeSymbolSearchProvider(
+            providers={
+                "yfinance": _FailProvider(),
+                "akshare": _FailProvider(),
+            }
+        )
+        rows = await provider.search(query="AAPL", market="US", limit=5)
+        self.assertEqual(rows, [])
+
 
 if __name__ == "__main__":
     unittest.main()

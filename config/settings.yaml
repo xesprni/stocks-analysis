@@ -39,6 +39,15 @@ analysis:
     - gpt-4.1
     timeout: 30
     enabled: true
+    auth_mode: api_key
+  - provider_id: codex_app_server
+    type: codex_app_server
+    base_url: ''
+    models:
+    - gpt-5-codex
+    timeout: 30
+    enabled: false
+    auth_mode: chatgpt_oauth
 watchlist:
   default_market_scope:
   - CN
@@ -58,24 +67,38 @@ symbol_search:
 database:
   url: sqlite:///data/market_reporter.db
 news_sources:
-- name: Yahoo Finance Top Stories
+- source_id: yahoo-finance-top-stories
+  name: Yahoo Finance Top Stories
   category: finance
   url: https://finance.yahoo.com/news/rssindex
-- name: Reuters Business
+  enabled: true
+- source_id: reuters-business
+  name: Reuters Business
   category: finance
   url: https://feeds.reuters.com/reuters/businessNews
-- name: Google News CN Finance
+  enabled: true
+- source_id: google-news-cn-finance
+  name: Google News CN Finance
   category: finance
   url: https://news.google.com/rss/search?q=%E8%B4%A2%E7%BB%8F+%E8%82%A1%E5%B8%82+%E7%BB%8F%E6%B5%8E&hl=zh-CN&gl=CN&ceid=CN:zh-Hans
-- name: Federal Reserve Monetary Policy
+  enabled: true
+- source_id: federal-reserve-monetary-policy
+  name: Federal Reserve Monetary Policy
   category: policy
   url: https://www.federalreserve.gov/feeds/press_monetary.xml
-- name: US Treasury Press Release
+  enabled: true
+- source_id: us-treasury-press-release
+  name: US Treasury Press Release
   category: policy
   url: https://home.treasury.gov/news/press-releases/feed
-- name: ECB Press
+  enabled: true
+- source_id: ecb-press
+  name: ECB Press
   category: policy
   url: https://www.ecb.europa.eu/press/rss/press.html
-- name: Google News CN Policy
+  enabled: true
+- source_id: google-news-cn-policy
+  name: Google News CN Policy
   category: policy
   url: https://news.google.com/rss/search?q=%E5%AE%8F%E8%A7%82+%E6%94%BF%E7%AD%96+%E5%A4%AE%E8%A1%8C&hl=zh-CN&gl=CN&ceid=CN:zh-Hans
+  enabled: true

@@ -7,6 +7,8 @@ from sqlmodel import Session, delete, select
 
 from market_reporter.core.types import CurvePoint, KLineBar
 from market_reporter.infra.db.models import (
+    AnalysisProviderAccountTable,
+    AnalysisProviderAuthStateTable,
     AnalysisProviderSecretTable,
     NewsListenerRunTable,
     StockAnalysisRunTable,
@@ -214,6 +216,105 @@ class AnalysisProviderSecretRepo:
         self.session.delete(row)
         self.session.flush()
         return True
+
+
+class AnalysisProviderAccountRepo:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def upsert(
+        self,
+        provider_id: str,
+        account_type: str,
+        credential_ciphertext: str,
+        nonce: str,
+        expires_at: Optional[datetime],
+    ) -> AnalysisProviderAccountTable:
+        row = self.session.exec(
+            select(AnalysisProviderAccountTable).where(AnalysisProviderAccountTable.provider_id == provider_id)
+        ).first()
+        if row is None:
+            row = AnalysisProviderAccountTable(
+                provider_id=provider_id,
+                account_type=account_type,
+                credential_ciphertext=credential_ciphertext,
+                nonce=nonce,
+                expires_at=expires_at,
+            )
+        else:
+            row.account_type = account_type
+            row.credential_ciphertext = credential_ciphertext
+            row.nonce = nonce
+            row.expires_at = expires_at
+            row.updated_at = datetime.utcnow()
+        self.session.add(row)
+        self.session.flush()
+        self.session.refresh(row)
+        return row
+
+    def get(self, provider_id: str) -> Optional[AnalysisProviderAccountTable]:
+        return self.session.exec(
+            select(AnalysisProviderAccountTable).where(AnalysisProviderAccountTable.provider_id == provider_id)
+        ).first()
+
+    def delete(self, provider_id: str) -> bool:
+        row = self.get(provider_id)
+        if row is None:
+            return False
+        self.session.delete(row)
+        self.session.flush()
+        return True
+
+
+class AnalysisProviderAuthStateRepo:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def create(
+        self,
+        state: str,
+        provider_id: str,
+        redirect_to: Optional[str],
+        expires_at: datetime,
+    ) -> AnalysisProviderAuthStateTable:
+        row = AnalysisProviderAuthStateTable(
+            state=state,
+            provider_id=provider_id,
+            redirect_to=redirect_to,
+            expires_at=expires_at,
+            used=False,
+        )
+        self.session.add(row)
+        self.session.flush()
+        self.session.refresh(row)
+        return row
+
+    def get_valid(self, state: str, provider_id: str, now: datetime) -> Optional[AnalysisProviderAuthStateTable]:
+        return self.session.exec(
+            select(AnalysisProviderAuthStateTable)
+            .where(AnalysisProviderAuthStateTable.state == state)
+            .where(AnalysisProviderAuthStateTable.provider_id == provider_id)
+            .where(AnalysisProviderAuthStateTable.used.is_(False))
+            .where(AnalysisProviderAuthStateTable.expires_at >= now)
+        ).first()
+
+    def mark_used(self, row: AnalysisProviderAuthStateTable) -> AnalysisProviderAuthStateTable:
+        row.used = True
+        self.session.add(row)
+        self.session.flush()
+        self.session.refresh(row)
+        return row
+
+    def delete_expired(self, now: datetime) -> int:
+        expired_rows = list(
+            self.session.exec(
+                select(AnalysisProviderAuthStateTable).where(AnalysisProviderAuthStateTable.expires_at < now)
+            ).all()
+        )
+        for row in expired_rows:
+            self.session.delete(row)
+        self.session.flush()
+        return len(expired_rows)
 
 
 class StockAnalysisRunRepo:

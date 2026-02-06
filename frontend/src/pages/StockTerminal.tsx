@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useNotifier } from "@/components/ui/notifier";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
@@ -21,43 +22,80 @@ type Props = {
   onSearch: (query: string, market: string) => Promise<StockSearchResult[]>;
 };
 
+function isLikelySymbol(symbol: string, market: string): boolean {
+  const value = symbol.trim().toUpperCase();
+  const selectedMarket = market.trim().toUpperCase();
+  if (!value) {
+    return false;
+  }
+  if (selectedMarket === "US") {
+    return /^[A-Z][A-Z0-9.\-]{0,14}$/.test(value);
+  }
+  if (selectedMarket === "HK") {
+    return /^(\d{1,5})(\.HK)?$/.test(value);
+  }
+  if (selectedMarket === "CN") {
+    return /^\d{6}(\.(SH|SZ))?$/.test(value);
+  }
+  return false;
+}
+
 export function StockTerminalPage({ defaultProvider, defaultModel, markets, intervals, onSearch }: Props) {
+  const notifier = useNotifier();
   const [symbol, setSymbol] = useState("AAPL");
   const [market, setMarket] = useState("US");
   const [interval, setInterval] = useState("1m");
   const [analysis, setAnalysis] = useState<StockAnalysisRun | null>(null);
   const [loadingAnalysis, setLoadingAnalysis] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [analysisError, setAnalysisError] = useState("");
+
+  const normalizedSymbol = symbol.trim().toUpperCase();
+  const canQueryMarketData = isLikelySymbol(normalizedSymbol, market);
 
   const quoteQuery = useQuery({
-    queryKey: ["quote", symbol, market],
-    queryFn: () => api.getQuote(symbol, market),
+    queryKey: ["quote", normalizedSymbol, market],
+    queryFn: () => api.getQuote(normalizedSymbol, market),
+    enabled: canQueryMarketData,
+    retry: false,
     refetchInterval: 5000,
   });
 
   const klineQuery = useQuery({
-    queryKey: ["kline", symbol, market, interval],
-    queryFn: () => api.getKline(symbol, market, interval, 300),
+    queryKey: ["kline", normalizedSymbol, market, interval],
+    queryFn: () => api.getKline(normalizedSymbol, market, interval, 300),
+    enabled: canQueryMarketData,
+    retry: false,
     refetchInterval: 10000,
   });
 
   const curveQuery = useQuery({
-    queryKey: ["curve", symbol, market],
-    queryFn: () => api.getCurve(symbol, market, "1d"),
+    queryKey: ["curve", normalizedSymbol, market],
+    queryFn: () => api.getCurve(normalizedSymbol, market, "1d"),
+    enabled: canQueryMarketData,
+    retry: false,
     refetchInterval: 5000,
   });
 
   const quoteText = useMemo(() => {
+    if (!canQueryMarketData) return "请先选择有效 Symbol";
     const quote = quoteQuery.data;
     if (!quote) return "--";
+    if (quote.source === "unavailable") return "暂无可用行情";
     const pct = quote.change_percent != null ? `${quote.change_percent.toFixed(2)}%` : "--";
     return `${quote.price.toFixed(2)} (${pct})`;
-  }, [quoteQuery.data]);
+  }, [quoteQuery.data, canQueryMarketData]);
 
   const runAnalysis = async () => {
+    if (!canQueryMarketData) {
+      const message = "请先通过搜索选择有效的 Symbol。";
+      setAnalysisError(message);
+      notifier.warning("无法执行分析", message, { dedupeKey: "analysis-invalid-symbol" });
+      return;
+    }
     setLoadingAnalysis(true);
     try {
-      const result = await api.runStockAnalysis(symbol, {
+      const result = await api.runStockAnalysis(normalizedSymbol, {
         market,
         provider_id: defaultProvider,
         model: defaultModel,
@@ -65,6 +103,12 @@ export function StockTerminalPage({ defaultProvider, defaultModel, markets, inte
         lookback_bars: 120,
       });
       setAnalysis(result);
+      setAnalysisError("");
+      notifier.success("分析已完成", `${normalizedSymbol} (${market})`);
+    } catch (error) {
+      const message = (error as Error).message;
+      setAnalysisError(message);
+      notifier.error("分析执行失败", message);
     } finally {
       setLoadingAnalysis(false);
     }
@@ -94,14 +138,12 @@ export function StockTerminalPage({ defaultProvider, defaultModel, markets, inte
             <Input
               id="symbol"
               value={symbol}
-              onChange={(e) => {
-                const next = e.target.value.toUpperCase();
-                setSymbol(next);
-              }}
+              readOnly
+              className="bg-muted/30"
             />
             <Button variant="outline" size="sm" className="mt-2" onClick={() => setSearchOpen(true)}>
               <Search className="mr-2 h-4 w-4" />
-              添加Symbol
+              搜索并选择
             </Button>
           </div>
           <div className="space-y-2">
@@ -184,6 +226,7 @@ export function StockTerminalPage({ defaultProvider, defaultModel, markets, inte
             <Play className="mr-2 h-4 w-4" />
             {loadingAnalysis ? "分析中..." : "一键分析"}
           </Button>
+          {analysisError ? <div className="mt-3 text-sm text-destructive">{analysisError}</div> : null}
 
           {analysis ? (
             <Tabs defaultValue="markdown" className="mt-4">

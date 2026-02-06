@@ -30,6 +30,35 @@ class AnalysisProviderView(BaseModel):
     status: str
     status_message: str
     is_default: bool
+    auth_mode: str = "api_key"
+    connected: bool = False
+    credential_expires_at: Optional[datetime] = None
+
+
+class ProviderAuthStartRequest(BaseModel):
+    redirect_to: Optional[str] = None
+
+
+class ProviderAuthStartResponse(BaseModel):
+    provider_id: str
+    auth_url: str
+    state: str
+    expires_at: datetime
+
+
+class ProviderAuthStatusView(BaseModel):
+    provider_id: str
+    auth_mode: str
+    connected: bool
+    status: str
+    message: str = ""
+    expires_at: Optional[datetime] = None
+
+
+class ProviderModelsView(BaseModel):
+    provider_id: str
+    models: List[str]
+    source: str = "config"
 
 
 class StockAnalysisRunRequest(BaseModel):

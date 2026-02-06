@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   BellRing,
@@ -12,6 +12,7 @@ import {
 import { api, type AppConfig, type ReportSummary, type UIOptions } from "@/api/client";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { useNotifier } from "@/components/ui/notifier";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AlertCenterPage } from "@/pages/AlertCenter";
 import { DashboardPage } from "@/pages/Dashboard";
@@ -67,17 +68,22 @@ const emptyOptions: UIOptions = {
   news_providers: ["rss"],
   fund_flow_providers: ["eastmoney", "fred"],
   market_data_providers: ["composite", "akshare", "yfinance"],
-  analysis_providers: ["mock", "openai_compatible"],
-  analysis_models_by_provider: {
-    mock: ["market-default"],
-    openai_compatible: ["gpt-4o-mini"],
-  },
+  analysis_providers: ["mock", "openai_compatible", "codex_app_server"],
+  analysis_models_by_provider: {},
   listener_threshold_presets: [1, 1.5, 2, 3],
   listener_intervals: [5, 10, 15, 30],
 };
 
+function toErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return String(error ?? "Unknown error");
+}
+
 export default function App() {
   const queryClient = useQueryClient();
+  const notifier = useNotifier();
 
   const [configDraft, setConfigDraft] = useState<AppConfig>(emptyConfig);
   const [sourcesText, setSourcesText] = useState("[]");
@@ -87,6 +93,7 @@ export default function App() {
   const [alertStatus, setAlertStatus] = useState("UNREAD");
   const [alertMarket, setAlertMarket] = useState("ALL");
   const [alertSymbol, setAlertSymbol] = useState("");
+  const queryErrorCache = useRef<Record<string, string>>({});
 
   const configQuery = useQuery({ queryKey: ["config"], queryFn: api.getConfig });
   const uiOptionsQuery = useQuery({ queryKey: ["ui-options"], queryFn: api.getUiOptions });
@@ -115,6 +122,55 @@ export default function App() {
     enabled: Boolean(selectedRunId),
   });
 
+  const notifyQueryError = useCallback(
+    (key: string, title: string, error: unknown) => {
+      if (!error) {
+        delete queryErrorCache.current[key];
+        return;
+      }
+      const message = toErrorMessage(error);
+      if (queryErrorCache.current[key] === message) {
+        return;
+      }
+      queryErrorCache.current[key] = message;
+      setErrorMessage(message);
+      notifier.error(title, message, { dedupeKey: `query-${key}` });
+    },
+    [notifier]
+  );
+
+  useEffect(() => {
+    notifyQueryError("config", "加载配置失败", configQuery.error);
+  }, [configQuery.error, notifyQueryError]);
+
+  useEffect(() => {
+    notifyQueryError("ui-options", "加载下拉配置失败", uiOptionsQuery.error);
+  }, [uiOptionsQuery.error, notifyQueryError]);
+
+  useEffect(() => {
+    notifyQueryError("reports", "加载报告列表失败", reportsQuery.error);
+  }, [reportsQuery.error, notifyQueryError]);
+
+  useEffect(() => {
+    notifyQueryError("report-detail", "加载报告详情失败", detailQuery.error);
+  }, [detailQuery.error, notifyQueryError]);
+
+  useEffect(() => {
+    notifyQueryError("watchlist", "加载 Watchlist 失败", watchlistQuery.error);
+  }, [watchlistQuery.error, notifyQueryError]);
+
+  useEffect(() => {
+    notifyQueryError("providers", "加载 Provider 列表失败", providersQuery.error);
+  }, [providersQuery.error, notifyQueryError]);
+
+  useEffect(() => {
+    notifyQueryError("listener-runs", "加载监听运行记录失败", listenerRunsQuery.error);
+  }, [listenerRunsQuery.error, notifyQueryError]);
+
+  useEffect(() => {
+    notifyQueryError("alerts", "加载告警列表失败", alertsQuery.error);
+  }, [alertsQuery.error, notifyQueryError]);
+
   useEffect(() => {
     if (configQuery.data) {
       setConfigDraft(configQuery.data);
@@ -135,8 +191,13 @@ export default function App() {
       setSourcesText(JSON.stringify(nextConfig.news_sources, null, 2));
       await queryClient.invalidateQueries({ queryKey: ["config"] });
       setErrorMessage("");
+      notifier.success("配置已保存");
     },
-    onError: (error) => setErrorMessage((error as Error).message),
+    onError: (error) => {
+      const message = toErrorMessage(error);
+      setErrorMessage(message);
+      notifier.error("保存配置失败", message);
+    },
   });
 
   const runReportMutation = useMutation({
@@ -153,10 +214,17 @@ export default function App() {
       setSelectedRunId(result.summary.run_id);
       setWarningMessage(result.warnings[0] || "");
       setErrorMessage("");
+      if (result.warnings[0]) {
+        notifier.warning("报告已生成（存在告警）", result.warnings[0]);
+      } else {
+        notifier.success("报告已生成");
+      }
     },
     onError: (error) => {
       setWarningMessage("");
-      setErrorMessage((error as Error).message);
+      const message = toErrorMessage(error);
+      setErrorMessage(message);
+      notifier.error("生成报告失败", message);
     },
   });
 
@@ -187,6 +255,55 @@ export default function App() {
     { key: "providers", label: "Providers", icon: Settings2 },
     { key: "reports", label: "Reports", icon: ClipboardList },
   ];
+
+  const sleep = useCallback((ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms)), []);
+
+  const connectProviderAuth = useCallback(
+    async (providerId: string) => {
+      const started = await api.startAnalysisProviderAuth(providerId, {
+        redirect_to: window.location.href,
+      });
+      const popup = window.open(started.auth_url, "_blank", "noopener,noreferrer,width=520,height=780");
+      if (!popup) {
+        notifier.warning("登录窗口被拦截", "请允许浏览器弹窗后重试。");
+      } else {
+        notifier.info("已打开登录窗口", "完成登录后会自动刷新状态。");
+      }
+
+      const deadline = Date.now() + 90_000;
+      let connected = false;
+      while (Date.now() < deadline) {
+        await sleep(2000);
+        const status = await api.getAnalysisProviderAuthStatus(providerId);
+        if (status.connected) {
+          connected = true;
+          break;
+        }
+      }
+
+      await queryClient.invalidateQueries({ queryKey: ["providers"] });
+      if (connected) {
+        const modelPayload = await api.listAnalysisProviderModels(providerId).catch(() => null);
+        const modelHint =
+          modelPayload && modelPayload.models.length
+            ? `可用模型: ${modelPayload.models.slice(0, 3).join(", ")}`
+            : "Provider 已连接";
+        notifier.success("登录成功", modelHint);
+      } else {
+        notifier.warning("登录状态未确认", "请完成授权后点击 Connect 再次刷新。");
+      }
+    },
+    [notifier, queryClient, sleep]
+  );
+
+  const disconnectProviderAuth = useCallback(
+    async (providerId: string) => {
+      await api.logoutAnalysisProviderAuth(providerId);
+      await queryClient.invalidateQueries({ queryKey: ["providers"] });
+      notifier.success("已断开 Provider 登录", providerId);
+    },
+    [notifier, queryClient]
+  );
 
   return (
     <main className="container py-10">
@@ -238,6 +355,11 @@ export default function App() {
           <DashboardPage
             config={configDraft}
             options={options}
+            analysisProviders={providersQuery.data ?? []}
+            onLoadProviderModels={async (providerId) => {
+              const payload = await api.listAnalysisProviderModels(providerId);
+              return payload.models;
+            }}
             setConfig={setConfigDraft}
             sourcesText={sourcesText}
             setSourcesText={setSourcesText}
@@ -258,12 +380,26 @@ export default function App() {
             markets={options.markets}
             onSearch={(query, market) => api.searchStocks(query, market, configDraft.symbol_search.max_results)}
             onAdd={async (payload) => {
-              await api.createWatchlistItem(payload);
-              await queryClient.invalidateQueries({ queryKey: ["watchlist"] });
+              try {
+                await api.createWatchlistItem(payload);
+                await queryClient.invalidateQueries({ queryKey: ["watchlist"] });
+                notifier.success("Watchlist 已添加", `${payload.symbol} (${payload.market})`);
+              } catch (error) {
+                const message = toErrorMessage(error);
+                setErrorMessage(message);
+                notifier.error("添加 Watchlist 失败", message);
+              }
             }}
             onDelete={async (id) => {
-              await api.deleteWatchlistItem(id);
-              await queryClient.invalidateQueries({ queryKey: ["watchlist"] });
+              try {
+                await api.deleteWatchlistItem(id);
+                await queryClient.invalidateQueries({ queryKey: ["watchlist"] });
+                notifier.success("Watchlist 已删除");
+              } catch (error) {
+                const message = toErrorMessage(error);
+                setErrorMessage(message);
+                notifier.error("删除 Watchlist 失败", message);
+              }
             }}
           />
         </TabsContent>
@@ -289,21 +425,47 @@ export default function App() {
             symbol={alertSymbol}
             setSymbol={setAlertSymbol}
             onRunNow={async () => {
-              await api.runNewsListener();
-              await queryClient.invalidateQueries({ queryKey: ["news-alerts"] });
-              await queryClient.invalidateQueries({ queryKey: ["news-listener-runs"] });
+              try {
+                await api.runNewsListener();
+                await queryClient.invalidateQueries({ queryKey: ["news-alerts"] });
+                await queryClient.invalidateQueries({ queryKey: ["news-listener-runs"] });
+                notifier.success("监听任务已执行");
+              } catch (error) {
+                const message = toErrorMessage(error);
+                setErrorMessage(message);
+                notifier.error("执行新闻监听失败", message);
+              }
             }}
             onMarkAllRead={async () => {
-              await api.markAllNewsAlertsRead();
-              await queryClient.invalidateQueries({ queryKey: ["news-alerts"] });
+              try {
+                await api.markAllNewsAlertsRead();
+                await queryClient.invalidateQueries({ queryKey: ["news-alerts"] });
+                notifier.success("已全部标记为已读");
+              } catch (error) {
+                const message = toErrorMessage(error);
+                setErrorMessage(message);
+                notifier.error("批量已读失败", message);
+              }
             }}
             onMarkAlert={async (id, status) => {
-              await api.updateNewsAlert(id, status);
-              await queryClient.invalidateQueries({ queryKey: ["news-alerts"] });
+              try {
+                await api.updateNewsAlert(id, status);
+                await queryClient.invalidateQueries({ queryKey: ["news-alerts"] });
+              } catch (error) {
+                const message = toErrorMessage(error);
+                setErrorMessage(message);
+                notifier.error("更新告警状态失败", message);
+              }
             }}
             onRefresh={async () => {
-              await alertsQuery.refetch();
-              await listenerRunsQuery.refetch();
+              try {
+                await alertsQuery.refetch();
+                await listenerRunsQuery.refetch();
+              } catch (error) {
+                const message = toErrorMessage(error);
+                setErrorMessage(message);
+                notifier.error("刷新告警失败", message);
+              }
             }}
           />
         </TabsContent>
@@ -311,16 +473,84 @@ export default function App() {
         <TabsContent value="providers" className="mt-0">
           <ProvidersPage
             providers={providersQuery.data ?? []}
+            providerConfigs={configDraft.analysis.providers}
             defaultProvider={configDraft.analysis.default_provider}
             defaultModel={configDraft.analysis.default_model}
             onSetDefault={async (providerId, model) => {
-              const next = await api.updateDefaultAnalysis({ provider_id: providerId, model });
-              setConfigDraft(next);
-              await queryClient.invalidateQueries({ queryKey: ["config"] });
+              try {
+                const next = await api.updateDefaultAnalysis({ provider_id: providerId, model });
+                setConfigDraft(next);
+                await queryClient.invalidateQueries({ queryKey: ["config"] });
+                await queryClient.invalidateQueries({ queryKey: ["providers"] });
+                notifier.success("默认分析模型已更新", `${providerId} / ${model}`);
+              } catch (error) {
+                const message = toErrorMessage(error);
+                setErrorMessage(message);
+                notifier.error("更新默认 Provider/Model 失败", message);
+              }
             }}
             onSaveSecret={async (providerId, apiKey) => {
-              await api.putAnalysisSecret(providerId, { api_key: apiKey });
-              await queryClient.invalidateQueries({ queryKey: ["providers"] });
+              try {
+                await api.putAnalysisSecret(providerId, { api_key: apiKey });
+                await queryClient.invalidateQueries({ queryKey: ["providers"] });
+                notifier.success("API Key 已保存", providerId);
+              } catch (error) {
+                const message = toErrorMessage(error);
+                setErrorMessage(message);
+                notifier.error("保存 API Key 失败", message);
+              }
+            }}
+            onConnectAuth={async (providerId) => {
+              try {
+                await connectProviderAuth(providerId);
+              } catch (error) {
+                const message = toErrorMessage(error);
+                setErrorMessage(message);
+                notifier.error("打开登录失败", message);
+              }
+            }}
+            onDisconnectAuth={async (providerId) => {
+              try {
+                await disconnectProviderAuth(providerId);
+              } catch (error) {
+                const message = toErrorMessage(error);
+                setErrorMessage(message);
+                notifier.error("断开登录失败", message);
+              }
+            }}
+            onLoadModels={async (providerId) => {
+              const payload = await api.listAnalysisProviderModels(providerId);
+              return payload.models;
+            }}
+            onSaveProviderConfig={async (providerId, patch) => {
+              try {
+                const nextProviders = configDraft.analysis.providers.map((provider) => {
+                  if (provider.provider_id !== providerId) {
+                    return provider;
+                  }
+                  return {
+                    ...provider,
+                    ...patch,
+                  };
+                });
+                const nextConfig = {
+                  ...configDraft,
+                  analysis: {
+                    ...configDraft.analysis,
+                    providers: nextProviders,
+                  },
+                };
+                const saved = await api.updateConfig(nextConfig);
+                setConfigDraft(saved);
+                await queryClient.invalidateQueries({ queryKey: ["config"] });
+                await queryClient.invalidateQueries({ queryKey: ["providers"] });
+                await queryClient.invalidateQueries({ queryKey: ["ui-options"] });
+                notifier.success("Provider 配置已保存", providerId);
+              } catch (error) {
+                const message = toErrorMessage(error);
+                setErrorMessage(message);
+                notifier.error("保存 Provider 配置失败", message);
+              }
             }}
           />
         </TabsContent>

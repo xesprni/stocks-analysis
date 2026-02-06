@@ -135,10 +135,20 @@ class NewsListenerService:
             )
 
     def list_runs(self, limit: int = 50) -> List[NewsListenerRunView]:
-        with session_scope(self.config.database.url) as session:
-            repo = NewsListenerRunRepo(session)
-            rows = repo.list_recent(limit=limit)
-        return [NewsListenerRunView.model_validate(row, from_attributes=True) for row in rows]
+        try:
+            with session_scope(self.config.database.url) as session:
+                repo = NewsListenerRunRepo(session)
+                rows = repo.list_recent(limit=limit)
+        except Exception:
+            return []
+
+        result: List[NewsListenerRunView] = []
+        for row in rows:
+            try:
+                result.append(NewsListenerRunView.model_validate(row, from_attributes=True))
+            except Exception:
+                continue
+        return result
 
     def list_alerts(
         self,
@@ -149,14 +159,17 @@ class NewsListenerService:
     ) -> List[NewsAlertView]:
         symbol_value = symbol.strip().upper() if symbol else None
         market_value = market.strip().upper() if market else None
-        with session_scope(self.config.database.url) as session:
-            repo = WatchlistNewsAlertRepo(session)
-            rows = repo.list_recent(
-                status=status.upper(),
-                symbol=symbol_value,
-                market=market_value,
-                limit=limit,
-            )
+        try:
+            with session_scope(self.config.database.url) as session:
+                repo = WatchlistNewsAlertRepo(session)
+                rows = repo.list_recent(
+                    status=status.upper(),
+                    symbol=symbol_value,
+                    market=market_value,
+                    limit=limit,
+                )
+        except Exception:
+            return []
         return [self._to_alert_view(row) for row in rows]
 
     def update_alert_status(self, alert_id: int, status: str) -> NewsAlertView:

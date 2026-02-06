@@ -107,6 +107,119 @@ class AnalysisProviderStatusTest(unittest.TestCase):
             self.assertTrue(providers["openai_compatible"].ready)
             self.assertTrue(providers["openai_compatible"].has_secret)
 
+    def test_auth_status_for_none_mode_provider(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            (root / "data").mkdir(parents=True, exist_ok=True)
+            db_url = f"sqlite:///{root / 'data' / 'market_reporter.db'}"
+            config = AppConfig(
+                output_root=root / "output",
+                config_file=root / "config" / "settings.yaml",
+                database={"url": db_url},
+                analysis=AnalysisConfig(
+                    default_provider="mock",
+                    default_model="market-default",
+                    providers=[
+                        AnalysisProviderConfig(
+                            provider_id="mock",
+                            type="mock",
+                            base_url="",
+                            models=["market-default"],
+                            timeout=5,
+                            enabled=True,
+                            auth_mode="none",
+                        )
+                    ],
+                ),
+            )
+            init_db(config.database.url)
+            service = AnalysisService(
+                config=config,
+                registry=ProviderRegistry(),
+                keychain_store=DummyKeychainStore(),
+            )
+
+            status = service.get_provider_auth_status("mock")
+            self.assertEqual(status.status, "ready")
+            self.assertTrue(status.connected)
+
+    def test_oauth_provider_missing_base_url_not_ready(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            (root / "data").mkdir(parents=True, exist_ok=True)
+            db_url = f"sqlite:///{root / 'data' / 'market_reporter.db'}"
+            config = AppConfig(
+                output_root=root / "output",
+                config_file=root / "config" / "settings.yaml",
+                database={"url": db_url},
+                analysis=AnalysisConfig(
+                    default_provider="codex_app_server",
+                    default_model="gpt-5-codex",
+                    providers=[
+                        AnalysisProviderConfig(
+                            provider_id="codex_app_server",
+                            type="codex_app_server",
+                            base_url="",
+                            models=["gpt-5-codex"],
+                            timeout=20,
+                            enabled=True,
+                            auth_mode="chatgpt_oauth",
+                        )
+                    ],
+                ),
+            )
+            init_db(config.database.url)
+            service = AnalysisService(
+                config=config,
+                registry=ProviderRegistry(),
+                keychain_store=DummyKeychainStore(),
+            )
+
+            providers = {row.provider_id: row for row in service.list_providers()}
+            self.assertEqual(providers["codex_app_server"].status, "missing-base-url")
+            self.assertFalse(providers["codex_app_server"].ready)
+            with self.assertRaisesRegex(ValueError, "base_url"):
+                service.ensure_provider_ready("codex_app_server", "gpt-5-codex")
+
+    def test_dynamic_provider_keeps_runtime_model(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            (root / "data").mkdir(parents=True, exist_ok=True)
+            db_url = f"sqlite:///{root / 'data' / 'market_reporter.db'}"
+            config = AppConfig(
+                output_root=root / "output",
+                config_file=root / "config" / "settings.yaml",
+                database={"url": db_url},
+                analysis=AnalysisConfig(
+                    default_provider="codex_app_server",
+                    default_model="gpt-5-codex",
+                    providers=[
+                        AnalysisProviderConfig(
+                            provider_id="codex_app_server",
+                            type="codex_app_server",
+                            base_url="http://localhost:9999",
+                            models=["gpt-5-codex"],
+                            timeout=20,
+                            enabled=True,
+                            auth_mode="chatgpt_oauth",
+                        )
+                    ],
+                ),
+            )
+            init_db(config.database.url)
+            service = AnalysisService(
+                config=config,
+                registry=ProviderRegistry(),
+                keychain_store=DummyKeychainStore(),
+            )
+
+            provider, selected_model = service._select_provider_and_model(
+                provider_id="codex_app_server",
+                model="gpt-5-codex-high",
+            )
+            self.assertEqual(provider.provider_id, "codex_app_server")
+            self.assertEqual(selected_model, "gpt-5-codex-high")
+
 
 if __name__ == "__main__":
     unittest.main()

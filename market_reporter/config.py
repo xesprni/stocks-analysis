@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -7,9 +8,11 @@ from pydantic import BaseModel, Field
 
 
 class NewsSource(BaseModel):
+    source_id: Optional[str] = None
     name: str
     category: str
     url: str
+    enabled: bool = True
 
 
 class FredSeries(BaseModel):
@@ -56,6 +59,9 @@ class AnalysisProviderConfig(BaseModel):
     models: List[str] = Field(default_factory=lambda: ["gpt-4o-mini"])
     timeout: int = Field(default=20, ge=3, le=120)
     enabled: bool = True
+    auth_mode: Optional[str] = None
+    login_callback_url: Optional[str] = None
+    login_timeout_seconds: int = Field(default=600, ge=60, le=3600)
 
 
 class AnalysisConfig(BaseModel):
@@ -90,16 +96,21 @@ class DatabaseConfig(BaseModel):
 def default_news_sources() -> List[NewsSource]:
     return [
         NewsSource(
+            source_id="yahoo-finance-top-stories",
             name="Yahoo Finance Top Stories",
             category="finance",
             url="https://finance.yahoo.com/news/rssindex",
+            enabled=True,
         ),
         NewsSource(
+            source_id="reuters-business",
             name="Reuters Business",
             category="finance",
             url="https://feeds.reuters.com/reuters/businessNews",
+            enabled=True,
         ),
         NewsSource(
+            source_id="google-news-cn-finance",
             name="Google News CN Finance",
             category="finance",
             url=(
@@ -107,23 +118,31 @@ def default_news_sources() -> List[NewsSource]:
                 "?q=%E8%B4%A2%E7%BB%8F+%E8%82%A1%E5%B8%82+%E7%BB%8F%E6%B5%8E"
                 "&hl=zh-CN&gl=CN&ceid=CN:zh-Hans"
             ),
+            enabled=True,
         ),
         NewsSource(
+            source_id="federal-reserve-monetary-policy",
             name="Federal Reserve Monetary Policy",
             category="policy",
             url="https://www.federalreserve.gov/feeds/press_monetary.xml",
+            enabled=True,
         ),
         NewsSource(
+            source_id="us-treasury-press-release",
             name="US Treasury Press Release",
             category="policy",
             url="https://home.treasury.gov/news/press-releases/feed",
+            enabled=True,
         ),
         NewsSource(
+            source_id="ecb-press",
             name="ECB Press",
             category="policy",
             url="https://www.ecb.europa.eu/press/rss/press.html",
+            enabled=True,
         ),
         NewsSource(
+            source_id="google-news-cn-policy",
             name="Google News CN Policy",
             category="policy",
             url=(
@@ -131,6 +150,7 @@ def default_news_sources() -> List[NewsSource]:
                 "?q=%E5%AE%8F%E8%A7%82+%E6%94%BF%E7%AD%96+%E5%A4%AE%E8%A1%8C"
                 "&hl=zh-CN&gl=CN&ceid=CN:zh-Hans"
             ),
+            enabled=True,
         ),
     ]
 
@@ -163,6 +183,7 @@ def default_analysis_providers() -> List[AnalysisProviderConfig]:
             models=["market-default"],
             timeout=5,
             enabled=True,
+            auth_mode="none",
         ),
         AnalysisProviderConfig(
             provider_id="openai_compatible",
@@ -171,6 +192,16 @@ def default_analysis_providers() -> List[AnalysisProviderConfig]:
             models=["gpt-4o-mini", "gpt-4.1"],
             timeout=30,
             enabled=True,
+            auth_mode="api_key",
+        ),
+        AnalysisProviderConfig(
+            provider_id="codex_app_server",
+            type="codex_app_server",
+            base_url="",
+            models=["gpt-5-codex"],
+            timeout=30,
+            enabled=False,
+            auth_mode="chatgpt_oauth",
         ),
     ]
 
@@ -215,6 +246,7 @@ class AppConfig(BaseModel):
         payload = self.model_dump(mode="python")
         payload["output_root"] = Path(payload["output_root"])
         payload["config_file"] = Path(payload["config_file"])
+        payload["news_sources"] = normalize_news_sources(self.news_sources)
         return AppConfig.model_validate(payload)
 
     def analysis_provider_map(self) -> Dict[str, AnalysisProviderConfig]:
@@ -223,3 +255,31 @@ class AppConfig(BaseModel):
 
 def default_app_config() -> AppConfig:
     return AppConfig(analysis=AnalysisConfig(providers=default_analysis_providers()))
+
+
+def normalize_source_id(raw: str) -> str:
+    value = re.sub(r"[^a-z0-9]+", "-", str(raw or "").lower()).strip("-")
+    return value or "source"
+
+
+def normalize_news_sources(news_sources: List[NewsSource]) -> List[NewsSource]:
+    normalized: List[NewsSource] = []
+    used_ids: set[str] = set()
+    for idx, source in enumerate(news_sources):
+        candidate = source.source_id or source.name or f"source-{idx + 1}"
+        base_id = normalize_source_id(candidate)
+        source_id = base_id
+        cursor = 2
+        while source_id in used_ids:
+            source_id = f"{base_id}-{cursor}"
+            cursor += 1
+        used_ids.add(source_id)
+        normalized.append(
+            source.model_copy(
+                update={
+                    "source_id": source_id,
+                    "enabled": bool(source.enabled),
+                }
+            )
+        )
+    return normalized

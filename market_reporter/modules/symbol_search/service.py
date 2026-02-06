@@ -40,6 +40,9 @@ class SymbolSearchService:
         limit: Optional[int] = None,
         provider_id: Optional[str] = None,
     ) -> List[StockSearchResult]:
+        normalized_query = query.strip()
+        if not normalized_query:
+            return []
         resolved_limit = limit or self.config.symbol_search.max_results
         chosen_provider = (
             provider_id
@@ -47,7 +50,7 @@ class SymbolSearchService:
             or self.config.modules.symbol_search.default_provider
         )
         provider = self.registry.resolve(self.MODULE_NAME, chosen_provider)
-        rows = await provider.search(query=query, market=market.upper(), limit=resolved_limit)
+        rows = await provider.search(query=normalized_query, market=market.upper(), limit=resolved_limit)
         dedup: Dict[Tuple[str, str], StockSearchResult] = {}
         for item in rows:
             key = (item.symbol, item.market)
@@ -65,16 +68,14 @@ class CompositeSymbolSearchProvider:
 
     async def search(self, query: str, market: str, limit: int) -> List[StockSearchResult]:
         merged: List[StockSearchResult] = []
-        errors: List[str] = []
         for provider in self._ordered(market=market):
             try:
                 rows = await provider.search(query=query, market=market, limit=limit)
                 merged.extend(rows)
-            except Exception as exc:
-                errors.append(str(exc))
+            except Exception:
                 continue
-        if not merged and errors:
-            raise ValueError("; ".join(errors))
+        if not merged:
+            return []
         merged.sort(key=lambda item: item.score, reverse=True)
         return merged[:limit]
 

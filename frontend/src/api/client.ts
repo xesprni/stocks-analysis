@@ -3,9 +3,11 @@ import { z } from "zod";
 const apiBase = import.meta.env.VITE_API_BASE_URL ?? "/api";
 
 const newsSourceSchema = z.object({
+  source_id: z.string(),
   name: z.string(),
   category: z.string(),
   url: z.string(),
+  enabled: z.boolean(),
 });
 
 const analysisProviderConfigSchema = z.object({
@@ -15,6 +17,9 @@ const analysisProviderConfigSchema = z.object({
   models: z.array(z.string()),
   timeout: z.number(),
   enabled: z.boolean(),
+  auth_mode: z.string().optional(),
+  login_callback_url: z.string().nullable().optional(),
+  login_timeout_seconds: z.number().optional(),
 });
 
 export const appConfigSchema = z.object({
@@ -120,6 +125,28 @@ export const uiOptionsSchema = z.object({
   listener_intervals: z.array(z.number()),
 });
 
+export const newsFeedSourceOptionSchema = z.object({
+  source_id: z.string(),
+  name: z.string(),
+  enabled: z.boolean(),
+});
+
+export const newsFeedItemSchema = z.object({
+  source_id: z.string(),
+  source_name: z.string(),
+  category: z.string(),
+  title: z.string(),
+  link: z.string(),
+  published: z.string(),
+  fetched_at: z.string(),
+});
+
+export const newsFeedResponseSchema = z.object({
+  items: z.array(newsFeedItemSchema),
+  warnings: z.array(z.string()),
+  selected_source_id: z.string(),
+});
+
 export const quoteSchema = z.object({
   symbol: z.string(),
   market: z.string(),
@@ -167,6 +194,31 @@ export const analysisProviderViewSchema = z.object({
   status: z.string(),
   status_message: z.string(),
   is_default: z.boolean(),
+  auth_mode: z.string().optional(),
+  connected: z.boolean().optional(),
+  credential_expires_at: z.string().nullable().optional(),
+});
+
+export const providerAuthStartSchema = z.object({
+  provider_id: z.string(),
+  auth_url: z.string(),
+  state: z.string(),
+  expires_at: z.string(),
+});
+
+export const providerAuthStatusSchema = z.object({
+  provider_id: z.string(),
+  auth_mode: z.string(),
+  connected: z.boolean(),
+  status: z.string(),
+  message: z.string(),
+  expires_at: z.string().nullable().optional(),
+});
+
+export const providerModelsSchema = z.object({
+  provider_id: z.string(),
+  models: z.array(z.string()),
+  source: z.string(),
 });
 
 export const reportSummarySchema = z.object({
@@ -208,6 +260,8 @@ export const stockAnalysisRunSchema = z.object({
 });
 
 export type AppConfig = z.infer<typeof appConfigSchema>;
+export type AnalysisProviderConfig = z.infer<typeof analysisProviderConfigSchema>;
+export type NewsSource = z.infer<typeof newsSourceSchema>;
 export type WatchlistItem = z.infer<typeof watchlistItemSchema>;
 export type Quote = z.infer<typeof quoteSchema>;
 export type KLineBar = z.infer<typeof klineSchema>;
@@ -220,6 +274,12 @@ export type StockSearchResult = z.infer<typeof stockSearchResultSchema>;
 export type NewsListenerRun = z.infer<typeof newsListenerRunSchema>;
 export type NewsAlert = z.infer<typeof newsAlertSchema>;
 export type UIOptions = z.infer<typeof uiOptionsSchema>;
+export type NewsFeedSourceOption = z.infer<typeof newsFeedSourceOptionSchema>;
+export type NewsFeedItem = z.infer<typeof newsFeedItemSchema>;
+export type NewsFeedResponse = z.infer<typeof newsFeedResponseSchema>;
+export type ProviderAuthStart = z.infer<typeof providerAuthStartSchema>;
+export type ProviderAuthStatus = z.infer<typeof providerAuthStatusSchema>;
+export type ProviderModels = z.infer<typeof providerModelsSchema>;
 
 async function request<T>(path: string, schema: z.ZodSchema<T>, init?: RequestInit): Promise<T> {
   const response = await fetch(`${apiBase}${path}`, init);
@@ -271,11 +331,15 @@ export const api = {
       body: JSON.stringify(payload),
     }),
   deleteWatchlistItem: (id: number) => requestVoid(`/watchlist/${id}`, { method: "DELETE" }),
-  getQuote: (symbol: string, market: string) => request(`/stocks/${symbol}/quote?market=${market}`, quoteSchema),
+  getQuote: (symbol: string, market: string) =>
+    request(`/stocks/${encodeURIComponent(symbol)}/quote?market=${market}`, quoteSchema),
   getKline: (symbol: string, market: string, interval: string, limit = 300) =>
-    request(`/stocks/${symbol}/kline?market=${market}&interval=${interval}&limit=${limit}`, z.array(klineSchema)),
+    request(
+      `/stocks/${encodeURIComponent(symbol)}/kline?market=${market}&interval=${interval}&limit=${limit}`,
+      z.array(klineSchema)
+    ),
   getCurve: (symbol: string, market: string, window = "1d") =>
-    request(`/stocks/${symbol}/curve?market=${market}&window=${window}`, z.array(curvePointSchema)),
+    request(`/stocks/${encodeURIComponent(symbol)}/curve?market=${market}&window=${window}`, z.array(curvePointSchema)),
   searchStocks: (q: string, market = "ALL", limit = 20) =>
     request(
       `/stocks/search?q=${encodeURIComponent(q)}&market=${market}&limit=${limit}`,
@@ -298,15 +362,29 @@ export const api = {
     request(`/providers/analysis/${providerId}/secret`, z.object({ deleted: z.boolean() }), {
       method: "DELETE",
     }),
+  startAnalysisProviderAuth: (providerId: string, payload?: Record<string, unknown>) =>
+    request(`/providers/analysis/${providerId}/auth/start`, providerAuthStartSchema, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload ?? {}),
+    }),
+  getAnalysisProviderAuthStatus: (providerId: string) =>
+    request(`/providers/analysis/${providerId}/auth/status`, providerAuthStatusSchema),
+  logoutAnalysisProviderAuth: (providerId: string) =>
+    request(`/providers/analysis/${providerId}/auth/logout`, z.object({ deleted: z.boolean() }), {
+      method: "POST",
+    }),
+  listAnalysisProviderModels: (providerId: string) =>
+    request(`/providers/analysis/${providerId}/models`, providerModelsSchema),
   runStockAnalysis: (symbol: string, payload: Record<string, unknown>) =>
-    request(`/analysis/stocks/${symbol}/run`, stockAnalysisRunSchema, {
+    request(`/analysis/stocks/${encodeURIComponent(symbol)}/run`, stockAnalysisRunSchema, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     }),
   listStockAnalysisHistory: (symbol: string, market: string, limit = 20) =>
     request(
-      `/analysis/stocks/${symbol}/history?market=${market}&limit=${limit}`,
+      `/analysis/stocks/${encodeURIComponent(symbol)}/history?market=${market}&limit=${limit}`,
       z.array(
         z.object({
           id: z.number(),
@@ -343,5 +421,25 @@ export const api = {
     request("/news-alerts/mark-all-read", z.object({ updated: z.number() }), {
       method: "POST",
     }),
+  listNewsSources: () => request("/news-sources", z.array(newsSourceSchema)),
+  createNewsSource: (payload: Record<string, unknown>) =>
+    request("/news-sources", newsSourceSchema, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
+  updateNewsSource: (sourceId: string, payload: Record<string, unknown>) =>
+    request(`/news-sources/${encodeURIComponent(sourceId)}`, newsSourceSchema, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
+  deleteNewsSource: (sourceId: string) =>
+    request(`/news-sources/${encodeURIComponent(sourceId)}`, z.object({ deleted: z.boolean() }), {
+      method: "DELETE",
+    }),
+  listNewsFeedOptions: () => request("/news-feed/options", z.array(newsFeedSourceOptionSchema)),
+  listNewsFeed: (sourceId = "ALL", limit = 50) =>
+    request(`/news-feed?source_id=${encodeURIComponent(sourceId)}&limit=${limit}`, newsFeedResponseSchema),
   getUiOptions: () => request("/options/ui", uiOptionsSchema),
 };

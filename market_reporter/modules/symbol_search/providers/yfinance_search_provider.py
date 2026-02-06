@@ -11,7 +11,10 @@ class YahooFinanceSearchProvider:
     provider_id = "yfinance"
 
     async def search(self, query: str, market: str, limit: int) -> List[StockSearchResult]:
-        return await asyncio.to_thread(self._search_sync, query, market, limit)
+        try:
+            return await asyncio.to_thread(self._search_sync, query, market, limit)
+        except Exception:
+            return []
 
     def _search_sync(self, query: str, market: str, limit: int) -> List[StockSearchResult]:
         import yfinance as yf
