@@ -15,6 +15,13 @@ class _FailQuoteProvider:
         raise RuntimeError("quote provider down")
 
 
+class _ResolveFallbackRegistry(ProviderRegistry):
+    def resolve(self, module: str, provider_id: str, **kwargs):  # type: ignore[override]
+        if module == "market_data" and provider_id == "composite":
+            return _FailQuoteProvider()
+        raise ValueError(f"provider missing: {provider_id}")
+
+
 class MarketDataServiceQuoteFallbackTest(unittest.IsolatedAsyncioTestCase):
     async def test_quote_fallback_to_unavailable_payload(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -78,6 +85,26 @@ class MarketDataServiceQuoteFallbackTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(quote.price, 101.0)
             self.assertAlmostEqual(quote.change_percent or 0.0, 1.0, places=4)
             self.assertEqual(quote.source, "cache:test")
+
+    async def test_quote_fallback_when_configured_provider_missing(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            (root / "data").mkdir(parents=True, exist_ok=True)
+            db_url = f"sqlite:///{root / 'data' / 'market_reporter.db'}"
+            config = AppConfig(
+                output_root=root / "output",
+                config_file=root / "config" / "settings.yaml",
+                database={"url": db_url},
+            )
+            config.modules.market_data.default_provider = "broken-provider"
+            init_db(config.database.url)
+            service = MarketDataService(config=config, registry=_ResolveFallbackRegistry())
+
+            quote = await service.get_quote(symbol="AAPL", market="US")
+            self.assertEqual(quote.symbol, "AAPL")
+            self.assertEqual(quote.market, "US")
+            self.assertEqual(quote.price, 0.0)
+            self.assertEqual(quote.source, "unavailable")
 
 
 if __name__ == "__main__":

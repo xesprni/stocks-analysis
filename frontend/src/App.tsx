@@ -6,6 +6,7 @@ import {
   ClipboardList,
   LayoutDashboard,
   ListChecks,
+  Newspaper,
   Settings2,
 } from "lucide-react";
 
@@ -16,6 +17,7 @@ import { useNotifier } from "@/components/ui/notifier";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AlertCenterPage } from "@/pages/AlertCenter";
 import { DashboardPage } from "@/pages/Dashboard";
+import { NewsFeedPage } from "@/pages/NewsFeed";
 import { ProvidersPage } from "@/pages/Providers";
 import { ReportsPage } from "@/pages/Reports";
 import { StockTerminalPage } from "@/pages/StockTerminal";
@@ -86,7 +88,6 @@ export default function App() {
   const notifier = useNotifier();
 
   const [configDraft, setConfigDraft] = useState<AppConfig>(emptyConfig);
-  const [sourcesText, setSourcesText] = useState("[]");
   const [selectedRunId, setSelectedRunId] = useState<string>("");
   const [errorMessage, setErrorMessage] = useState("");
   const [warningMessage, setWarningMessage] = useState("");
@@ -99,6 +100,7 @@ export default function App() {
   const uiOptionsQuery = useQuery({ queryKey: ["ui-options"], queryFn: api.getUiOptions });
   const reportsQuery = useQuery({ queryKey: ["reports"], queryFn: api.listReports });
   const watchlistQuery = useQuery({ queryKey: ["watchlist"], queryFn: api.listWatchlist });
+  const newsSourcesQuery = useQuery({ queryKey: ["news-sources"], queryFn: api.listNewsSources });
   const providersQuery = useQuery({ queryKey: ["providers"], queryFn: api.listAnalysisProviders });
   const listenerRunsQuery = useQuery({
     queryKey: ["news-listener-runs"],
@@ -160,6 +162,10 @@ export default function App() {
   }, [watchlistQuery.error, notifyQueryError]);
 
   useEffect(() => {
+    notifyQueryError("news-sources", "加载新闻来源失败", newsSourcesQuery.error);
+  }, [newsSourcesQuery.error, notifyQueryError]);
+
+  useEffect(() => {
     notifyQueryError("providers", "加载 Provider 列表失败", providersQuery.error);
   }, [providersQuery.error, notifyQueryError]);
 
@@ -174,21 +180,17 @@ export default function App() {
   useEffect(() => {
     if (configQuery.data) {
       setConfigDraft(configQuery.data);
-      setSourcesText(JSON.stringify(configQuery.data.news_sources, null, 2));
     }
   }, [configQuery.data]);
 
   const saveConfigMutation = useMutation({
-    mutationFn: async () => {
-      const newsSources = JSON.parse(sourcesText);
-      return api.updateConfig({
+    mutationFn: async () =>
+      api.updateConfig({
         ...configDraft,
-        news_sources: newsSources,
-      });
-    },
+        news_sources: newsSourcesQuery.data ?? configDraft.news_sources,
+      }),
     onSuccess: async (nextConfig) => {
       setConfigDraft(nextConfig);
-      setSourcesText(JSON.stringify(nextConfig.news_sources, null, 2));
       await queryClient.invalidateQueries({ queryKey: ["config"] });
       setErrorMessage("");
       notifier.success("配置已保存");
@@ -249,6 +251,7 @@ export default function App() {
 
   const navItems = [
     { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+    { key: "news-feed", label: "News Feed", icon: Newspaper },
     { key: "watchlist", label: "Watchlist", icon: ListChecks },
     { key: "terminal", label: "Stock Terminal", icon: ChartCandlestick },
     { key: "alerts", label: "Alert Center", icon: BellRing },
@@ -356,22 +359,62 @@ export default function App() {
             config={configDraft}
             options={options}
             analysisProviders={providersQuery.data ?? []}
+            newsSources={newsSourcesQuery.data ?? configDraft.news_sources}
             onLoadProviderModels={async (providerId) => {
               const payload = await api.listAnalysisProviderModels(providerId);
               return payload.models;
             }}
+            onCreateNewsSource={async (payload) => {
+              try {
+                await api.createNewsSource(payload);
+                await queryClient.invalidateQueries({ queryKey: ["news-sources"] });
+                await queryClient.invalidateQueries({ queryKey: ["config"] });
+                notifier.success("新闻来源已新增", payload.name);
+              } catch (error) {
+                const message = toErrorMessage(error);
+                setErrorMessage(message);
+                notifier.error("新增新闻来源失败", message);
+              }
+            }}
+            onUpdateNewsSource={async (sourceId, payload) => {
+              try {
+                await api.updateNewsSource(sourceId, payload);
+                await queryClient.invalidateQueries({ queryKey: ["news-sources"] });
+                await queryClient.invalidateQueries({ queryKey: ["config"] });
+                notifier.success("新闻来源已更新", sourceId);
+              } catch (error) {
+                const message = toErrorMessage(error);
+                setErrorMessage(message);
+                notifier.error("更新新闻来源失败", message);
+              }
+            }}
+            onDeleteNewsSource={async (sourceId) => {
+              try {
+                await api.deleteNewsSource(sourceId);
+                await queryClient.invalidateQueries({ queryKey: ["news-sources"] });
+                await queryClient.invalidateQueries({ queryKey: ["config"] });
+                notifier.success("新闻来源已删除", sourceId);
+              } catch (error) {
+                const message = toErrorMessage(error);
+                setErrorMessage(message);
+                notifier.error("删除新闻来源失败", message);
+              }
+            }}
             setConfig={setConfigDraft}
-            sourcesText={sourcesText}
-            setSourcesText={setSourcesText}
             onSave={() => saveConfigMutation.mutate()}
             onReload={() => {
               void configQuery.refetch();
+              void newsSourcesQuery.refetch();
               setErrorMessage("");
             }}
             onRunReport={() => runReportMutation.mutate()}
             saving={saveConfigMutation.isPending}
             running={runReportMutation.isPending}
           />
+        </TabsContent>
+
+        <TabsContent value="news-feed" className="mt-0">
+          <NewsFeedPage />
         </TabsContent>
 
         <TabsContent value="watchlist" className="mt-0">

@@ -88,6 +88,10 @@ def create_app() -> FastAPI:
 
     app.state.news_listener_lock = asyncio.Lock()
 
+    @staticmethod
+    def _ensure_database(config: AppConfig) -> None:
+        init_db(config.database.url)
+
     def _build_listener_query_service(config: AppConfig) -> NewsListenerService:
         registry = ProviderRegistry()
         market_data_service = MarketDataService(config=config, registry=registry)
@@ -178,7 +182,7 @@ def create_app() -> FastAPI:
     @app.on_event("startup")
     async def startup_event() -> None:
         config = config_store.load()
-        init_db(config.database.url)
+        _ensure_database(config)
         _restart_listener_scheduler(config)
 
     @app.on_event("shutdown")
@@ -200,7 +204,7 @@ def create_app() -> FastAPI:
         current = config_store.load()
         updated = payload.to_config(current)
         saved = config_store.save(updated)
-        init_db(saved.database.url)
+        _ensure_database(saved)
         _restart_listener_scheduler(saved)
         return saved
 
@@ -225,7 +229,7 @@ def create_app() -> FastAPI:
 
         next_config = config.model_copy(update={"news_sources": [*config.news_sources, source]})
         saved = config_store.save(next_config)
-        init_db(saved.database.url)
+        _ensure_database(saved)
         created = next((item for item in saved.news_sources if item.source_id == source.source_id), source)
         return _to_news_source_view(created)
 
@@ -254,7 +258,7 @@ def create_app() -> FastAPI:
             for item in config.news_sources
         ]
         saved = config_store.save(config.model_copy(update={"news_sources": next_sources}))
-        init_db(saved.database.url)
+        _ensure_database(saved)
         item = next((row for row in saved.news_sources if row.source_id == normalized_source_id), updated)
         return _to_news_source_view(item)
 
@@ -266,7 +270,7 @@ def create_app() -> FastAPI:
         if len(next_sources) == len(config.news_sources):
             raise HTTPException(status_code=404, detail=f"News source not found: {source_id}")
         saved = config_store.save(config.model_copy(update={"news_sources": next_sources}))
-        init_db(saved.database.url)
+        _ensure_database(saved)
         _restart_listener_scheduler(saved)
         return {"deleted": True}
 
@@ -382,6 +386,7 @@ def create_app() -> FastAPI:
         limit: int = Query(20, ge=1, le=100),
     ) -> List[StockSearchResult]:
         config = config_store.load()
+        _ensure_database(config)
         service = SymbolSearchService(config=config, registry=ProviderRegistry())
         try:
             return await service.search(query=q, market=market, limit=limit)
@@ -391,6 +396,7 @@ def create_app() -> FastAPI:
     @app.get("/api/stocks/{symbol}/quote")
     async def stock_quote(symbol: str, market: str = Query(..., pattern="^(CN|HK|US)$")):
         config = config_store.load()
+        _ensure_database(config)
         service = MarketDataService(config=config, registry=ProviderRegistry())
         try:
             return await service.get_quote(symbol=symbol, market=market)
@@ -405,6 +411,7 @@ def create_app() -> FastAPI:
         limit: int = Query(300, ge=20, le=1000),
     ):
         config = config_store.load()
+        _ensure_database(config)
         service = MarketDataService(config=config, registry=ProviderRegistry())
         return await service.get_kline(symbol=symbol, market=market, interval=interval, limit=limit)
 
@@ -415,6 +422,7 @@ def create_app() -> FastAPI:
         window: str = Query("1d"),
     ):
         config = config_store.load()
+        _ensure_database(config)
         service = MarketDataService(config=config, registry=ProviderRegistry())
         return await service.get_curve(symbol=symbol, market=market, window=window)
 
@@ -466,12 +474,14 @@ def create_app() -> FastAPI:
     @app.get("/api/providers/analysis", response_model=List[AnalysisProviderView])
     async def analysis_providers() -> List[AnalysisProviderView]:
         config = config_store.load()
+        _ensure_database(config)
         service = AnalysisService(config=config, registry=ProviderRegistry())
         return service.list_providers()
 
     @app.put("/api/providers/analysis/default", response_model=AppConfig)
     async def update_default_analysis(payload: ProviderModelSelectionRequest) -> AppConfig:
         config = config_store.load()
+        _ensure_database(config)
         service = AnalysisService(config=config, registry=ProviderRegistry())
         try:
             service.ensure_provider_ready(provider_id=payload.provider_id, model=None)
@@ -496,6 +506,7 @@ def create_app() -> FastAPI:
     @app.put("/api/providers/analysis/{provider_id}/secret")
     async def put_analysis_secret(provider_id: str, payload: ProviderSecretRequest) -> dict:
         config = config_store.load()
+        _ensure_database(config)
         service = AnalysisService(config=config, registry=ProviderRegistry())
         try:
             service.put_secret(provider_id=provider_id, api_key=payload.api_key)
@@ -513,6 +524,7 @@ def create_app() -> FastAPI:
         payload: Optional[ProviderAuthStartRequest] = None,
     ) -> ProviderAuthStartResponse:
         config = config_store.load()
+        _ensure_database(config)
         service = AnalysisService(config=config, registry=ProviderRegistry())
         callback_url = str(request.url_for("analysis_auth_callback", provider_id=provider_id))
         try:
@@ -530,6 +542,7 @@ def create_app() -> FastAPI:
     )
     async def analysis_auth_status(provider_id: str) -> ProviderAuthStatusView:
         config = config_store.load()
+        _ensure_database(config)
         service = AnalysisService(config=config, registry=ProviderRegistry())
         try:
             return service.get_provider_auth_status(provider_id=provider_id)
@@ -555,6 +568,7 @@ def create_app() -> FastAPI:
             )
 
         config = config_store.load()
+        _ensure_database(config)
         service = AnalysisService(config=config, registry=ProviderRegistry())
         callback_url = str(request.url_for("analysis_auth_callback", provider_id=provider_id))
         params = {key: value for key, value in request.query_params.items()}
@@ -580,6 +594,7 @@ def create_app() -> FastAPI:
     @app.post("/api/providers/analysis/{provider_id}/auth/logout")
     async def logout_analysis_auth(provider_id: str) -> dict:
         config = config_store.load()
+        _ensure_database(config)
         service = AnalysisService(config=config, registry=ProviderRegistry())
         deleted = service.logout_provider_auth(provider_id=provider_id)
         return {"deleted": deleted}
@@ -590,6 +605,7 @@ def create_app() -> FastAPI:
     )
     async def analysis_provider_models(provider_id: str) -> ProviderModelsView:
         config = config_store.load()
+        _ensure_database(config)
         service = AnalysisService(config=config, registry=ProviderRegistry())
         try:
             return await service.list_provider_models(provider_id=provider_id)
@@ -599,6 +615,7 @@ def create_app() -> FastAPI:
     @app.delete("/api/providers/analysis/{provider_id}/secret")
     async def delete_analysis_secret(provider_id: str) -> dict:
         config = config_store.load()
+        _ensure_database(config)
         service = AnalysisService(config=config, registry=ProviderRegistry())
         deleted = service.delete_secret(provider_id=provider_id)
         return {"deleted": deleted}
@@ -606,6 +623,7 @@ def create_app() -> FastAPI:
     @app.post("/api/analysis/stocks/{symbol}/run", response_model=StockAnalysisRunView)
     async def run_stock_analysis(symbol: str, payload: StockAnalysisRunRequest) -> StockAnalysisRunView:
         config = config_store.load()
+        _ensure_database(config)
         async with HttpClient(
             timeout_seconds=config.request_timeout_seconds,
             user_agent=config.user_agent,
@@ -640,6 +658,7 @@ def create_app() -> FastAPI:
         limit: int = Query(20, ge=1, le=100),
     ) -> List[StockAnalysisHistoryItem]:
         config = config_store.load()
+        _ensure_database(config)
         service = AnalysisService(config=config, registry=ProviderRegistry())
         return service.list_history(symbol=symbol, market=market, limit=limit)
 

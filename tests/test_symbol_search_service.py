@@ -1,7 +1,9 @@
 import unittest
 
+from market_reporter.config import AppConfig
+from market_reporter.core.registry import ProviderRegistry
 from market_reporter.modules.symbol_search.schemas import StockSearchResult
-from market_reporter.modules.symbol_search.service import CompositeSymbolSearchProvider
+from market_reporter.modules.symbol_search.service import CompositeSymbolSearchProvider, SymbolSearchService
 
 
 class _FailProvider:
@@ -21,6 +23,13 @@ class _OkProvider:
                 score=0.95,
             )
         ]
+
+
+class _ResolveFallbackRegistry(ProviderRegistry):
+    def resolve(self, module: str, provider_id: str, **kwargs):  # type: ignore[override]
+        if module == "symbol_search" and provider_id == "composite":
+            return _OkProvider()
+        raise ValueError(f"provider missing: {provider_id}")
 
 
 class SymbolSearchServiceTest(unittest.IsolatedAsyncioTestCase):
@@ -44,6 +53,14 @@ class SymbolSearchServiceTest(unittest.IsolatedAsyncioTestCase):
         )
         rows = await provider.search(query="AAPL", market="US", limit=5)
         self.assertEqual(rows, [])
+
+    async def test_search_fallback_when_configured_provider_missing(self):
+        config = AppConfig()
+        config.symbol_search.default_provider = "broken-provider"
+        service = SymbolSearchService(config=config, registry=_ResolveFallbackRegistry())
+        rows = await service.search(query="AAPL", market="US", limit=5)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].symbol, "AAPL")
 
 
 if __name__ == "__main__":

@@ -49,8 +49,18 @@ class SymbolSearchService:
             or self.config.symbol_search.default_provider
             or self.config.modules.symbol_search.default_provider
         )
-        provider = self.registry.resolve(self.MODULE_NAME, chosen_provider)
-        rows = await provider.search(query=normalized_query, market=market.upper(), limit=resolved_limit)
+        provider = self._resolve_provider_with_fallback(chosen_provider=chosen_provider)
+        try:
+            rows = await provider.search(query=normalized_query, market=market.upper(), limit=resolved_limit)
+        except Exception:
+            if chosen_provider != "composite":
+                fallback = self._resolve_provider_with_fallback(chosen_provider="composite")
+                try:
+                    rows = await fallback.search(query=normalized_query, market=market.upper(), limit=resolved_limit)
+                except Exception:
+                    rows = []
+            else:
+                rows = []
         dedup: Dict[Tuple[str, str], StockSearchResult] = {}
         for item in rows:
             key = (item.symbol, item.market)
@@ -58,6 +68,13 @@ class SymbolSearchService:
             if current is None or item.score > current.score:
                 dedup[key] = item
         return sorted(dedup.values(), key=lambda item: item.score, reverse=True)[:resolved_limit]
+
+    def _resolve_provider_with_fallback(self, chosen_provider: str):
+        provider_id = (chosen_provider or "").strip() or "composite"
+        try:
+            return self.registry.resolve(self.MODULE_NAME, provider_id)
+        except Exception:
+            return self.registry.resolve(self.MODULE_NAME, "composite")
 
 
 class CompositeSymbolSearchProvider:

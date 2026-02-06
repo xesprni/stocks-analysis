@@ -39,14 +39,17 @@ class MarketDataService:
         )
 
     def _provider(self, provider_id: Optional[str] = None):
-        target = provider_id or self.config.modules.market_data.default_provider
-        return self.registry.resolve(self.MODULE_NAME, target)
+        target = (provider_id or self.config.modules.market_data.default_provider or "").strip() or "composite"
+        try:
+            return self.registry.resolve(self.MODULE_NAME, target)
+        except Exception:
+            return self.registry.resolve(self.MODULE_NAME, "composite")
 
     async def get_quote(self, symbol: str, market: str, provider_id: Optional[str] = None) -> Quote:
-        normalized_symbol = normalize_symbol(symbol, market)
-        provider = self._provider(provider_id=provider_id)
         resolved_market = market.upper()
+        normalized_symbol = normalize_symbol(symbol, market)
         try:
+            provider = self._provider(provider_id=provider_id)
             quote = await provider.get_quote(symbol=normalized_symbol, market=resolved_market)
             return quote
         except Exception:
@@ -75,8 +78,8 @@ class MarketDataService:
         provider_id: Optional[str] = None,
     ) -> List[KLineBar]:
         normalized_symbol = normalize_symbol(symbol, market)
-        provider = self._provider(provider_id=provider_id)
         try:
+            provider = self._provider(provider_id=provider_id)
             rows = await provider.get_kline(
                 symbol=normalized_symbol,
                 market=market.upper(),
@@ -115,8 +118,8 @@ class MarketDataService:
         provider_id: Optional[str] = None,
     ) -> List[CurvePoint]:
         normalized_symbol = normalize_symbol(symbol, market)
-        provider = self._provider(provider_id=provider_id)
         try:
+            provider = self._provider(provider_id=provider_id)
             rows = await provider.get_curve(symbol=normalized_symbol, market=market.upper(), window=window)
             with session_scope(self.config.database.url) as session:
                 repo = MarketDataRepo(session)

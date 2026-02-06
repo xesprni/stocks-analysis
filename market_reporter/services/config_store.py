@@ -5,7 +5,12 @@ from typing import Any, Dict
 
 import yaml
 
-from market_reporter.config import AppConfig, default_app_config, normalize_source_id
+from market_reporter.config import (
+    AppConfig,
+    default_analysis_providers,
+    default_app_config,
+    normalize_source_id,
+)
 
 
 class ConfigStore:
@@ -25,8 +30,9 @@ class ConfigStore:
         if not isinstance(raw, dict):
             raise ValueError(f"Invalid config file content: {self.config_path}")
         config = AppConfig.model_validate(raw).normalized()
+        config = self._normalize_analysis_providers(config)
         config.ensure_data_root()
-        if self._should_rewrite_news_sources(raw):
+        if self._should_rewrite_news_sources(raw) or self._should_rewrite_analysis(raw, config):
             self.save(config)
         return config
 
@@ -68,4 +74,68 @@ class ConfigStore:
             if normalized_id in seen:
                 return True
             seen.add(normalized_id)
+        return False
+
+    @staticmethod
+    def _normalize_analysis_providers(config: AppConfig) -> AppConfig:
+        providers = []
+        seen: set[str] = set()
+        for provider in config.analysis.providers:
+            provider_id = provider.provider_id.strip()
+            if not provider_id or provider_id in seen:
+                continue
+            seen.add(provider_id)
+            providers.append(provider.model_copy(update={"provider_id": provider_id}))
+
+        for provider in default_analysis_providers():
+            if provider.provider_id in seen:
+                continue
+            providers.append(provider)
+            seen.add(provider.provider_id)
+
+        analysis = config.analysis.model_copy(update={"providers": providers})
+        provider_map = {provider.provider_id: provider for provider in providers}
+        if analysis.default_provider not in provider_map:
+            fallback_provider = next(
+                (provider.provider_id for provider in providers if provider.enabled),
+                providers[0].provider_id if providers else "mock",
+            )
+            analysis = analysis.model_copy(update={"default_provider": fallback_provider})
+
+        default_provider = provider_map.get(analysis.default_provider)
+        if default_provider is not None and default_provider.models:
+            auth_mode = default_provider.auth_mode or (
+                "chatgpt_oauth" if default_provider.type == "codex_app_server" else "api_key"
+            )
+            if auth_mode != "chatgpt_oauth" and analysis.default_model not in default_provider.models:
+                analysis = analysis.model_copy(update={"default_model": default_provider.models[0]})
+            if auth_mode == "chatgpt_oauth" and not analysis.default_model:
+                analysis = analysis.model_copy(update={"default_model": default_provider.models[0]})
+
+        return config.model_copy(update={"analysis": analysis})
+
+    @staticmethod
+    def _should_rewrite_analysis(raw_config: Dict[str, Any], normalized_config: AppConfig) -> bool:
+        raw_analysis = raw_config.get("analysis")
+        if not isinstance(raw_analysis, dict):
+            return True
+        raw_providers = raw_analysis.get("providers")
+        if not isinstance(raw_providers, list):
+            return True
+        raw_ids = []
+        for row in raw_providers:
+            if not isinstance(row, dict):
+                return True
+            provider_id = row.get("provider_id")
+            if not isinstance(provider_id, str) or not provider_id.strip():
+                return True
+            raw_ids.append(provider_id.strip())
+
+        normalized_ids = [provider.provider_id for provider in normalized_config.analysis.providers]
+        if raw_ids != normalized_ids:
+            return True
+        if raw_analysis.get("default_provider") != normalized_config.analysis.default_provider:
+            return True
+        if raw_analysis.get("default_model") != normalized_config.analysis.default_model:
+            return True
         return False
