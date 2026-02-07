@@ -21,8 +21,8 @@ modules:
   symbol_search:
     default_provider: composite
 analysis:
-  default_provider: mock
-  default_model: market-default
+  default_provider: codex_app_server
+  default_model: gpt-5.1-codex-max
   providers:
   - provider_id: mock
     type: mock

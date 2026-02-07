@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   BellRing,
   ChartCandlestick,
@@ -12,12 +12,15 @@ import {
   Sun,
 } from "lucide-react";
 
-import { api, type AppConfig, type ReportSummary, type UIOptions } from "@/api/client";
+import { api, type AppConfig } from "@/api/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useNotifier } from "@/components/ui/notifier";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { toErrorMessage, useAppQueries } from "@/hooks/useAppQueries";
+import { useAppMutations } from "@/hooks/useAppMutations";
+import { useProviderActions } from "@/hooks/useProviderActions";
 import { AlertCenterPage } from "@/pages/AlertCenter";
 import { DashboardPage } from "@/pages/Dashboard";
 import { NewsFeedPage } from "@/pages/NewsFeed";
@@ -66,30 +69,11 @@ const emptyConfig: AppConfig = {
   news_sources: [],
 };
 
-const emptyOptions: UIOptions = {
-  markets: ["ALL", "CN", "HK", "US"],
-  intervals: ["1m", "5m", "1d"],
-  timezones: ["Asia/Shanghai", "UTC"],
-  news_providers: ["rss"],
-  fund_flow_providers: ["eastmoney", "fred"],
-  market_data_providers: ["composite", "akshare", "yfinance"],
-  analysis_providers: ["mock", "openai_compatible", "codex_app_server"],
-  analysis_models_by_provider: {},
-  listener_threshold_presets: [1, 1.5, 2, 3],
-  listener_intervals: [5, 10, 15, 30],
-};
-
-function toErrorMessage(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message;
-  }
-  return String(error ?? "Unknown error");
-}
-
 export default function App() {
   const queryClient = useQueryClient();
   const notifier = useNotifier();
 
+  // ---- UI state ----
   const [configDraft, setConfigDraft] = useState<AppConfig>(emptyConfig);
   const [selectedRunId, setSelectedRunId] = useState<string>("");
   const [errorMessage, setErrorMessage] = useState("");
@@ -106,203 +90,48 @@ export default function App() {
     }
     return false;
   });
-  const queryErrorCache = useRef<Record<string, string>>({});
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", dark);
     localStorage.setItem("theme", dark ? "dark" : "light");
   }, [dark]);
 
-  const configQuery = useQuery({ queryKey: ["config"], queryFn: api.getConfig });
-  const uiOptionsQuery = useQuery({ queryKey: ["ui-options"], queryFn: api.getUiOptions });
-  const reportsQuery = useQuery({ queryKey: ["reports"], queryFn: api.listReports });
-  const reportTasksQuery = useQuery({
-    queryKey: ["report-tasks"],
-    queryFn: api.listReportTasks,
-    refetchInterval: (query) => {
-      const data = query.state.data;
-      if (data?.some((t) => t.status === "PENDING" || t.status === "RUNNING")) {
-        return 2000;
-      }
-      return 30000;
-    },
-  });
-  const watchlistQuery = useQuery({ queryKey: ["watchlist"], queryFn: api.listWatchlist });
-  const newsSourcesQuery = useQuery({ queryKey: ["news-sources"], queryFn: api.listNewsSources });
-  const providersQuery = useQuery({ queryKey: ["providers"], queryFn: api.listAnalysisProviders });
-  const listenerRunsQuery = useQuery({
-    queryKey: ["news-listener-runs"],
-    queryFn: () => api.listNewsListenerRuns(50),
-    refetchInterval: 15000,
-  });
-  const alertsQuery = useQuery({
-    queryKey: ["news-alerts", alertStatus, alertMarket, alertSymbol],
-    queryFn: () =>
-      api.listNewsAlerts({
-        status: alertStatus,
-        market: alertMarket === "ALL" ? "" : alertMarket,
-        symbol: alertSymbol,
-        limit: 50,
-      }),
-    refetchInterval: 15000,
-  });
-  const detailQuery = useQuery({
-    queryKey: ["report-detail", selectedRunId],
-    queryFn: () => api.getReport(selectedRunId),
-    enabled: Boolean(selectedRunId),
-  });
-
-  const notifyQueryError = useCallback(
-    (key: string, title: string, error: unknown) => {
-      if (!error) {
-        delete queryErrorCache.current[key];
-        return;
-      }
-      const message = toErrorMessage(error);
-      if (queryErrorCache.current[key] === message) {
-        return;
-      }
-      queryErrorCache.current[key] = message;
-      setErrorMessage(message);
-      notifier.error(title, message, { dedupeKey: `query-${key}` });
-    },
-    [notifier]
+  // ---- hooks ----
+  const {
+    configQuery,
+    reportsQuery,
+    reportTasksQuery,
+    watchlistQuery,
+    newsSourcesQuery,
+    providersQuery,
+    listenerRunsQuery,
+    alertsQuery,
+    detailQuery,
+    sortedReports,
+    options,
+  } = useAppQueries(
+    configDraft,
+    setConfigDraft,
+    selectedRunId,
+    setSelectedRunId,
+    setErrorMessage,
+    alertStatus,
+    alertMarket,
+    alertSymbol,
   );
 
-  useEffect(() => {
-    notifyQueryError("config", "加载配置失败", configQuery.error);
-  }, [configQuery.error, notifyQueryError]);
-
-  useEffect(() => {
-    notifyQueryError("ui-options", "加载下拉配置失败", uiOptionsQuery.error);
-  }, [uiOptionsQuery.error, notifyQueryError]);
-
-  useEffect(() => {
-    notifyQueryError("reports", "加载报告列表失败", reportsQuery.error);
-  }, [reportsQuery.error, notifyQueryError]);
-
-  useEffect(() => {
-    notifyQueryError("report-tasks", "加载报告任务失败", reportTasksQuery.error);
-  }, [reportTasksQuery.error, notifyQueryError]);
-
-  useEffect(() => {
-    notifyQueryError("report-detail", "加载报告详情失败", detailQuery.error);
-  }, [detailQuery.error, notifyQueryError]);
-
-  useEffect(() => {
-    notifyQueryError("watchlist", "加载 Watchlist 失败", watchlistQuery.error);
-  }, [watchlistQuery.error, notifyQueryError]);
-
-  useEffect(() => {
-    notifyQueryError("news-sources", "加载新闻来源失败", newsSourcesQuery.error);
-  }, [newsSourcesQuery.error, notifyQueryError]);
-
-  useEffect(() => {
-    notifyQueryError("providers", "加载 Provider 列表失败", providersQuery.error);
-  }, [providersQuery.error, notifyQueryError]);
-
-  useEffect(() => {
-    notifyQueryError("listener-runs", "加载监听运行记录失败", listenerRunsQuery.error);
-  }, [listenerRunsQuery.error, notifyQueryError]);
-
-  useEffect(() => {
-    notifyQueryError("alerts", "加载告警列表失败", alertsQuery.error);
-  }, [alertsQuery.error, notifyQueryError]);
-
-  useEffect(() => {
-    if (configQuery.data) {
-      setConfigDraft(configQuery.data);
-    }
-  }, [configQuery.data]);
-
-  const saveConfigMutation = useMutation({
-    mutationFn: async () =>
-      api.updateConfig({
-        ...configDraft,
-        news_sources: newsSourcesQuery.data ?? configDraft.news_sources,
-      }),
-    onSuccess: async (nextConfig) => {
-      setConfigDraft(nextConfig);
-      await queryClient.invalidateQueries({ queryKey: ["config"] });
-      setErrorMessage("");
-      notifier.success("配置已保存");
-    },
-    onError: (error) => {
-      const message = toErrorMessage(error);
-      setErrorMessage(message);
-      notifier.error("保存配置失败", message);
-    },
-  });
-
-  const runReportMutation = useMutation({
-    mutationFn: async () => {
-      const task = await api.runReportAsync({
-        news_limit: configDraft.news_limit,
-        flow_periods: configDraft.flow_periods,
-        timezone: configDraft.timezone,
-        provider_id: configDraft.analysis.default_provider,
-        model: configDraft.analysis.default_model,
-      });
-
-      const deadline = Date.now() + 15 * 60 * 1000;
-      while (Date.now() < deadline) {
-        const snapshot = await api.getReportTask(task.task_id);
-        if (snapshot.status === "SUCCEEDED") {
-          if (snapshot.result) {
-            return snapshot.result;
-          }
-          throw new Error("报告任务已完成，但结果为空。");
-        }
-        if (snapshot.status === "FAILED") {
-          throw new Error(snapshot.error_message || "报告任务失败。");
-        }
-        await new Promise<void>((resolve) => window.setTimeout(resolve, 2000));
-      }
-      throw new Error("报告任务执行超时，请稍后在 Reports 页面检查结果。");
-    },
-    onMutate: () => {
-      notifier.info("报告任务已提交", "后台正在生成，请稍候。");
-      void queryClient.invalidateQueries({ queryKey: ["report-tasks"] });
-    },
-    onSuccess: async (result) => {
-      await queryClient.invalidateQueries({ queryKey: ["reports"] });
-      await queryClient.invalidateQueries({ queryKey: ["report-tasks"] });
-      setSelectedRunId(result.summary.run_id);
-      setWarningMessage(result.warnings[0] || "");
-      setErrorMessage("");
-      if (result.warnings[0]) {
-        notifier.warning("报告已生成（存在告警）", result.warnings[0]);
-      } else {
-        notifier.success("报告已生成");
-      }
-    },
-    onError: (error) => {
-      setWarningMessage("");
-      const message = toErrorMessage(error);
-      setErrorMessage(message);
-      notifier.error("生成报告失败", message);
-    },
-  });
-
-  const sortedReports = useMemo(
-    () => [...(reportsQuery.data ?? [])].sort((a: ReportSummary, b: ReportSummary) => b.run_id.localeCompare(a.run_id)),
-    [reportsQuery.data]
+  const { saveConfigMutation, runReportMutation } = useAppMutations(
+    configDraft,
+    setConfigDraft,
+    setSelectedRunId,
+    setErrorMessage,
+    setWarningMessage,
+    newsSourcesQuery,
   );
-  const options = uiOptionsQuery.data ?? emptyOptions;
 
-  useEffect(() => {
-    if (!sortedReports.length) {
-      if (selectedRunId) {
-        setSelectedRunId("");
-      }
-      return;
-    }
-    const exists = sortedReports.some((item) => item.run_id === selectedRunId);
-    if (!exists) {
-      setSelectedRunId(sortedReports[0].run_id);
-    }
-  }, [sortedReports, selectedRunId]);
+  const { loadAnalysisModels, connectProviderAuth, disconnectProviderAuth } = useProviderActions();
 
+  // ---- nav items ----
   const navItems = [
     { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
     { key: "news-feed", label: "News Feed", icon: Newspaper },
@@ -312,66 +141,6 @@ export default function App() {
     { key: "providers", label: "Providers", icon: Settings2 },
     { key: "reports", label: "Reports", icon: ClipboardList },
   ];
-
-  const sleep = useCallback((ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms)), []);
-  const loadAnalysisModels = useCallback(async (providerId: string) => {
-    const payload = await api.listAnalysisProviderModels(providerId);
-    return payload.models;
-  }, []);
-
-  const connectProviderAuth = useCallback(
-    async (providerId: string) => {
-      const preStatus = await api.getAnalysisProviderAuthStatus(providerId).catch(() => null);
-      if (preStatus?.connected) {
-        await queryClient.invalidateQueries({ queryKey: ["providers"] });
-        notifier.success("Provider 已连接", providerId);
-        return;
-      }
-
-      const started = await api.startAnalysisProviderAuth(providerId, {
-        redirect_to: window.location.href,
-      });
-      const popup = window.open(started.auth_url, "_blank", "noopener,noreferrer,width=520,height=780");
-      if (!popup) {
-        notifier.warning("登录窗口被拦截", "请允许浏览器弹窗后重试。");
-      } else {
-        notifier.info("已打开登录窗口", "完成登录后会自动刷新状态。");
-      }
-
-      const deadline = Date.now() + 90_000;
-      let connected = false;
-      while (Date.now() < deadline) {
-        await sleep(2000);
-        const status = await api.getAnalysisProviderAuthStatus(providerId);
-        if (status.connected) {
-          connected = true;
-          break;
-        }
-      }
-
-      await queryClient.invalidateQueries({ queryKey: ["providers"] });
-      if (connected) {
-        const modelPayload = await api.listAnalysisProviderModels(providerId).catch(() => null);
-        const modelHint =
-          modelPayload && modelPayload.models.length
-            ? `可用模型: ${modelPayload.models.slice(0, 3).join(", ")}`
-            : "Provider 已连接";
-        notifier.success("登录成功", modelHint);
-      } else {
-        notifier.warning("登录状态未确认", "请完成授权后点击 Connect 再次刷新。");
-      }
-    },
-    [notifier, queryClient, sleep]
-  );
-
-  const disconnectProviderAuth = useCallback(
-    async (providerId: string) => {
-      await api.logoutAnalysisProviderAuth(providerId);
-      await queryClient.invalidateQueries({ queryKey: ["providers"] });
-      notifier.success("已断开 Provider 登录", providerId);
-    },
-    [notifier, queryClient]
-  );
 
   return (
     <main className="mx-auto w-full max-w-[1920px] px-4 py-6 sm:px-6 lg:px-8 xl:px-10">
