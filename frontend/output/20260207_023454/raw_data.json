@@ -1,0 +1,755 @@
+{
+  "generated_at": "2026-02-07T02:29:52+08:00",
+  "provider_id": "codex_app_server",
+  "model": "gpt-5.1-codex-max",
+  "analysis": {
+    "summary": "当前缺乏实时报价与K线，暂以中性观望，等待关键价格与资金信号确认。",
+    "sentiment": "neutral",
+    "key_levels": [
+      "需获取S&P 500现价；仅当日线有效站上5000点才考虑增配全球权益",
+      "VIX若回落至15以下视作风险偏好改善，升破20需迅速降杠杆",
+      "美元兑人民币若跌破7.30触发外资流出担忧，收复7.18有利风险资产"
+    ],
+    "risks": [
+      "缺乏实时行情与技术位，结论可能失真",
+      "美联储/英央行/欧洲央行政策意外引发波动",
+      "地缘或宏观突发事件导致避险升温"
+    ],
+    "action_items": [
+      "立即补充主要股指、VIX、汇率等实时数据后再做方向判断",
+      "跟踪2-3月央行会议与讲话，提前设定加减仓条件",
+      "等待陆股通等北向资金恢复并出现连续净流入再考虑抄底A股相关资产",
+      "在关键位未确认前保持低仓位，必要时用股指或波动率期权对冲下行"
+    ],
+    "confidence": 0.22,
+    "markdown": "- 数据缺口：无最新报价、K线与成交量，北向净流入近一周为0，需先补齐行情后再定仓位。\n- 宏观信号：美联储官员仍强调通胀可信度，英央行按兵不动但市场预期后续降息，欧洲关注Lagarde讲话；短期风险偏好受制于政策不确定。\n- 事件侧：美股与欧股财报喜忧参半，科技与医药（如LLY、SMCI）带来结构性多头情绪，但广谱指数确认需价格突破关口。\n- 操作框架：以S&P 500日线5000、VIX 15/20、美元兑人民币7.30/7.18作为风控与进场阈值；在阈值未触发前控制仓位并保持对冲。",
+    "raw": {
+      "summary": "当前缺乏实时报价与K线，暂以中性观望，等待关键价格与资金信号确认。",
+      "sentiment": "neutral",
+      "key_levels": [
+        "需获取S&P 500现价；仅当日线有效站上5000点才考虑增配全球权益",
+        "VIX若回落至15以下视作风险偏好改善，升破20需迅速降杠杆",
+        "美元兑人民币若跌破7.30触发外资流出担忧，收复7.18有利风险资产"
+      ],
+      "risks": [
+        "缺乏实时行情与技术位，结论可能失真",
+        "美联储/英央行/欧洲央行政策意外引发波动",
+        "地缘或宏观突发事件导致避险升温"
+      ],
+      "action_items": [
+        "立即补充主要股指、VIX、汇率等实时数据后再做方向判断",
+        "跟踪2-3月央行会议与讲话，提前设定加减仓条件",
+        "等待陆股通等北向资金恢复并出现连续净流入再考虑抄底A股相关资产",
+        "在关键位未确认前保持低仓位，必要时用股指或波动率期权对冲下行"
+      ],
+      "confidence": 0.22,
+      "markdown": "- 数据缺口：无最新报价、K线与成交量，北向净流入近一周为0，需先补齐行情后再定仓位。\n- 宏观信号：美联储官员仍强调通胀可信度，英央行按兵不动但市场预期后续降息，欧洲关注Lagarde讲话；短期风险偏好受制于政策不确定。\n- 事件侧：美股与欧股财报喜忧参半，科技与医药（如LLY、SMCI）带来结构性多头情绪，但广谱指数确认需价格突破关口。\n- 操作框架：以S&P 500日线5000、VIX 15/20、美元兑人民币7.30/7.18作为风控与进场阈值；在阈值未触发前控制仓位并保持对冲。"
+    }
+  },
+  "news_items": [
+    {
+      "source_id": "yahoo-finance-top-stories",
+      "category": "finance",
+      "source": "Yahoo Finance Top Stories",
+      "title": "LATAM Airlines Group Q4 Earnings Call Highlights",
+      "link": "https://finance.yahoo.com/news/latam-airlines-group-q4-earnings-082658421.html",
+      "published": "2026-02-05T08:26:58Z"
+    },
+    {
+      "source_id": "yahoo-finance-top-stories",
+      "category": "finance",
+      "source": "Yahoo Finance Top Stories",
+      "title": "Kevin Warsh's tenure as Fed governor shaped by inflation concerns, central bank credibility",
+      "link": "https://finance.yahoo.com/news/kevin-warshs-tenure-as-fed-governor-shaped-by-inflation-concerns-central-bank-credibility-182659155.html",
+      "published": "2026-02-04T18:26:59Z"
+    },
+    {
+      "source_id": "yahoo-finance-top-stories",
+      "category": "finance",
+      "source": "Yahoo Finance Top Stories",
+      "title": "Anthropic's AI push raises analyst concerns over Indian IT services revenues",
+      "link": "https://finance.yahoo.com/news/anthropics-ai-push-raises-analyst-080714765.html",
+      "published": "2026-02-05T08:07:14Z"
+    },
+    {
+      "source_id": "yahoo-finance-top-stories",
+      "category": "finance",
+      "source": "Yahoo Finance Top Stories",
+      "title": "Can Lagarde Push the EUR/USD Higher? (Part 2)",
+      "link": "https://finance.yahoo.com/news/lagarde-push-eur-usd-higher-085244606.html",
+      "published": "2026-02-05T08:52:44Z"
+    },
+    {
+      "source_id": "yahoo-finance-top-stories",
+      "category": "finance",
+      "source": "Yahoo Finance Top Stories",
+      "title": "Is It Too Late to Do a Roth Conversion at 65 With $1.2M in an IRA and Social Security?",
+      "link": "https://finance.yahoo.com/news/im-65-years-old-1-123000423.html",
+      "published": "2026-02-05T09:00:00Z"
+    },
+    {
+      "source_id": "yahoo-finance-top-stories",
+      "category": "finance",
+      "source": "Yahoo Finance Top Stories",
+      "title": "Market Update: EL, SWKS, TSN, KKR",
+      "link": "https://finance.yahoo.com/research/reports/ARGUS_46086_MarketUpdate_1770399570000?yptr=yahoo&ncid=yahooproperties_plusresear_nm5q6ze1cei",
+      "published": "2026-02-06T17:39:30Z"
+    },
+    {
+      "source_id": "yahoo-finance-top-stories",
+      "category": "finance",
+      "source": "Yahoo Finance Top Stories",
+      "title": "KKR Real Estate Finance Trust Q4 Earnings Call Highlights",
+      "link": "https://finance.yahoo.com/news/kkr-real-estate-finance-trust-082658361.html",
+      "published": "2026-02-05T08:26:58Z"
+    },
+    {
+      "source_id": "yahoo-finance-top-stories",
+      "category": "finance",
+      "source": "Yahoo Finance Top Stories",
+      "title": "Bank of England stands pat on interest rates, but cuts expected ahead",
+      "link": "https://finance.yahoo.com/news/bank-england-set-keep-uk-074158279.html",
+      "published": "2026-02-05T07:41:58Z"
+    },
+    {
+      "source_id": "yahoo-finance-top-stories",
+      "category": "finance",
+      "source": "Yahoo Finance Top Stories",
+      "title": "Volvo Cars fourth-quarter profits tumble on tariff hit, challenging market",
+      "link": "https://finance.yahoo.com/news/volvo-cars-fourth-quarter-profits-074111445.html",
+      "published": "2026-02-05T07:41:11Z"
+    },
+    {
+      "source_id": "yahoo-finance-top-stories",
+      "category": "finance",
+      "source": "Yahoo Finance Top Stories",
+      "title": "Taiwan's ASE sees its advanced packaging business doubling to $3.2 billion in 2026",
+      "link": "https://finance.yahoo.com/news/taiwans-ase-sees-advanced-packaging-073531270.html",
+      "published": "2026-02-05T07:35:31Z"
+    },
+    {
+      "source_id": "yahoo-finance-top-stories",
+      "category": "finance",
+      "source": "Yahoo Finance Top Stories",
+      "title": "Graphic Packaging (GPK) Soars 10.3% on Bargain-Hunting",
+      "link": "https://finance.yahoo.com/news/graphic-packaging-gpk-soars-10-072832552.html",
+      "published": "2026-02-05T07:28:32Z"
+    },
+    {
+      "source_id": "yahoo-finance-top-stories",
+      "category": "finance",
+      "source": "Yahoo Finance Top Stories",
+      "title": "Lear Q4 Earnings Call Highlights",
+      "link": "https://finance.yahoo.com/news/lear-q4-earnings-call-highlights-082658935.html",
+      "published": "2026-02-05T08:26:58Z"
+    },
+    {
+      "source_id": "yahoo-finance-top-stories",
+      "category": "finance",
+      "source": "Yahoo Finance Top Stories",
+      "title": "Old Dominion (ODFL) Climbs 9.89% as Morgan Stanley Hikes PT",
+      "link": "https://finance.yahoo.com/news/old-dominion-odfl-climbs-9-072842307.html",
+      "published": "2026-02-05T07:28:42Z"
+    },
+    {
+      "source_id": "yahoo-finance-top-stories",
+      "category": "finance",
+      "source": "Yahoo Finance Top Stories",
+      "title": "Eli Lilly (LLY) Skyrockets as Profits Soar 95%",
+      "link": "https://finance.yahoo.com/news/eli-lilly-lly-skyrockets-profits-072824114.html",
+      "published": "2026-02-05T07:28:24Z"
+    },
+    {
+      "source_id": "yahoo-finance-top-stories",
+      "category": "finance",
+      "source": "Yahoo Finance Top Stories",
+      "title": "Olin (OLIN) Climbs 11% on Strong Sales",
+      "link": "https://finance.yahoo.com/news/olin-olin-climbs-11-strong-072807438.html",
+      "published": "2026-02-05T07:28:07Z"
+    },
+    {
+      "source_id": "yahoo-finance-top-stories",
+      "category": "finance",
+      "source": "Yahoo Finance Top Stories",
+      "title": "Sunrun (RUN) Soars 12% as Firm Hints at Strong 2025, Customer Base Expands 430%",
+      "link": "https://finance.yahoo.com/news/sunrun-run-soars-12-firm-072757065.html",
+      "published": "2026-02-05T07:27:57Z"
+    },
+    {
+      "source_id": "yahoo-finance-top-stories",
+      "category": "finance",
+      "source": "Yahoo Finance Top Stories",
+      "title": "Eli Lilly and Company Q4 Earnings Call Highlights",
+      "link": "https://finance.yahoo.com/news/eli-lilly-company-q4-earnings-082658839.html",
+      "published": "2026-02-05T08:26:58Z"
+    },
+    {
+      "source_id": "yahoo-finance-top-stories",
+      "category": "finance",
+      "source": "Yahoo Finance Top Stories",
+      "title": "Super Micro (SMCI) Gets 13% Boost as Sales, Outlook Soar",
+      "link": "https://finance.yahoo.com/news/super-micro-smci-gets-13-072738580.html",
+      "published": "2026-02-05T07:27:38Z"
+    },
+    {
+      "source_id": "yahoo-finance-top-stories",
+      "category": "finance",
+      "source": "Yahoo Finance Top Stories",
+      "title": "Enphase (ENPH) Jumps 38.6% on Strong Profits",
+      "link": "https://finance.yahoo.com/news/enphase-enph-jumps-38-6-072730417.html",
+      "published": "2026-02-05T07:27:30Z"
+    },
+    {
+      "source_id": "yahoo-finance-top-stories",
+      "category": "finance",
+      "source": "Yahoo Finance Top Stories",
+      "title": "SolarEdge (SEDG) Climbs 13% as Peers Post Strong Earnings",
+      "link": "https://finance.yahoo.com/news/solaredge-sedg-climbs-13-peers-072745771.html",
+      "published": "2026-02-05T07:27:45Z"
+    },
+    {
+      "source_id": "google-news-cn-finance",
+      "category": "finance",
+      "source": "Google News CN Finance",
+      "title": "亚太股市多数走弱，“TACO交易”再度上演 - 21财经",
+      "link": "https://news.google.com/rss/articles/CBMijwFBVV95cUxPWHlsYWw4SEVsVk1GOUFhaW1rakdkYUlBeDN6OUJRakUwXzdtTXpGUWUyLWR6TVpMTThhOHpTZ2hRXzl5VmNjc0pyVlFIOVdSdUpQcjBMSjBESk9fSlBfQ1RjekRPampBWWxKSjVuRlU2RTRtU3Z6WDhYNDJzRXJ5TXIzUTdhQnZCVnN5SGlocw?oc=5",
+      "published": "Mon, 13 Oct 2025 07:00:00 GMT"
+    },
+    {
+      "source_id": "google-news-cn-finance",
+      "category": "finance",
+      "source": "Google News CN Finance",
+      "title": "特朗普关税：股市震荡之后跟随而来的是全球经济衰退？ - BBC",
+      "link": "https://news.google.com/rss/articles/CBMiZkFVX3lxTE1UMWlPUy1RaXE0eFVZT2NTR21DVEpJcGdSLU5hUnlaTVFVWXdBSWpaRWlGZ2NhMnpVVURuc2hSeExLY1phWmdWV2Nxa29ya0cxQ2ZvZkppckpVZXdlaWQzTm8wWEs1UdIBa0FVX3lxTFA5MFBBMGJydktRbXBqQjJZS2lmd3B6Q3FIQ1NLZDNraWNKcG9ZMmRVdnFSZm9sZTZRcDM0N0l4bTlMMjB0aEowekxYTEQtNmdOY2RkcmhQclRqdUV0RGVZUFdoMkhrQm41ZUVj?oc=5",
+      "published": "Tue, 08 Apr 2025 07:00:00 GMT"
+    },
+    {
+      "source_id": "google-news-cn-finance",
+      "category": "finance",
+      "source": "Google News CN Finance",
+      "title": "大陆军演，台湾股市为何上涨 - eeo.com.cn",
+      "link": "https://news.google.com/rss/articles/CBMiV0FVX3lxTFBZcVhwR1c5RG1SMTNqLXJ5UDlfZlNpSFBFM1lGazJQcmxCblE5bnV6ZEdsaGJLVG9mZDgtMXZFaHF4ZnRlQzNIbnRScHV3TmpuMkRxZG50TQ?oc=5",
+      "published": "Wed, 02 Apr 2025 07:00:00 GMT"
+    },
+    {
+      "source_id": "google-news-cn-finance",
+      "category": "finance",
+      "source": "Google News CN Finance",
+      "title": "专家：持续稳定股市 为经济高质量发展提供支撑 - 新浪网",
+      "link": "https://news.google.com/rss/articles/CBMiqwJBVV95cUxOMEtUbVM2MjBKZ1ZUdDRkMUdNRHg4M0EwcTVMVnB5MVM2UmN6R0dkRy1GZFhCbk11bWJWWGZxa2ptUTNIa1A1eFp1Q2RibktYWk5kN3FmZWN6WHBRVGlxM2FhOTFwcHFuelBJQ3kxemVOY2lRY1BFd3NROUE1TEVONlIxNFhIT1NyQktiNWhzQnJZYjBvTkVIdUx2YVRoMWlRUlZ2WlYtRFVYbTJlQnh3MEE5alRXRExPcUxWMFJmUXZLcWc0NXNsTTR5cFB0aFFjeHpfX2UzN3lERGNmUHprWEV4RlZrbkVXV3N2OGplMVpieHZLOF9kYld1T2NWWXdiSXEwZ1REVmU0Qmw3T242QWduc1l0Q09YZ1BqODZMeWR1VGkxbXFPVVJMcw?oc=5",
+      "published": "Sat, 19 Apr 2025 07:00:00 GMT"
+    },
+    {
+      "source_id": "google-news-cn-finance",
+      "category": "finance",
+      "source": "Google News CN Finance",
+      "title": "投资人士观望重要经济数据 美国股市下跌 - 8视界",
+      "link": "https://news.google.com/rss/articles/CBMiVEFVX3lxTE5zZmZmYTF0ZnJxNkFTSDZLS08xZUxKdzViUmV4ZmlORmd4U0N3MnNqTDVQYlo0V2dVTUVUSkhiUTY3aHc1WkpOTkJyLXZSU3NMaUFReg?oc=5",
+      "published": "Tue, 16 Dec 2025 08:00:00 GMT"
+    },
+    {
+      "source_id": "google-news-cn-finance",
+      "category": "finance",
+      "source": "Google News CN Finance",
+      "title": "财经观察｜访客倍增股市回暖 香港经济近期亮点频现 - 新华网",
+      "link": "https://news.google.com/rss/articles/CBMidkFVX3lxTE5vNUhYd0JtMThvd3pJSW9RQU54WVdfWFp0ekFuTzZFZ3NlSDRCMDBlalU0WWtpaVExSW1IUF9LR1pRc0dlRldCa0ZsS0Z1aHk2QTRBbldjOFhNdmZWcHFOdHhTdGExQWFZSUJuZFNDZEd0Z0E5Q0E?oc=5",
+      "published": "Fri, 03 May 2024 07:00:00 GMT"
+    },
+    {
+      "source_id": "google-news-cn-finance",
+      "category": "finance",
+      "source": "Google News CN Finance",
+      "title": "「财经分析」日本经济疲软，为何股市能再创新高？ - 中国经济网",
+      "link": "https://news.google.com/rss/articles/CBMiZkFVX3lxTE1vWG5GeVNJbmRpbFcwN2F0Z3NNdEE1YWtxNHRiOE00WDhtVVZvZi03d0dtaHN4aEdWZTJ6TVdMV3pSdlc3VnVPdVhyS2diNndRUE03b0kxaU5CaEZHUjJxcTMwbDQ1QQ?oc=5",
+      "published": "Fri, 05 Jul 2024 07:00:00 GMT"
+    },
+    {
+      "source_id": "google-news-cn-finance",
+      "category": "finance",
+      "source": "Google News CN Finance",
+      "title": "从股市谈中国财经政策效应 - 财新",
+      "link": "https://news.google.com/rss/articles/CBMiYkFVX3lxTE13YW5YMkVtWHZlOXl2TXpEeVU5ZGI2NXZDUzBPM3JZdXZUeUU0MFVtVG0zcjEyOFVialNjVHkzX2Vrcy1QWjA1ZjBIY0tGTm92OWdHODhYNHUxRWZxYmtfd1VB?oc=5",
+      "published": "Thu, 21 Nov 2024 08:00:00 GMT"
+    },
+    {
+      "source_id": "google-news-cn-finance",
+      "category": "finance",
+      "source": "Google News CN Finance",
+      "title": "股市牛vs经济熊 中国股市有泡沫？ - 财经 - 即时财经 - Sin Chew Daily",
+      "link": "https://news.google.com/rss/articles/CBMiZ0FVX3lxTE5ZNVJkSGJ0clk1bmg4OEhabUtLQXlNOWNyZUZNSlVWbzVQcWU5RUdocDVIR3RRcnFBV1pULXpMWDNieXFGcnp0QkhCUEgybHFsc3VQcnZWaVZ5X1I5NlpoX3J6em84aDA?oc=5",
+      "published": "Mon, 25 Aug 2025 07:00:00 GMT"
+    },
+    {
+      "source_id": "google-news-cn-finance",
+      "category": "finance",
+      "source": "Google News CN Finance",
+      "title": "秒懂金融·AI版丨股市和经济基本面关系大不大？ - 第一财经",
+      "link": "https://news.google.com/rss/articles/CBMiVEFVX3lxTE5QOWJ1YUdxVVF4bU90OTg0YUt4S3JIcW4tb0hkY2prb1FVZG9USGp4ekdvUHJjTUdJSE1kRmdyNFcwV1M3aDlZbXEzcXRGeHVtcmdXSg?oc=5",
+      "published": "Thu, 31 Oct 2024 07:00:00 GMT"
+    },
+    {
+      "source_id": "google-news-cn-finance",
+      "category": "finance",
+      "source": "Google News CN Finance",
+      "title": "法国股市年终盘点：韧性较强但增长有限 小幅跑赢实体经济 - 中国金融信息网",
+      "link": "https://news.google.com/rss/articles/CBMiakFVX3lxTE1rbDlvWTI0LTZtQkp1Y3drNWRTZmZXcEpfNWNUdVNjeHJmM1daMENJQkp5eWFYOElUOVFVYVFmMjQ2VEVjeTh1VERsVDZ3UlFrSE5jZ09TZHNidU1Wdi1RRmxQX0RQanEwMWc?oc=5",
+      "published": "Fri, 26 Dec 2025 03:46:00 GMT"
+    },
+    {
+      "source_id": "google-news-cn-finance",
+      "category": "finance",
+      "source": "Google News CN Finance",
+      "title": "央行：维护股市、债市、汇市等金融市场平稳运行 - 证券时报",
+      "link": "https://news.google.com/rss/articles/CBMiXEFVX3lxTE9JSngwbFRvaHZXRzFNVUNfcDItMkpOUTdPdWhveDAzRkdCekZVRVJ5WFR4UkFoTlktT0JNSG4xV09mOTlXRVdOeFhIUGQyRVcwdVdBM0JtYUJZQmJz?oc=5",
+      "published": "Fri, 24 Oct 2025 07:00:00 GMT"
+    },
+    {
+      "source_id": "google-news-cn-finance",
+      "category": "finance",
+      "source": "Google News CN Finance",
+      "title": "南华：国际金融机构预测2025中国股市– 普通话主页 - Radio Free Asia",
+      "link": "https://news.google.com/rss/articles/CBMiiwFBVV95cUxONGJwTzVmczZKdU03ai1GZmpXY2QxLXAzNTV5b0Q3UmJlQ1lqa0dmRzdOTG9mZWw5a1owbzkxczhRdlVQT2t1aXR1NTdscG85WndneURZdGhwclYtWDhPSEh1QU1FcTVXOU9oeHBLUXJ5aXF2REtwcnc1UzNjbjFHMHJGdDhiQXVwQVZr?oc=5",
+      "published": "Sat, 04 Jan 2025 08:00:00 GMT"
+    },
+    {
+      "source_id": "google-news-cn-finance",
+      "category": "finance",
+      "source": "Google News CN Finance",
+      "title": "八位首席经济学家同台畅论中国股市叙事：A股价值重估明年新逻辑 - 21财经",
+      "link": "https://news.google.com/rss/articles/CBMijwFBVV95cUxPZjRkWVVvbENZMHFoYWk5QUU2dWc2Z0V6Z1Z0S0ppVkt3RXBxbUtGRjZMdWRrRVlxNHN6WjZCQjlQdDFKNlBMU01pRUFnOElVaHc1c0IxVVJJVHhlYnlkWVM5SFNCR0JLY21xRmprZk03RVVpMUxSVTZYeEV2el9hempDYjlyeXdzY0R2N1dnSQ?oc=5",
+      "published": "Thu, 11 Dec 2025 08:00:00 GMT"
+    },
+    {
+      "source_id": "google-news-cn-finance",
+      "category": "finance",
+      "source": "Google News CN Finance",
+      "title": "中国刺激经济画风突变 提振股市能否让经济走出“负反馈循环” - BBC",
+      "link": "https://news.google.com/rss/articles/CBMiZkFVX3lxTE1zTmI2RlV5aC1yd3JHdzNyZC1JZlJvcjd6Tng3T0FHVjF4cFh4RV9NQW5IUVIxTWFGclZYUi05RnYwUmhMNWMwU1BsUXZkeHBkRXNNQ3BYRk9MeGhCOTdpSXMxUF9GZ9IBa0FVX3lxTFBuODc3blFOR3p0WVpGUkswM1NNT3h5WXdXRzNqZnROQjNuTWFIMENYbWtCS2ZkeXZVcUhxbU1YNF9BWldob1IyOFFjOFJ4X2ROb3B1NWRqZ2htS2k0N2xVWkNkUmg1UWdZSUhN?oc=5",
+      "published": "Fri, 18 Oct 2024 07:00:00 GMT"
+    },
+    {
+      "source_id": "google-news-cn-finance",
+      "category": "finance",
+      "source": "Google News CN Finance",
+      "title": "《经济学人》特别报道｜为什么美国股市如此强大 - 新浪网",
+      "link": "https://news.google.com/rss/articles/CBMibkFVX3lxTFBSaUlOdktPQkZXY0RpLV9hS0lrbjdzMXlEOE9wejl4RWdINF9EWTJGQ3NaSjZNMWFOYVYtQUphYlRMUzIwVF83a1NHVTA1NEZMSmRaOC0xUmIwU0xETUw1TEN5eUJkeUk4a3dBMzRR?oc=5",
+      "published": "Fri, 18 Oct 2024 07:00:00 GMT"
+    },
+    {
+      "source_id": "google-news-cn-finance",
+      "category": "finance",
+      "source": "Google News CN Finance",
+      "title": "全球股市动荡：更大金融风暴的序曲？ - 财新",
+      "link": "https://news.google.com/rss/articles/CBMiZEFVX3lxTE83ZjFOdURIVTFkSDBudTNxbklCOUs3VnhxNWVfa0NkSk5za3BPUXY1OWRLLVduV1c1NjlDNGJXYW5iLUhqRk8tUk9HeVVNc1F6djQ0US1HN3laZjdJZTV5cUpSUEw?oc=5",
+      "published": "Tue, 06 Aug 2024 07:00:00 GMT"
+    },
+    {
+      "source_id": "google-news-cn-finance",
+      "category": "finance",
+      "source": "Google News CN Finance",
+      "title": "中国经济刺激组合拳：股市已持续疯涨，楼市也能回暖吗？ - BBC",
+      "link": "https://news.google.com/rss/articles/CBMiZkFVX3lxTE13SXhUalpVSzU0YnFoVVozR2k2V3FZTDhlbm1kTThTNFljWl9QUWsyR3MyajNyXzlqanpfSEs2Rk8yRFJja3RFQWtvWWt6U0VJYzFpNWhpY2hkZUJ1ME9fMnV5NU1OUdIBa0FVX3lxTFBXTW9ad2w4M0htY1lCSjZMcDRaOWV2S0lqWEhUSFNCbXNYZ3pXdGM0endFcGJDZUU4ZVpGRmZsRlJvM0RVWXV3WVlWbHRodXRFZzE4allYVTdqYmVnSDBiR2dXWEtXaThJM2hv?oc=5",
+      "published": "Tue, 01 Oct 2024 07:00:00 GMT"
+    },
+    {
+      "source_id": "google-news-cn-finance",
+      "category": "finance",
+      "source": "Google News CN Finance",
+      "title": "以史为鉴：二十世纪三次世界范围经济危机揭示了什么 - BBC",
+      "link": "https://news.google.com/rss/articles/CBMiYEFVX3lxTE9sUnJTckVfc0M1ZnNmblk1YzdxeThfTTg4YklERUQtYlhzc2x1R1QzZjhneXl0OVQxNl9WbHdQU0JtREF0UE03NnVBSk8tV3YxYTdGQjhEczZpZXc0U2dfQtIBZkFVX3lxTE1FRkxIVEtUVHJ0WjdnMmhrSDh1dHhmTXVhWHpwM0lGbG4wakUwb2xrQ1duNDItOWRrS3NJd21zX2tQLVo1alpCd29KXzZYaW9xVDFJX2dmUDd1S1o1QzdfZWt3eVB4Zw?oc=5",
+      "published": "Tue, 04 Oct 2022 07:00:00 GMT"
+    },
+    {
+      "source_id": "google-news-cn-finance",
+      "category": "finance",
+      "source": "Google News CN Finance",
+      "title": "美联储加息与股市、房贷和经济“硬着陆” - BBC",
+      "link": "https://news.google.com/rss/articles/CBMiYEFVX3lxTE5WYnpnX3NpcVUxbkNaLW9ZSU9JbUlVQTVkWEQ3ZTV4LVhsYWduckxDVVQ4RklDM3BUXzhoM1F0YTRKa0l2S1U1V2RDNmRIY2MzVHZFLWxDdjRycHNrQ2xnbtIBZkFVX3lxTE1BNjJlY1ZZM2c2UzBEdi1EdDFkUDlCVWZEelNyM0MzblFCd2xudk1ZTUhJdXM3ZXF2RVFpa2lzUFpJaE5HY1NQUFlkVDJxVXpCanFuSFNUV3F6cWhQZy1qLXZvVGFfZw?oc=5",
+      "published": "Thu, 19 May 2022 07:00:00 GMT"
+    },
+    {
+      "source_id": "federal-reserve-monetary-policy",
+      "category": "policy",
+      "source": "Federal Reserve Monetary Policy",
+      "title": "Federal Reserve issues FOMC statement",
+      "link": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20260128a.htm",
+      "published": "Wed, 28 Jan 2026 19:00:00 GMT"
+    },
+    {
+      "source_id": "federal-reserve-monetary-policy",
+      "category": "policy",
+      "source": "Federal Reserve Monetary Policy",
+      "title": "Federal Open Market Committee reaffirms its \"Statement on Longer-Run Goals and Monetary Policy Strategy\"",
+      "link": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20260128b.htm",
+      "published": "Wed, 28 Jan 2026 19:00:00 GMT"
+    },
+    {
+      "source_id": "federal-reserve-monetary-policy",
+      "category": "policy",
+      "source": "Federal Reserve Monetary Policy",
+      "title": "Minutes of the Board's discount rate meeting on December 10, 2025",
+      "link": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20260106a.htm",
+      "published": "Tue, 6 Jan 2026 19:00:00 GMT"
+    },
+    {
+      "source_id": "federal-reserve-monetary-policy",
+      "category": "policy",
+      "source": "Federal Reserve Monetary Policy",
+      "title": "Minutes of the Federal Open Market Committee, December 9–10, 2025",
+      "link": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20251230a.htm",
+      "published": "Tue, 30 Dec 2025 19:00:00 GMT"
+    },
+    {
+      "source_id": "federal-reserve-monetary-policy",
+      "category": "policy",
+      "source": "Federal Reserve Monetary Policy",
+      "title": "Federal Reserve issues FOMC statement",
+      "link": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20251210a.htm",
+      "published": "Wed, 10 Dec 2025 19:00:00 GMT"
+    },
+    {
+      "source_id": "federal-reserve-monetary-policy",
+      "category": "policy",
+      "source": "Federal Reserve Monetary Policy",
+      "title": "Federal Reserve Board and Federal Open Market Committee release economic projections from the December 9-10 FOMC meeting",
+      "link": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20251210b.htm",
+      "published": "Wed, 10 Dec 2025 19:00:00 GMT"
+    },
+    {
+      "source_id": "federal-reserve-monetary-policy",
+      "category": "policy",
+      "source": "Federal Reserve Monetary Policy",
+      "title": "Minutes of the Board's discount rate meetings on October 6, October 20, and October 29, 2025",
+      "link": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20251125a.htm",
+      "published": "Tue, 25 Nov 2025 19:00:00 GMT"
+    },
+    {
+      "source_id": "federal-reserve-monetary-policy",
+      "category": "policy",
+      "source": "Federal Reserve Monetary Policy",
+      "title": "Minutes of the Federal Open Market Committee, October 28-29, 2025",
+      "link": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20251119a.htm",
+      "published": "Wed, 19 Nov 2025 19:00:00 GMT"
+    },
+    {
+      "source_id": "federal-reserve-monetary-policy",
+      "category": "policy",
+      "source": "Federal Reserve Monetary Policy",
+      "title": "Federal Reserve issues FOMC statement",
+      "link": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20251029a.htm",
+      "published": "Wed, 29 Oct 2025 18:00:00 GMT"
+    },
+    {
+      "source_id": "federal-reserve-monetary-policy",
+      "category": "policy",
+      "source": "Federal Reserve Monetary Policy",
+      "title": "Minutes of the Board's discount rate meetings on August 18 and September 17, 2025",
+      "link": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20251014a.htm",
+      "published": "Tue, 14 Oct 2025 18:00:00 GMT"
+    },
+    {
+      "source_id": "federal-reserve-monetary-policy",
+      "category": "policy",
+      "source": "Federal Reserve Monetary Policy",
+      "title": "Minutes of the Federal Open Market Committee, September 16–17, 2025",
+      "link": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20251008a.htm",
+      "published": "Wed, 8 Oct 2025 18:00:00 GMT"
+    },
+    {
+      "source_id": "federal-reserve-monetary-policy",
+      "category": "policy",
+      "source": "Federal Reserve Monetary Policy",
+      "title": "Federal Reserve issues FOMC statement",
+      "link": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20250917a.htm",
+      "published": "Wed, 17 Sep 2025 18:00:00 GMT"
+    },
+    {
+      "source_id": "federal-reserve-monetary-policy",
+      "category": "policy",
+      "source": "Federal Reserve Monetary Policy",
+      "title": "Federal Reserve Board and Federal Open Market Committee release economic projections from the September 16-17 FOMC meeting",
+      "link": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20250917b.htm",
+      "published": "Wed, 17 Sep 2025 18:00:00 GMT"
+    },
+    {
+      "source_id": "federal-reserve-monetary-policy",
+      "category": "policy",
+      "source": "Federal Reserve Monetary Policy",
+      "title": "Federal Open Market Committee announces its tentative meeting schedule for 2027",
+      "link": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20250905a.htm",
+      "published": "Fri, 5 Sep 2025 17:30:00 GMT"
+    },
+    {
+      "source_id": "federal-reserve-monetary-policy",
+      "category": "policy",
+      "source": "Federal Reserve Monetary Policy",
+      "title": "Minutes of the Board's discount rate meetings on July 21 and July 30, 2025",
+      "link": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20250826a.htm",
+      "published": "Tue, 26 Aug 2025 18:00:00 GMT"
+    },
+    {
+      "source_id": "google-news-cn-policy",
+      "category": "policy",
+      "source": "Google News CN Policy",
+      "title": "央行：创新丰富政策工具箱 维护金融市场稳健运行和金融体系整体稳定 - 东方财富",
+      "link": "https://news.google.com/rss/articles/CBMiYEFVX3lxTE5jaW5Pd0pLR0JDVUI5Wnk0NG4wSmlaRGZrV1l3aHVXeHlmOC1IcURhWnBsRVVreDhYZndxaVlHZGVHbjRfQ2F4UFgyWG5XbDUyUDFCdTZzRFlUbnMzczVabg?oc=5",
+      "published": "Mon, 26 Jan 2026 08:00:00 GMT"
+    },
+    {
+      "source_id": "google-news-cn-policy",
+      "category": "policy",
+      "source": "Google News CN Policy",
+      "title": "央行部署今年宏观审慎工作：丰富政策工具箱，推进人民币跨境使用 - 21财经",
+      "link": "https://news.google.com/rss/articles/CBMigwFBVV95cUxPczFxa0FuekRoWlNhTXpmMWV2bmI0Q3BGZWpKOFdMbmF5ZzRjUDBFQ2tOMDZ6dGllMDRpYWI0Z24zSjR1TVprcG9ydWhRZE9PWi1ma2FzT1owb1R1M3dQWG5JakxMdS1IcDNYZC1fcWZDV2hyUXZRWFUtVnlpanBEeUU1Zw?oc=5",
+      "published": "Tue, 27 Jan 2026 23:00:00 GMT"
+    },
+    {
+      "source_id": "google-news-cn-policy",
+      "category": "policy",
+      "source": "Google News CN Policy",
+      "title": "牛市早报｜央行：逐步拓展宏观审慎政策覆盖范围，上期所收紧白银、锡期货交易限额 - thepaper.cn",
+      "link": "https://news.google.com/rss/articles/CBMiXkFVX3lxTFA0TlJvem1vYzBWMWtYaWFhVFNVVjRXMkllT1JsRVY5WjBESVNMaGhacFphUHRWeVJ3MU05a0hmdHU0VnFQUkJibjRFUjhWUmFFbUw0UWNrTk5UVnhKMkE?oc=5",
+      "published": "Tue, 27 Jan 2026 08:00:00 GMT"
+    },
+    {
+      "source_id": "google-news-cn-policy",
+      "category": "policy",
+      "source": "Google News CN Policy",
+      "title": "央行行长潘功胜接受采访 谈2026年货币政策（全文） - 观点网",
+      "link": "https://news.google.com/rss/articles/CBMiTkFVX3lxTE1rM180NlB2bXVEMXE5MW8zdEI2N2FmZ2ZUWWFNQmt6aUpfRFAyVFFHaGxZNl9oLUVIT0E2RW50ZmRsNEpGRXMzNmRpUnFwUQ?oc=5",
+      "published": "Mon, 26 Jan 2026 08:00:00 GMT"
+    },
+    {
+      "source_id": "google-news-cn-policy",
+      "category": "policy",
+      "source": "Google News CN Policy",
+      "title": "央行陶玲详解宏观审慎管理：从范围、 工具及基础保障三方面理解 - 财新",
+      "link": "https://news.google.com/rss/articles/CBMiYEFVX3lxTE16dnBZaVJuaFVMclRXN0p2UTV4eGZmS2lnSjh2YTV1cWRTNkw3MlZ3S1pCSmZnTHl5U0JxX2JQQi1YVUctV3ozS3N4R3hZelBScXM4VU9wSWlsanFnRzZzXw?oc=5",
+      "published": "Fri, 14 Nov 2025 08:00:00 GMT"
+    },
+    {
+      "source_id": "google-news-cn-policy",
+      "category": "policy",
+      "source": "Google News CN Policy",
+      "title": "配合央行！财政部五项政策落地：托底而非强刺激，贴息与产业政策深度绑定 - 华尔街见闻",
+      "link": "https://news.google.com/rss/articles/CBMiU0FVX3lxTE9Wc1lEdWVWeGxZUk1hc1J0b0xPREhnaVBZNk9MOEtkYk5ueXhLLTNqSUVMT3ZfTWdOSEFmeW52MjJ4bGh1MzZxOWZ0V1hqMlFEbUgw?oc=5",
+      "published": "Wed, 21 Jan 2026 08:00:00 GMT"
+    },
+    {
+      "source_id": "google-news-cn-policy",
+      "category": "policy",
+      "source": "Google News CN Policy",
+      "title": "中金：从结构性降息理解宏观政策路径 - 新浪网",
+      "link": "https://news.google.com/rss/articles/CBMivgJBVV95cUxQTWV1OGRnRjM3QnhwdXpmQndpdWpMSWJrWTJsb01XeUFiUHJpOGd2MFludG8ybFlMVVBCZVBjaDBicnZzc2xKWUtaR19ONFAtbHpzdjNmQTJJN3J4Z0tPbTVELTVwaW80OGNQZXRRYm1PaXlyNE95YWx0OTlhSjQyUFh5MkdodGl3SDBTMjlLMk44NkRqR0JnSUlkWEZ5eHpBczhOSVhZc1psNEVpZjJXWFZxNDVvRXhjTkZ6THpwV1Nla01GVF9hZ1pKUzNNdi1xcXlnMzRtbUsyMUVBUWExczJWMmNiTGswOGNKYnhNNVZMVW5TYWUzM3BuTEVrdy1zYi11US1PZjVRZUUwbW1jSmhKRlhTYXdrLWg0Q0NGZzdweUx2MWlMbmZSd3laR1FpNlJfUjZJZlQybXpjOWc?oc=5",
+      "published": "Thu, 15 Jan 2026 08:00:00 GMT"
+    },
+    {
+      "source_id": "google-news-cn-policy",
+      "category": "policy",
+      "source": "Google News CN Policy",
+      "title": "加大国债买卖力度 深化货币政策调控机制改革 - 人民日报",
+      "link": "https://news.google.com/rss/articles/CBMif0FVX3lxTE4tbFE2QTBEOFVhSjQ1QjJQOEg3U25rTHFOWGlwRzFJclRtaE90YjZvVFBybUs3UzJ5eFRvcVR1Wl9OcWNDNGRZbmVXZXZ3MXRGWGtJR2ljMGhHMGpuQzZ5Tkp1MW5FaXNualJoTm1CS1ZFRXBXWmtadDVwSndsc0U?oc=5",
+      "published": "Fri, 21 Nov 2025 08:00:00 GMT"
+    },
+    {
+      "source_id": "google-news-cn-policy",
+      "category": "policy",
+      "source": "Google News CN Policy",
+      "title": "中国人民银行将推出10项政策加大宏观调控强度 - 新华网",
+      "link": "https://news.google.com/rss/articles/CBMigAFBVV95cUxQQUlnb1hXSEREWmdsU2tBMzBwM05mZjNTUlNtMGZkNkdwQWpORXlIb3p1OVp1bnM1Y3ZmaFhXMDNWZzZsU0hWTlBhNE1uRnhKMGhJQ0lWTWFIWl9WM1k4Wms1X29Ld2kxcVNHcFRnc0M1bG1UMDU0OEdDT2gwcHA0bQ?oc=5",
+      "published": "Wed, 07 May 2025 07:00:00 GMT"
+    },
+    {
+      "source_id": "google-news-cn-policy",
+      "category": "policy",
+      "source": "Google News CN Policy",
+      "title": "时隔五个季度重提“跨周期调节” 央行货币政策思路微妙转变 - 证券时报",
+      "link": "https://news.google.com/rss/articles/CBMiXEFVX3lxTE5zNDd1YlY1RW95RGJhWWxPcWJjZlJBc3ZtX3hFQ0l6Rl9LS0VhaXFyUE5tdTBWTnkyWjBzX2xaVk9MdTZmd1l2M3dBVmFoM3RVdWJvQUl6eUhVeWxp?oc=5",
+      "published": "Thu, 13 Nov 2025 08:00:00 GMT"
+    },
+    {
+      "source_id": "google-news-cn-policy",
+      "category": "policy",
+      "source": "Google News CN Policy",
+      "title": "央行：继续实施适度宽松的货币政策，持续深化金融改革和对外开放 - thepaper.cn",
+      "link": "https://news.google.com/rss/articles/CBMiXkFVX3lxTFA1S1ZoZ0I4cERZR2xHdEZNak52bGlFcGc1a0EyWGV6MVhLcWhWMl9UVng3NkJ0bFpLYXFsMzN6QkJqeTJENDdmTDVCQ01rY0RuamR6NGJIV3FZckFPS1E?oc=5",
+      "published": "Tue, 06 Jan 2026 08:00:00 GMT"
+    },
+    {
+      "source_id": "google-news-cn-policy",
+      "category": "policy",
+      "source": "Google News CN Policy",
+      "title": "上半年经济、金融数据出炉！哪些信号最值得关注？ - 证券时报",
+      "link": "https://news.google.com/rss/articles/CBMiV0FVX3lxTE5MRGlERWhWWFVtVGJXUVJkbmt2R210Um82RTFyQURvd0JKMGZHU2ZFeXo3cU9jNDlXZVdDWVJrbW5GRVhKRTVpRlBFcDhIVW9hdVk1V1pPOA?oc=5",
+      "published": "Sun, 23 Nov 2025 16:58:11 GMT"
+    },
+    {
+      "source_id": "google-news-cn-policy",
+      "category": "policy",
+      "source": "Google News CN Policy",
+      "title": "潘功胜详解我国宏观审慎管理体系，央行双支柱调控框架方向渐明 - 21财经",
+      "link": "https://news.google.com/rss/articles/CBMijwFBVV95cUxNUER1WWozMTFDbUNaRmF2c3M4OXRSamxvQ2FlalNzWjh6ZDFVUnl2RExPTDRsTFNjMXJ2NWFLTFpyeHV4TUVQLU1vSG45QXRNTUM0czNTQmpEMEVLa2ZCMmxmNHJ4ZUVLS3V4eVJ6Nms2MWpyVjZfczBQdUtCUHZxNDZ5VWpLT213WkJOWXAyOA?oc=5",
+      "published": "Mon, 27 Oct 2025 07:00:00 GMT"
+    },
+    {
+      "source_id": "google-news-cn-policy",
+      "category": "policy",
+      "source": "Google News CN Policy",
+      "title": "锚定金融强国目标，“十五五”聚焦完善中央银行制度 - 第一财经",
+      "link": "https://news.google.com/rss/articles/CBMiU0FVX3lxTE5tTmxXSVNNMkhzSDBSUWtSSWh1Zi1nNHFyODFwNjliYklhY1FaU2hkenNyaVpfSXBxUDdFd1RUQ2ZaYW8tVTNZQVFITFhuZnZQMmpV?oc=5",
+      "published": "Wed, 29 Oct 2025 07:00:00 GMT"
+    },
+    {
+      "source_id": "google-news-cn-policy",
+      "category": "policy",
+      "source": "Google News CN Policy",
+      "title": "央行货币政策委员会：抓好货币政策措施执行 充分释放政策效应 - 财新",
+      "link": "https://news.google.com/rss/articles/CBMiZEFVX3lxTE9QV1pRNHBnM29JdUVfOTdBcXJndDhWNGI3Vjd5UE5YRGs3TVBDUWZvN21pRmEyXzZyTVdqc3diMG5BNnE3a1k3N2Y5a0NUM2p1eGNLaEFOTzRGbFZGMHFEUlh6TVM?oc=5",
+      "published": "Fri, 26 Sep 2025 07:00:00 GMT"
+    },
+    {
+      "source_id": "google-news-cn-policy",
+      "category": "policy",
+      "source": "Google News CN Policy",
+      "title": "央行将推出10项政策 加大宏观调控强度 - 新华网",
+      "link": "https://news.google.com/rss/articles/CBMigAFBVV95cUxQb3lmNkVRSUlvMnltSEYwSWtPRVRndngzOFhSbzVCM1AwOFJ1Nl9IVEt6aXlNcG5pUW45SDlVVS1tM0twMlJUM2F6X3BaSUVYTXh5Qk0zSXlnNUlkdVlQWVhjSXlzQlYxOFBSdFdYb0FsNzNWeFAxaGRzX3hqQzl6UA?oc=5",
+      "published": "Wed, 07 May 2025 07:00:00 GMT"
+    },
+    {
+      "source_id": "google-news-cn-policy",
+      "category": "policy",
+      "source": "Google News CN Policy",
+      "title": "​央行货币政策中的转变：宏观政策重点正转向消费与投资并重 - 新京报",
+      "link": "https://news.google.com/rss/articles/CBMiYkFVX3lxTE44MnJkeHZvQ2F1Ymx5eDBTb1BlMW52dGdUTXQwRVNTbHZRcHV0VnlZdS1uOTNaTVdEWXJMb0NKNmpLUktxQzU0RnRxekRBZ05xdTM3RHJQM0ZveWNhazkyN25B?oc=5",
+      "published": "Fri, 09 May 2025 07:00:00 GMT"
+    },
+    {
+      "source_id": "google-news-cn-policy",
+      "category": "policy",
+      "source": "Google News CN Policy",
+      "title": "事关货币政策、金融风险防控，央行行长潘功胜最新发声 - 界面新闻",
+      "link": "https://news.google.com/rss/articles/CBMiWEFVX3lxTE9hMjE5NFFwQTRFaUdoZEdyUXpnUHcza2NzWG44Z1dyOW9QZ0RnUXk5c2V3a1N5Y3JhVlBfd0QzemZ2YXZiR1pVczhPX19wQ2wxUHNaajhsZ3I?oc=5",
+      "published": "Wed, 03 Dec 2025 08:00:00 GMT"
+    },
+    {
+      "source_id": "google-news-cn-policy",
+      "category": "policy",
+      "source": "Google News CN Policy",
+      "title": "宏观政策重趋积极将成稳经济的关键 - 每日经济新闻",
+      "link": "https://news.google.com/rss/articles/CBMiZkFVX3lxTE50QXFGNEtrdk9uTWg0RnRWZEZ0M0stVEpzbGxBNWhBbXBaUE9oSi1LbjVlMUdybmRNOXdCR1VfdzFZWEpzMUZfUEgybjJ1UGVBRTlzU09ndTA2SGdxakRUYm52cFQ5QQ?oc=5",
+      "published": "Thu, 24 Jul 2025 07:00:00 GMT"
+    },
+    {
+      "source_id": "google-news-cn-policy",
+      "category": "policy",
+      "source": "Google News CN Policy",
+      "title": "央行：把促进物价合理回升作为把握货币政策的重要考量，推动物价保持在合理水平 - 第一财经",
+      "link": "https://news.google.com/rss/articles/CBMiU0FVX3lxTE1fNnZvWWwzUHMxV2xaRktFeVc2ODBnb05ja0tyVWhRR3h1anh1R3JuaG5EekxoY0YtaW5iN2hlSnRZRHNOVXBad0I1VTlVUjlOVURN?oc=5",
+      "published": "Fri, 15 Aug 2025 07:00:00 GMT"
+    }
+  ],
+  "flow_series": {
+    "a_share_northbound_net_inflow": [
+      {
+        "market": "A_SHARE",
+        "series_key": "a_share_northbound_net_inflow",
+        "series_name": "A股北向净流入（陆股通）",
+        "date": "2026-01-22",
+        "value": 0.0,
+        "unit": "亿元人民币"
+      },
+      {
+        "market": "A_SHARE",
+        "series_key": "a_share_northbound_net_inflow",
+        "series_name": "A股北向净流入（陆股通）",
+        "date": "2026-01-23",
+        "value": 0.0,
+        "unit": "亿元人民币"
+      },
+      {
+        "market": "A_SHARE",
+        "series_key": "a_share_northbound_net_inflow",
+        "series_name": "A股北向净流入（陆股通）",
+        "date": "2026-01-26",
+        "value": 0.0,
+        "unit": "亿元人民币"
+      },
+      {
+        "market": "A_SHARE",
+        "series_key": "a_share_northbound_net_inflow",
+        "series_name": "A股北向净流入（陆股通）",
+        "date": "2026-01-27",
+        "value": 0.0,
+        "unit": "亿元人民币"
+      },
+      {
+        "market": "A_SHARE",
+        "series_key": "a_share_northbound_net_inflow",
+        "series_name": "A股北向净流入（陆股通）",
+        "date": "2026-01-28",
+        "value": 0.0,
+        "unit": "亿元人民币"
+      },
+      {
+        "market": "A_SHARE",
+        "series_key": "a_share_northbound_net_inflow",
+        "series_name": "A股北向净流入（陆股通）",
+        "date": "2026-01-29",
+        "value": 0.0,
+        "unit": "亿元人民币"
+      },
+      {
+        "market": "A_SHARE",
+        "series_key": "a_share_northbound_net_inflow",
+        "series_name": "A股北向净流入（陆股通）",
+        "date": "2026-01-30",
+        "value": 0.0,
+        "unit": "亿元人民币"
+      },
+      {
+        "market": "A_SHARE",
+        "series_key": "a_share_northbound_net_inflow",
+        "series_name": "A股北向净流入（陆股通）",
+        "date": "2026-02-02",
+        "value": 0.0,
+        "unit": "亿元人民币"
+      },
+      {
+        "market": "A_SHARE",
+        "series_key": "a_share_northbound_net_inflow",
+        "series_name": "A股北向净流入（陆股通）",
+        "date": "2026-02-03",
+        "value": 0.0,
+        "unit": "亿元人民币"
+      },
+      {
+        "market": "A_SHARE",
+        "series_key": "a_share_northbound_net_inflow",
+        "series_name": "A股北向净流入（陆股通）",
+        "date": "2026-02-04",
+        "value": 0.0,
+        "unit": "亿元人民币"
+      },
+      {
+        "market": "A_SHARE",
+        "series_key": "a_share_northbound_net_inflow",
+        "series_name": "A股北向净流入（陆股通）",
+        "date": "2026-02-05",
+        "value": 0.0,
+        "unit": "亿元人民币"
+      },
+      {
+        "market": "A_SHARE",
+        "series_key": "a_share_northbound_net_inflow",
+        "series_name": "A股北向净流入（陆股通）",
+        "date": "2026-02-06",
+        "value": 0.0,
+        "unit": "亿元人民币"
+      }
+    ],
+    "hk_share_southbound_net_inflow": [],
+    "us_equity_mutual_fund_flow": [],
+    "us_equity_etf_flow": []
+  },
+  "warnings": []
+}

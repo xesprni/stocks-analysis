@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
@@ -91,3 +92,22 @@ class StockAnalysisHistoryItem(BaseModel):
     created_at: datetime
     markdown: str
     output_json: Dict[str, Any]
+
+
+class StockAnalysisTaskStatus(str, Enum):
+    PENDING = "PENDING"
+    RUNNING = "RUNNING"
+    SUCCEEDED = "SUCCEEDED"
+    FAILED = "FAILED"
+
+
+class StockAnalysisTaskView(BaseModel):
+    task_id: str
+    symbol: str
+    market: str
+    status: StockAnalysisTaskStatus
+    created_at: datetime
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
+    error_message: Optional[str] = None
+    result: Optional[StockAnalysisRunView] = None

@@ -31,6 +31,9 @@ analysis:
     - market-default
     timeout: 5
     enabled: true
+    auth_mode: none
+    login_callback_url: null
+    login_timeout_seconds: 600
   - provider_id: openai_compatible
     type: openai_compatible
     base_url: https://api.openai.com/v1
@@ -40,6 +43,8 @@ analysis:
     timeout: 30
     enabled: true
     auth_mode: api_key
+    login_callback_url: null
+    login_timeout_seconds: 600
   - provider_id: codex_app_server
     type: codex_app_server
     base_url: ''
@@ -48,6 +53,8 @@ analysis:
     timeout: 30
     enabled: false
     auth_mode: chatgpt_oauth
+    login_callback_url: null
+    login_timeout_seconds: 600
 watchlist:
   default_market_scope:
   - CN

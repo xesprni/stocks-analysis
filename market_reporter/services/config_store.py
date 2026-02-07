@@ -85,7 +85,19 @@ class ConfigStore:
             if not provider_id or provider_id in seen:
                 continue
             seen.add(provider_id)
-            providers.append(provider.model_copy(update={"provider_id": provider_id}))
+            inferred_auth_mode = provider.auth_mode or (
+                "none"
+                if provider.type == "mock"
+                else ("chatgpt_oauth" if provider.type == "codex_app_server" else "api_key")
+            )
+            providers.append(
+                provider.model_copy(
+                    update={
+                        "provider_id": provider_id,
+                        "auth_mode": inferred_auth_mode,
+                    }
+                )
+            )
 
         for provider in default_analysis_providers():
             if provider.provider_id in seen:
@@ -93,9 +105,13 @@ class ConfigStore:
             providers.append(provider)
             seen.add(provider.provider_id)
 
+        if providers and not any(provider.enabled for provider in providers):
+            providers[0] = providers[0].model_copy(update={"enabled": True})
+
         analysis = config.analysis.model_copy(update={"providers": providers})
         provider_map = {provider.provider_id: provider for provider in providers}
-        if analysis.default_provider not in provider_map:
+        selected_default = provider_map.get(analysis.default_provider)
+        if selected_default is None or not selected_default.enabled:
             fallback_provider = next(
                 (provider.provider_id for provider in providers if provider.enabled),
                 providers[0].provider_id if providers else "mock",
@@ -128,6 +144,11 @@ class ConfigStore:
                 return True
             provider_id = row.get("provider_id")
             if not isinstance(provider_id, str) or not provider_id.strip():
+                return True
+            auth_mode = row.get("auth_mode")
+            if auth_mode is None:
+                return True
+            if not isinstance(auth_mode, str) or not auth_mode.strip():
                 return True
             raw_ids.append(provider_id.strip())
 

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import re
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 from urllib.parse import urlparse
+from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -25,6 +28,8 @@ from market_reporter.modules.analysis_engine.schemas import (
     StockAnalysisHistoryItem,
     StockAnalysisRunRequest,
     StockAnalysisRunView,
+    StockAnalysisTaskStatus,
+    StockAnalysisTaskView,
 )
 from market_reporter.modules.analysis_engine.service import AnalysisService
 from market_reporter.modules.fund_flow.service import FundFlowService
@@ -52,6 +57,7 @@ from market_reporter.schemas import (
     ConfigUpdateRequest,
     ReportRunDetail,
     ReportRunSummary,
+    ReportRunTaskView,
     RunRequest,
     RunResult,
     UIOptionsResponse,
@@ -87,6 +93,9 @@ def create_app() -> FastAPI:
     )
 
     app.state.news_listener_lock = asyncio.Lock()
+    app.state.stock_analysis_lock = asyncio.Lock()
+    app.state.stock_analysis_tasks: Dict[str, StockAnalysisTaskView] = {}
+    app.state.stock_analysis_handles: Dict[str, asyncio.Task[None]] = {}
 
     @staticmethod
     def _ensure_database(config: AppConfig) -> None:
@@ -139,6 +148,117 @@ def create_app() -> FastAPI:
                 )
                 return await listener_service.run_once()
 
+    async def _run_stock_analysis_once(symbol: str, payload: StockAnalysisRunRequest) -> StockAnalysisRunView:
+        config = config_store.load()
+        _ensure_database(config)
+        async with HttpClient(
+            timeout_seconds=config.request_timeout_seconds,
+            user_agent=config.user_agent,
+        ) as client:
+            registry = ProviderRegistry()
+            news_service = NewsService(config=config, client=client, registry=registry)
+            fund_flow_service = FundFlowService(config=config, client=client, registry=registry)
+            market_data_service = MarketDataService(config=config, registry=registry)
+            analysis_service = AnalysisService(
+                config=config,
+                registry=registry,
+                market_data_service=market_data_service,
+                news_service=news_service,
+                fund_flow_service=fund_flow_service,
+            )
+            return await analysis_service.run_stock_analysis(
+                symbol=symbol,
+                market=payload.market,
+                provider_id=payload.provider_id,
+                model=payload.model,
+                interval=payload.interval,
+                lookback_bars=payload.lookback_bars,
+            )
+
+    async def _update_stock_analysis_task(
+        task_id: str,
+        status: StockAnalysisTaskStatus,
+        started_at: Optional[datetime] = None,
+        finished_at: Optional[datetime] = None,
+        result: Optional[StockAnalysisRunView] = None,
+        error_message: Optional[str] = None,
+    ) -> None:
+        async with app.state.stock_analysis_lock:
+            current = app.state.stock_analysis_tasks.get(task_id)
+            if current is None:
+                return
+
+            update_payload = {
+                "status": status,
+                "error_message": error_message if error_message is not None else current.error_message,
+            }
+            if started_at is not None:
+                update_payload["started_at"] = started_at
+            if finished_at is not None:
+                update_payload["finished_at"] = finished_at
+            if result is not None:
+                update_payload["result"] = result
+            app.state.stock_analysis_tasks[task_id] = current.model_copy(update=update_payload)
+
+    async def _run_stock_analysis_task(
+        task_id: str,
+        symbol: str,
+        payload: StockAnalysisRunRequest,
+    ) -> None:
+        await _update_stock_analysis_task(
+            task_id=task_id,
+            status=StockAnalysisTaskStatus.RUNNING,
+            started_at=datetime.now(timezone.utc),
+            error_message=None,
+        )
+        try:
+            result = await _run_stock_analysis_once(symbol=symbol, payload=payload)
+            await _update_stock_analysis_task(
+                task_id=task_id,
+                status=StockAnalysisTaskStatus.SUCCEEDED,
+                finished_at=datetime.now(timezone.utc),
+                result=result,
+                error_message=None,
+            )
+        except Exception as exc:
+            await _update_stock_analysis_task(
+                task_id=task_id,
+                status=StockAnalysisTaskStatus.FAILED,
+                finished_at=datetime.now(timezone.utc),
+                error_message=str(exc),
+            )
+
+    async def _start_stock_analysis_task(symbol: str, payload: StockAnalysisRunRequest) -> StockAnalysisTaskView:
+        task_id = uuid4().hex
+        task_view = StockAnalysisTaskView(
+            task_id=task_id,
+            symbol=symbol.strip().upper(),
+            market=payload.market.upper(),
+            status=StockAnalysisTaskStatus.PENDING,
+            created_at=datetime.now(timezone.utc),
+        )
+        async with app.state.stock_analysis_lock:
+            app.state.stock_analysis_tasks[task_id] = task_view
+
+        task_payload = payload.model_copy(deep=True)
+        task = asyncio.create_task(
+            _run_stock_analysis_task(
+                task_id=task_id,
+                symbol=symbol,
+                payload=task_payload,
+            )
+        )
+        app.state.stock_analysis_handles[task_id] = task
+        task.add_done_callback(lambda _: app.state.stock_analysis_handles.pop(task_id, None))
+        return task_view
+
+    async def _get_stock_analysis_task(task_id: str) -> StockAnalysisTaskView:
+        async with app.state.stock_analysis_lock:
+            task = app.state.stock_analysis_tasks.get(task_id)
+            if task is None:
+                raise FileNotFoundError(f"Stock analysis task not found: {task_id}")
+            return task
+
     def _restart_listener_scheduler(config: AppConfig) -> None:
         existing = getattr(app.state, "news_listener_scheduler", None)
         if existing is not None:
@@ -179,6 +299,37 @@ def create_app() -> FastAPI:
             enabled=source.enabled,
         )
 
+    def _disable_failed_news_sources(config: AppConfig, warnings: List[str]) -> tuple[AppConfig, List[str]]:
+        failed_source_ids: set[str] = set()
+        for warning in warnings:
+            matched = re.search(r"News source failed \[id=([^;\]]+);", warning)
+            if not matched:
+                continue
+            source_id = normalize_source_id(matched.group(1))
+            if source_id:
+                failed_source_ids.add(source_id)
+
+        if not failed_source_ids:
+            return config, []
+
+        updated_sources: List[NewsSource] = []
+        disabled_ids: List[str] = []
+        for source in config.news_sources:
+            if source.source_id in failed_source_ids and source.enabled:
+                updated_sources.append(source.model_copy(update={"enabled": False}))
+                if source.source_id:
+                    disabled_ids.append(source.source_id)
+            else:
+                updated_sources.append(source)
+
+        if not disabled_ids:
+            return config, []
+
+        next_config = config.model_copy(update={"news_sources": updated_sources})
+        saved = config_store.save(next_config)
+        notes = [f"Auto-disabled failed sources: {', '.join(sorted(disabled_ids))}"]
+        return saved, notes
+
     @app.on_event("startup")
     async def startup_event() -> None:
         config = config_store.load()
@@ -190,6 +341,12 @@ def create_app() -> FastAPI:
         scheduler = getattr(app.state, "news_listener_scheduler", None)
         if scheduler is not None:
             scheduler.shutdown()
+        handles = list(app.state.stock_analysis_handles.values())
+        for handle in handles:
+            if not handle.done():
+                handle.cancel()
+        if handles:
+            await asyncio.gather(*handles, return_exceptions=True)
 
     @app.get("/api/health")
     async def health() -> dict:
@@ -306,6 +463,10 @@ def create_app() -> FastAPI:
             except Exception as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+        config, disable_notes = _disable_failed_news_sources(config=config, warnings=warnings)
+        if disable_notes:
+            warnings = [*warnings, *disable_notes]
+
         return NewsFeedResponse(
             items=items,
             warnings=warnings,
@@ -315,6 +476,17 @@ def create_app() -> FastAPI:
     @app.post("/api/reports/run", response_model=RunResult)
     async def run_report(payload: Optional[RunRequest] = None) -> RunResult:
         return await report_service.run_report(overrides=payload)
+
+    @app.post("/api/reports/run/async", response_model=ReportRunTaskView)
+    async def run_report_async(payload: Optional[RunRequest] = None) -> ReportRunTaskView:
+        return await report_service.start_report_async(overrides=payload)
+
+    @app.get("/api/reports/tasks/{task_id}", response_model=ReportRunTaskView)
+    async def get_report_task(task_id: str) -> ReportRunTaskView:
+        try:
+            return await report_service.get_report_task(task_id=task_id)
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     @app.get("/api/reports", response_model=List[ReportRunSummary])
     async def list_reports() -> List[ReportRunSummary]:
@@ -326,6 +498,14 @@ def create_app() -> FastAPI:
             return report_service.get_report(run_id=run_id)
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.delete("/api/reports/{run_id}")
+    async def delete_report(run_id: str) -> dict:
+        try:
+            deleted = report_service.delete_report(run_id=run_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"deleted": deleted}
 
     @app.get("/api/reports/{run_id}/markdown", response_class=PlainTextResponse)
     async def get_report_markdown(run_id: str) -> str:
@@ -390,8 +570,8 @@ def create_app() -> FastAPI:
         service = SymbolSearchService(config=config, registry=ProviderRegistry())
         try:
             return await service.search(query=q, market=market, limit=limit)
-        except Exception as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception:
+            return []
 
     @app.get("/api/stocks/{symbol}/quote")
     async def stock_quote(symbol: str, market: str = Query(..., pattern="^(CN|HK|US)$")):
@@ -545,7 +725,7 @@ def create_app() -> FastAPI:
         _ensure_database(config)
         service = AnalysisService(config=config, registry=ProviderRegistry())
         try:
-            return service.get_provider_auth_status(provider_id=provider_id)
+            return await service.get_provider_auth_status(provider_id=provider_id)
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -596,7 +776,7 @@ def create_app() -> FastAPI:
         config = config_store.load()
         _ensure_database(config)
         service = AnalysisService(config=config, registry=ProviderRegistry())
-        deleted = service.logout_provider_auth(provider_id=provider_id)
+        deleted = await service.logout_provider_auth(provider_id=provider_id)
         return {"deleted": deleted}
 
     @app.get(
@@ -620,36 +800,66 @@ def create_app() -> FastAPI:
         deleted = service.delete_secret(provider_id=provider_id)
         return {"deleted": deleted}
 
+    @app.delete("/api/providers/analysis/{provider_id}", response_model=AppConfig)
+    async def delete_analysis_provider(provider_id: str) -> AppConfig:
+        config = config_store.load()
+        providers = config.analysis.providers
+        if not any(item.provider_id == provider_id for item in providers):
+            raise HTTPException(status_code=404, detail=f"Provider not found: {provider_id}")
+        if len(providers) <= 1:
+            raise HTTPException(status_code=400, detail="At least one analysis provider must remain.")
+
+        next_providers = [item for item in providers if item.provider_id != provider_id]
+        enabled_providers = [item for item in next_providers if item.enabled]
+        if not enabled_providers:
+            first = next_providers[0].model_copy(update={"enabled": True})
+            next_providers = [first, *next_providers[1:]]
+            enabled_providers = [first]
+
+        provider_map = {item.provider_id: item for item in next_providers}
+        next_default_provider = config.analysis.default_provider
+        if next_default_provider not in provider_map or not provider_map[next_default_provider].enabled:
+            next_default_provider = enabled_providers[0].provider_id
+        next_default_model = config.analysis.default_model
+        default_cfg = provider_map[next_default_provider]
+        if default_cfg.models and next_default_model not in default_cfg.models:
+            next_default_model = default_cfg.models[0]
+
+        next_config = config.model_copy(
+            update={
+                "analysis": config.analysis.model_copy(
+                    update={
+                        "providers": next_providers,
+                        "default_provider": next_default_provider,
+                        "default_model": next_default_model,
+                    }
+                )
+            }
+        )
+        saved = config_store.save(next_config)
+        _ensure_database(saved)
+        service = AnalysisService(config=saved, registry=ProviderRegistry())
+        await service.logout_provider_auth(provider_id=provider_id)
+        service.delete_secret(provider_id=provider_id)
+        return saved
+
+    @app.post("/api/analysis/stocks/{symbol}/run/async", response_model=StockAnalysisTaskView)
+    async def run_stock_analysis_async(symbol: str, payload: StockAnalysisRunRequest) -> StockAnalysisTaskView:
+        return await _start_stock_analysis_task(symbol=symbol, payload=payload)
+
+    @app.get("/api/analysis/stocks/tasks/{task_id}", response_model=StockAnalysisTaskView)
+    async def stock_analysis_task(task_id: str) -> StockAnalysisTaskView:
+        try:
+            return await _get_stock_analysis_task(task_id=task_id)
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
     @app.post("/api/analysis/stocks/{symbol}/run", response_model=StockAnalysisRunView)
     async def run_stock_analysis(symbol: str, payload: StockAnalysisRunRequest) -> StockAnalysisRunView:
-        config = config_store.load()
-        _ensure_database(config)
-        async with HttpClient(
-            timeout_seconds=config.request_timeout_seconds,
-            user_agent=config.user_agent,
-        ) as client:
-            registry = ProviderRegistry()
-            news_service = NewsService(config=config, client=client, registry=registry)
-            fund_flow_service = FundFlowService(config=config, client=client, registry=registry)
-            market_data_service = MarketDataService(config=config, registry=registry)
-            analysis_service = AnalysisService(
-                config=config,
-                registry=registry,
-                market_data_service=market_data_service,
-                news_service=news_service,
-                fund_flow_service=fund_flow_service,
-            )
-            try:
-                return await analysis_service.run_stock_analysis(
-                    symbol=symbol,
-                    market=payload.market,
-                    provider_id=payload.provider_id,
-                    model=payload.model,
-                    interval=payload.interval,
-                    lookback_bars=payload.lookback_bars,
-                )
-            except Exception as exc:
-                raise HTTPException(status_code=400, detail=str(exc)) from exc
+        try:
+            return await _run_stock_analysis_once(symbol=symbol, payload=payload)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.get("/api/analysis/stocks/{symbol}/history", response_model=List[StockAnalysisHistoryItem])
     async def stock_analysis_history(

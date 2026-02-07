@@ -1,3 +1,4 @@
+import asyncio
 import tempfile
 import unittest
 from pathlib import Path
@@ -139,11 +140,11 @@ class AnalysisProviderStatusTest(unittest.TestCase):
                 keychain_store=DummyKeychainStore(),
             )
 
-            status = service.get_provider_auth_status("mock")
+            status = asyncio.run(service.get_provider_auth_status("mock"))
             self.assertEqual(status.status, "ready")
             self.assertTrue(status.connected)
 
-    def test_oauth_provider_missing_base_url_not_ready(self) -> None:
+    def test_oauth_provider_requires_login_not_ready(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             (root / "data").mkdir(parents=True, exist_ok=True)
@@ -176,9 +177,9 @@ class AnalysisProviderStatusTest(unittest.TestCase):
             )
 
             providers = {row.provider_id: row for row in service.list_providers()}
-            self.assertEqual(providers["codex_app_server"].status, "missing-base-url")
+            self.assertEqual(providers["codex_app_server"].status, "login-required")
             self.assertFalse(providers["codex_app_server"].ready)
-            with self.assertRaisesRegex(ValueError, "base_url"):
+            with self.assertRaisesRegex(ValueError, "login"):
                 service.ensure_provider_ready("codex_app_server", "gpt-5-codex")
 
     def test_dynamic_provider_keeps_runtime_model(self) -> None:

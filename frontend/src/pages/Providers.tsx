@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { KeyRound, LogIn, LogOut, Save } from "lucide-react";
+import { KeyRound, LogIn, LogOut, Save, Trash2 } from "lucide-react";
 
 import type { AnalysisProviderConfig, AnalysisProviderView } from "@/api/client";
 import { Badge } from "@/components/ui/badge";
@@ -21,6 +21,7 @@ type Props = {
   onConnectAuth: (providerId: string) => Promise<void>;
   onDisconnectAuth: (providerId: string) => Promise<void>;
   onLoadModels: (providerId: string) => Promise<string[]>;
+  onDeleteProvider: (providerId: string) => Promise<void>;
   onSaveProviderConfig: (
     providerId: string,
     patch: Partial<{
@@ -44,6 +45,7 @@ export function ProvidersPage({
   onConnectAuth,
   onDisconnectAuth,
   onLoadModels,
+  onDeleteProvider,
   onSaveProviderConfig,
 }: Props) {
   const [providerId, setProviderId] = useState(defaultProvider || "");
@@ -94,6 +96,8 @@ export function ProvidersPage({
   const selectedAuthMode = selected?.auth_mode ?? (selected?.secret_required ? "api_key" : "none");
   const isOauthProvider = selectedAuthMode === "chatgpt_oauth";
   const isOauthConnected = Boolean(selected?.connected);
+  const canConnectOauth = Boolean(selected);
+  const showBaseUrlField = selectedProviderConfig?.type !== "mock" && selectedProviderConfig?.type !== "codex_app_server";
   const selectedStatusVariant = selected?.ready ? "default" : selected?.status === "disabled" ? "outline" : "destructive";
   const canSetDefault = Boolean(selected?.ready && model);
   const canSaveSecret = Boolean(selected?.secret_required && selectedAuthMode === "api_key");
@@ -236,7 +240,7 @@ export function ProvidersPage({
             <div className="grid grid-cols-2 gap-2">
               <Button
                 variant="secondary"
-                disabled={!selected}
+                disabled={!selected || !canConnectOauth}
                 onClick={async () => {
                   if (!selected) {
                     return;
@@ -262,7 +266,6 @@ export function ProvidersPage({
               </Button>
             </div>
           ) : null}
-
           <div className="space-y-2">
             <Label htmlFor="secret">API Key</Label>
             <Input
@@ -321,15 +324,22 @@ export function ProvidersPage({
                   />
                 </div>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="provider_base_url">Base URL</Label>
-                <Input
-                  id="provider_base_url"
-                  placeholder="https://your-codex-gateway.example.com"
-                  value={configBaseUrl}
-                  onChange={(event) => setConfigBaseUrl(event.target.value)}
-                />
-              </div>
+              {showBaseUrlField ? (
+                <div className="space-y-2">
+                  <Label htmlFor="provider_base_url">Base URL</Label>
+                  <Input
+                    id="provider_base_url"
+                    placeholder="https://api.openai.com/v1"
+                    value={configBaseUrl}
+                    onChange={(event) => setConfigBaseUrl(event.target.value)}
+                  />
+                </div>
+              ) : null}
+              {selectedProviderConfig?.type === "codex_app_server" ? (
+                <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                  codex_app_server 使用本机官方 Codex app-server，无需配置 Base URL。
+                </div>
+              ) : null}
               <div className="space-y-2">
                 <Label htmlFor="provider_models">Models（每行一个）</Label>
                 <Textarea
@@ -395,6 +405,20 @@ export function ProvidersPage({
               >
                 <Save className="mr-2 h-4 w-4" />
                 保存 Provider 配置
+              </Button>
+              <Button
+                className="w-full"
+                variant="destructive"
+                disabled={!selectedProviderConfig}
+                onClick={async () => {
+                  if (!selectedProviderConfig) {
+                    return;
+                  }
+                  await onDeleteProvider(selectedProviderConfig.provider_id);
+                }}
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                删除 Provider
               </Button>
             </div>
           ) : null}

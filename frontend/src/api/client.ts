@@ -17,7 +17,7 @@ const analysisProviderConfigSchema = z.object({
   models: z.array(z.string()),
   timeout: z.number(),
   enabled: z.boolean(),
-  auth_mode: z.string().optional(),
+  auth_mode: z.string().nullable().optional(),
   login_callback_url: z.string().nullable().optional(),
   login_timeout_seconds: z.number().optional(),
 });
@@ -238,6 +238,22 @@ export const reportDetailSchema = z.object({
   raw_data: z.record(z.any()),
 });
 
+export const reportTaskSchema = z.object({
+  task_id: z.string(),
+  status: z.enum(["PENDING", "RUNNING", "SUCCEEDED", "FAILED"]),
+  created_at: z.string(),
+  started_at: z.string().nullable().optional(),
+  finished_at: z.string().nullable().optional(),
+  error_message: z.string().nullable().optional(),
+  result: z
+    .object({
+      summary: reportSummarySchema,
+      warnings: z.array(z.string()),
+    })
+    .nullable()
+    .optional(),
+});
+
 export const stockAnalysisRunSchema = z.object({
   id: z.number(),
   symbol: z.string(),
@@ -259,6 +275,18 @@ export const stockAnalysisRunSchema = z.object({
   created_at: z.string(),
 });
 
+export const stockAnalysisTaskSchema = z.object({
+  task_id: z.string(),
+  symbol: z.string(),
+  market: z.string(),
+  status: z.enum(["PENDING", "RUNNING", "SUCCEEDED", "FAILED"]),
+  created_at: z.string(),
+  started_at: z.string().nullable().optional(),
+  finished_at: z.string().nullable().optional(),
+  error_message: z.string().nullable().optional(),
+  result: stockAnalysisRunSchema.nullable().optional(),
+});
+
 export type AppConfig = z.infer<typeof appConfigSchema>;
 export type AnalysisProviderConfig = z.infer<typeof analysisProviderConfigSchema>;
 export type NewsSource = z.infer<typeof newsSourceSchema>;
@@ -269,7 +297,9 @@ export type CurvePoint = z.infer<typeof curvePointSchema>;
 export type AnalysisProviderView = z.infer<typeof analysisProviderViewSchema>;
 export type ReportSummary = z.infer<typeof reportSummarySchema>;
 export type ReportDetail = z.infer<typeof reportDetailSchema>;
+export type ReportTask = z.infer<typeof reportTaskSchema>;
 export type StockAnalysisRun = z.infer<typeof stockAnalysisRunSchema>;
+export type StockAnalysisTask = z.infer<typeof stockAnalysisTaskSchema>;
 export type StockSearchResult = z.infer<typeof stockSearchResultSchema>;
 export type NewsListenerRun = z.infer<typeof newsListenerRunSchema>;
 export type NewsAlert = z.infer<typeof newsAlertSchema>;
@@ -307,6 +337,10 @@ export const api = {
     }),
   listReports: () => request("/reports", z.array(reportSummarySchema)),
   getReport: (runId: string) => request(`/reports/${runId}`, reportDetailSchema),
+  deleteReport: (runId: string) =>
+    request(`/reports/${encodeURIComponent(runId)}`, z.object({ deleted: z.boolean() }), {
+      method: "DELETE",
+    }),
   runReport: (payload: Record<string, unknown>) =>
     request(
       "/reports/run",
@@ -317,6 +351,14 @@ export const api = {
         body: JSON.stringify(payload),
       }
     ),
+  runReportAsync: (payload: Record<string, unknown>) =>
+    request("/reports/run/async", reportTaskSchema, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
+  getReportTask: (taskId: string) =>
+    request(`/reports/tasks/${encodeURIComponent(taskId)}`, reportTaskSchema),
   listWatchlist: () => request("/watchlist", z.array(watchlistItemSchema)),
   createWatchlistItem: (payload: Record<string, unknown>) =>
     request("/watchlist", watchlistItemSchema, {
@@ -346,6 +388,10 @@ export const api = {
       z.array(stockSearchResultSchema)
     ),
   listAnalysisProviders: () => request("/providers/analysis", z.array(analysisProviderViewSchema)),
+  deleteAnalysisProvider: (providerId: string) =>
+    request(`/providers/analysis/${encodeURIComponent(providerId)}`, appConfigSchema, {
+      method: "DELETE",
+    }),
   updateDefaultAnalysis: (payload: Record<string, unknown>) =>
     request("/providers/analysis/default", appConfigSchema, {
       method: "PUT",
@@ -382,6 +428,14 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     }),
+  runStockAnalysisAsync: (symbol: string, payload: Record<string, unknown>) =>
+    request(`/analysis/stocks/${encodeURIComponent(symbol)}/run/async`, stockAnalysisTaskSchema, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
+  getStockAnalysisTask: (taskId: string) =>
+    request(`/analysis/stocks/tasks/${encodeURIComponent(taskId)}`, stockAnalysisTaskSchema),
   listStockAnalysisHistory: (symbol: string, market: string, limit = 20) =>
     request(
       `/analysis/stocks/${encodeURIComponent(symbol)}/history?market=${market}&limit=${limit}`,

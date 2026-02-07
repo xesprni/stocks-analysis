@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 import json
-from datetime import datetime
+import shutil
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
+from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 from market_reporter.config import AppConfig
@@ -15,13 +18,93 @@ from market_reporter.modules.fund_flow.service import FundFlowService
 from market_reporter.modules.market_data.service import MarketDataService
 from market_reporter.modules.news.service import NewsService
 from market_reporter.modules.reports.renderer import ReportRenderer
-from market_reporter.schemas import ReportRunDetail, ReportRunSummary, RunRequest, RunResult
+from market_reporter.schemas import (
+    ReportRunDetail,
+    ReportRunSummary,
+    ReportRunTaskView,
+    ReportTaskStatus,
+    RunRequest,
+    RunResult,
+)
 from market_reporter.services.config_store import ConfigStore
 
 
 class ReportService:
     def __init__(self, config_store: ConfigStore) -> None:
         self.config_store = config_store
+        self._task_lock = asyncio.Lock()
+        self._tasks: Dict[str, ReportRunTaskView] = {}
+        self._task_handles: Dict[str, asyncio.Task[None]] = {}
+
+    async def start_report_async(self, overrides: Optional[RunRequest] = None) -> ReportRunTaskView:
+        task_id = uuid4().hex
+        task_view = ReportRunTaskView(
+            task_id=task_id,
+            status=ReportTaskStatus.PENDING,
+            created_at=datetime.now(timezone.utc),
+        )
+        async with self._task_lock:
+            self._tasks[task_id] = task_view
+        task = asyncio.create_task(self._run_background_task(task_id=task_id, overrides=overrides))
+        self._task_handles[task_id] = task
+        task.add_done_callback(lambda _: self._task_handles.pop(task_id, None))
+        return task_view
+
+    async def get_report_task(self, task_id: str) -> ReportRunTaskView:
+        async with self._task_lock:
+            task = self._tasks.get(task_id)
+            if task is None:
+                raise FileNotFoundError(f"Report task not found: {task_id}")
+            return task
+
+    async def _run_background_task(self, task_id: str, overrides: Optional[RunRequest]) -> None:
+        await self._update_task(
+            task_id=task_id,
+            status=ReportTaskStatus.RUNNING,
+            started_at=datetime.now(timezone.utc),
+            error_message=None,
+        )
+        try:
+            result = await self.run_report(overrides=overrides)
+            await self._update_task(
+                task_id=task_id,
+                status=ReportTaskStatus.SUCCEEDED,
+                finished_at=datetime.now(timezone.utc),
+                result=result,
+                error_message=None,
+            )
+        except Exception as exc:
+            await self._update_task(
+                task_id=task_id,
+                status=ReportTaskStatus.FAILED,
+                finished_at=datetime.now(timezone.utc),
+                error_message=str(exc),
+            )
+
+    async def _update_task(
+        self,
+        task_id: str,
+        status: ReportTaskStatus,
+        started_at: Optional[datetime] = None,
+        finished_at: Optional[datetime] = None,
+        result: Optional[RunResult] = None,
+        error_message: Optional[str] = None,
+    ) -> None:
+        async with self._task_lock:
+            task = self._tasks.get(task_id)
+            if task is None:
+                return
+            update_payload = {
+                "status": status,
+                "error_message": error_message if error_message is not None else task.error_message,
+            }
+            if started_at is not None:
+                update_payload["started_at"] = started_at
+            if finished_at is not None:
+                update_payload["finished_at"] = finished_at
+            if result is not None:
+                update_payload["result"] = result
+            self._tasks[task_id] = task.model_copy(update=update_payload)
 
     async def run_report(self, overrides: Optional[RunRequest] = None) -> RunResult:
         config = self._build_runtime_config(overrides=overrides)
@@ -164,6 +247,17 @@ class ReportService:
             report_markdown=report_path.read_text(encoding="utf-8"),
             raw_data=json.loads(raw_path.read_text(encoding="utf-8")),
         )
+
+    def delete_report(self, run_id: str) -> bool:
+        config = self.config_store.load()
+        root = config.ensure_output_root().resolve()
+        target = (root / run_id).resolve()
+        if not target.exists() or not target.is_dir():
+            return False
+        if target == root or root not in target.parents:
+            raise ValueError("Invalid report path.")
+        shutil.rmtree(target)
+        return True
 
     def _build_runtime_config(self, overrides: Optional[RunRequest]) -> AppConfig:
         config = self.config_store.load()

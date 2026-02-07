@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import re
 from typing import Dict, List, Optional, Tuple
 
 from market_reporter.config import AppConfig
 from market_reporter.core.registry import ProviderRegistry
+from market_reporter.modules.market_data.symbol_mapper import normalize_symbol
 from market_reporter.modules.symbol_search.providers.akshare_search_provider import AkshareSearchProvider
 from market_reporter.modules.symbol_search.providers.yfinance_search_provider import YahooFinanceSearchProvider
 from market_reporter.modules.symbol_search.schemas import StockSearchResult
@@ -67,7 +69,10 @@ class SymbolSearchService:
             current = dedup.get(key)
             if current is None or item.score > current.score:
                 dedup[key] = item
-        return sorted(dedup.values(), key=lambda item: item.score, reverse=True)[:resolved_limit]
+        merged = sorted(dedup.values(), key=lambda item: item.score, reverse=True)
+        if merged:
+            return merged[:resolved_limit]
+        return self._heuristic_results(query=normalized_query, market=market.upper(), limit=resolved_limit)
 
     def _resolve_provider_with_fallback(self, chosen_provider: str):
         provider_id = (chosen_provider or "").strip() or "composite"
@@ -75,6 +80,63 @@ class SymbolSearchService:
             return self.registry.resolve(self.MODULE_NAME, provider_id)
         except Exception:
             return self.registry.resolve(self.MODULE_NAME, "composite")
+
+    @staticmethod
+    def _heuristic_results(query: str, market: str, limit: int) -> List[StockSearchResult]:
+        q = query.strip().upper()
+        if not q:
+            return []
+
+        candidates: List[StockSearchResult] = []
+        if market in {"US", "ALL"} and re.fullmatch(r"[A-Z][A-Z0-9.\-]{0,14}", q):
+            candidates.append(
+                StockSearchResult(
+                    symbol=normalize_symbol(q, "US"),
+                    market="US",
+                    name=f"{q} (manual)",
+                    exchange="US",
+                    source="heuristic",
+                    score=0.35,
+                )
+            )
+        if market in {"HK", "ALL"} and re.fullmatch(r"\d{1,5}(\.HK)?", q):
+            code = q.replace(".HK", "").zfill(4)
+            candidates.append(
+                StockSearchResult(
+                    symbol=normalize_symbol(code, "HK"),
+                    market="HK",
+                    name=f"{code} (manual)",
+                    exchange="HKEX",
+                    source="heuristic",
+                    score=0.35,
+                )
+            )
+        if market in {"CN", "ALL"} and re.fullmatch(r"\d{6}(\.(SH|SZ))?", q):
+            code = q.split(".")[0]
+            candidates.append(
+                StockSearchResult(
+                    symbol=normalize_symbol(code, "CN"),
+                    market="CN",
+                    name=f"{code} (manual)",
+                    exchange="CN",
+                    source="heuristic",
+                    score=0.35,
+                )
+            )
+
+        if not candidates:
+            fallback_market = market if market in {"CN", "HK", "US"} else "US"
+            candidates.append(
+                StockSearchResult(
+                    symbol=normalize_symbol(q, fallback_market),
+                    market=fallback_market,
+                    name=f"{q} (manual)",
+                    exchange=fallback_market,
+                    source="heuristic",
+                    score=0.2,
+                )
+            )
+        return candidates[:limit]
 
 
 class CompositeSymbolSearchProvider:

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -36,6 +38,23 @@ class RunRequest(BaseModel):
 class RunResult(BaseModel):
     summary: ReportRunSummary
     warnings: List[str]
+
+
+class ReportTaskStatus(str, Enum):
+    PENDING = "PENDING"
+    RUNNING = "RUNNING"
+    SUCCEEDED = "SUCCEEDED"
+    FAILED = "FAILED"
+
+
+class ReportRunTaskView(BaseModel):
+    task_id: str
+    status: ReportTaskStatus
+    created_at: datetime
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
+    error_message: Optional[str] = None
+    result: Optional[RunResult] = None
 
 
 class ConfigUpdateRequest(BaseModel):

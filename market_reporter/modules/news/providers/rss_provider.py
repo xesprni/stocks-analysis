@@ -4,6 +4,7 @@ import asyncio
 from typing import List, Optional, Sequence, Tuple
 
 import feedparser
+import httpx
 
 from market_reporter.config import AppConfig, NewsSource
 from market_reporter.core.types import NewsItem
@@ -37,7 +38,15 @@ class RSSNewsProvider:
         dedup: set[str] = set()
         for source, result in zip(selected_sources, settled):
             if isinstance(result, Exception):
-                warnings.append(f"News source failed [{source.name}]: {result}")
+                if isinstance(result, httpx.HTTPStatusError):
+                    status_code = result.response.status_code
+                    warnings.append(
+                        f"News source failed [id={source.source_id};name={source.name};status={status_code}]: {result}"
+                    )
+                else:
+                    warnings.append(
+                        f"News source failed [id={source.source_id};name={source.name};status=error]: {result}"
+                    )
                 continue
             for item in result:
                 key = f"{item.title}::{item.link}"

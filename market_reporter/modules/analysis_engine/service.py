@@ -79,7 +79,7 @@ class AnalysisService:
                 credential_expires_at = account.expires_at if account else None
                 connected = self._is_account_connected(account)
                 secret_required = auth_mode == "api_key"
-                base_url_required = provider.type != "mock"
+                base_url_required = provider.type not in {"mock", "codex_app_server"}
                 has_base_url = bool((provider.base_url or "").strip()) if base_url_required else True
                 status, status_message, ready = self._evaluate_provider_state(
                     enabled=provider.enabled,
@@ -234,9 +234,9 @@ class AnalysisService:
                 nonce=nonce,
                 expires_at=expires_at,
             )
-        return self.get_provider_auth_status(provider_id=provider_id)
+        return await self.get_provider_auth_status(provider_id=provider_id)
 
-    def get_provider_auth_status(self, provider_id: str) -> ProviderAuthStatusView:
+    async def get_provider_auth_status(self, provider_id: str) -> ProviderAuthStatusView:
         provider_cfg = self._find_provider(provider_id)
         auth_mode = self._resolve_auth_mode(provider_cfg)
         if auth_mode == "none":
@@ -248,6 +248,28 @@ class AnalysisService:
                 message="No authentication required.",
             )
         if auth_mode == "chatgpt_oauth":
+            if provider_cfg.type == "codex_app_server":
+                provider = self.registry.resolve(
+                    self.MODULE_NAME,
+                    provider_cfg.type,
+                    provider_config=provider_cfg,
+                )
+                status_payload = await provider.get_auth_status()
+                connected = bool(status_payload.get("connected"))
+                message = str(status_payload.get("message") or "")
+                self._sync_oauth_connection_marker(
+                    provider_id=provider_id,
+                    connected=connected,
+                    marker_payload=status_payload.get("raw"),
+                )
+                return ProviderAuthStatusView(
+                    provider_id=provider_id,
+                    auth_mode=auth_mode,
+                    connected=connected,
+                    status="connected" if connected else "disconnected",
+                    message=message or ("Connected." if connected else "Provider account is not connected."),
+                    expires_at=None,
+                )
             account = self._get_account(provider_id=provider_cfg.provider_id)
             connected = self._is_account_connected(account)
             if account is None:
@@ -285,13 +307,22 @@ class AnalysisService:
             message="API key is configured." if has_secret else "API key is missing.",
         )
 
-    def logout_provider_auth(self, provider_id: str) -> bool:
+    async def logout_provider_auth(self, provider_id: str) -> bool:
         provider_cfg = self._find_provider(provider_id)
         auth_mode = self._resolve_auth_mode(provider_cfg)
         if auth_mode == "chatgpt_oauth":
+            external_deleted = False
+            if provider_cfg.type == "codex_app_server":
+                provider = self.registry.resolve(
+                    self.MODULE_NAME,
+                    provider_cfg.type,
+                    provider_config=provider_cfg,
+                )
+                external_deleted = bool(await provider.logout())
             with session_scope(self.config.database.url) as session:
                 repo = AnalysisProviderAccountRepo(session)
-                return repo.delete(provider_id=provider_id)
+                deleted = repo.delete(provider_id=provider_id)
+            return bool(external_deleted or deleted)
         with session_scope(self.config.database.url) as session:
             repo = AnalysisProviderSecretRepo(session)
             return repo.delete(provider_id=provider_id)
@@ -300,20 +331,21 @@ class AnalysisService:
         provider_cfg = self._find_provider(provider_id)
         auth_mode = self._resolve_auth_mode(provider_cfg)
         if provider_cfg.type == "codex_app_server" and auth_mode == "chatgpt_oauth":
-            token = self._resolve_access_token(provider_cfg=provider_cfg)
-            if token:
-                provider = self.registry.resolve(
-                    self.MODULE_NAME,
-                    provider_cfg.type,
-                    provider_config=provider_cfg,
-                )
-                models = await provider.list_models(access_token=token)
+            provider = self.registry.resolve(
+                self.MODULE_NAME,
+                provider_cfg.type,
+                provider_config=provider_cfg,
+            )
+            try:
+                models = await provider.list_models(access_token=None)
                 if models:
                     return ProviderModelsView(
                         provider_id=provider_id,
                         models=models,
                         source="remote",
                     )
+            except Exception:
+                pass
         return ProviderModelsView(
             provider_id=provider_id,
             models=provider_cfg.models,
@@ -329,7 +361,7 @@ class AnalysisService:
         auth_mode = self._resolve_auth_mode(provider)
         has_secret = self._has_secret(provider.provider_id)
         connected = self._has_connected_account(provider.provider_id)
-        base_url_required = provider.type != "mock"
+        base_url_required = provider.type not in {"mock", "codex_app_server"}
         has_base_url = bool((provider.base_url or "").strip()) if base_url_required else True
         _, status_message, ready = self._evaluate_provider_state(
             enabled=provider.enabled,
@@ -504,7 +536,13 @@ class AnalysisService:
             provider_config=provider_cfg,
         )
         auth_mode = self._resolve_auth_mode(provider_cfg)
-        if provider_cfg.type == "codex_app_server" or auth_mode == "chatgpt_oauth":
+        if provider_cfg.type == "codex_app_server":
+            return await provider.analyze(
+                payload=payload,
+                model=model,
+                access_token=None,
+            )
+        if auth_mode == "chatgpt_oauth":
             access_token = self._resolve_access_token(provider_cfg=provider_cfg)
             return await provider.analyze(
                 payload=payload,
@@ -559,6 +597,44 @@ class AnalysisService:
             repo = AnalysisProviderAccountRepo(session)
             return repo.get(provider_id=provider_id)
 
+    def _sync_oauth_connection_marker(
+        self,
+        provider_id: str,
+        connected: bool,
+        marker_payload: Optional[object] = None,
+    ) -> None:
+        with session_scope(self.config.database.url) as session:
+            repo = AnalysisProviderAccountRepo(session)
+            if not connected:
+                repo.delete(provider_id=provider_id)
+                return
+
+            try:
+                master_key = self.keychain_store.get_or_create_master_key()
+                payload = {
+                    "provider_id": provider_id,
+                    "marker_type": "codex_app_server",
+                    "connected": True,
+                    "payload": marker_payload if isinstance(marker_payload, dict) else {},
+                }
+                ciphertext, nonce = encrypt_text(json.dumps(payload, ensure_ascii=False), master_key)
+                repo.upsert(
+                    provider_id=provider_id,
+                    account_type="chatgpt",
+                    credential_ciphertext=ciphertext,
+                    nonce=nonce,
+                    expires_at=None,
+                )
+            except Exception:
+                # This marker does not contain secrets; keep provider status functional even if keychain is unavailable.
+                repo.upsert(
+                    provider_id=provider_id,
+                    account_type="chatgpt",
+                    credential_ciphertext='{"marker_type":"codex_app_server","connected":true}',
+                    nonce="plain",
+                    expires_at=None,
+                )
+
     def _find_provider(self, provider_id: str) -> AnalysisProviderConfig:
         for provider in self.config.analysis.providers:
             if provider.provider_id == provider_id:
@@ -570,11 +646,19 @@ class AnalysisService:
         provider_id: Optional[str],
         model: Optional[str],
     ) -> Tuple[AnalysisProviderConfig, str]:
-        provider_map = self.config.analysis_provider_map()
+        provider_map = {provider.provider_id: provider for provider in self.config.analysis.providers}
         selected_provider_id = provider_id or self.config.analysis.default_provider
         if selected_provider_id not in provider_map:
-            raise ValueError(f"Selected provider not enabled: {selected_provider_id}")
+            raise ValueError(f"Selected provider not found: {selected_provider_id}")
         provider_cfg = provider_map[selected_provider_id]
+        if not provider_cfg.enabled:
+            if provider_id:
+                provider_cfg = provider_cfg.model_copy(update={"enabled": True})
+            else:
+                fallback_enabled = next((item for item in provider_map.values() if item.enabled), None)
+                if fallback_enabled is None:
+                    raise ValueError(f"Selected provider not enabled: {selected_provider_id}")
+                provider_cfg = fallback_enabled
 
         selected_model = model or self.config.analysis.default_model
         if not selected_model and provider_cfg.models:

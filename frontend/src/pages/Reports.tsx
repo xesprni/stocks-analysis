@@ -1,17 +1,20 @@
 import type { ReportDetail, ReportSummary } from "@/api/client";
 import { MarkdownViewer } from "@/components/MarkdownViewer";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Trash2 } from "lucide-react";
 
 type Props = {
   reports: ReportSummary[];
   selectedRunId: string;
   detail: ReportDetail | null;
   onSelect: (runId: string) => void;
+  onDelete: (runId: string) => Promise<void>;
 };
 
-export function ReportsPage({ reports, selectedRunId, detail, onSelect }: Props) {
+export function ReportsPage({ reports, selectedRunId, detail, onSelect, onDelete }: Props) {
   return (
     <div className="grid gap-6 lg:grid-cols-5">
       <Card className="lg:col-span-2">
@@ -25,6 +28,7 @@ export function ReportsPage({ reports, selectedRunId, detail, onSelect }: Props)
                 <TableHead>Run ID</TableHead>
                 <TableHead>Provider</TableHead>
                 <TableHead>Model</TableHead>
+                <TableHead>操作</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -38,6 +42,19 @@ export function ReportsPage({ reports, selectedRunId, detail, onSelect }: Props)
                   <TableCell className="font-mono text-xs">{item.run_id}</TableCell>
                   <TableCell>{item.provider_id || "-"}</TableCell>
                   <TableCell>{item.model || "-"}</TableCell>
+                  <TableCell>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void onDelete(item.run_id);
+                      }}
+                    >
+                      <Trash2 className="mr-1 h-3.5 w-3.5" />
+                      删除
+                    </Button>
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>

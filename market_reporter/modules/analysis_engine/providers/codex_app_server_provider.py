@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import asyncio
 import json
+import os
+import select
+import shutil
+import subprocess
+import time
 from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Optional, Sequence
-
-import httpx
+from pathlib import Path
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from market_reporter.config import AnalysisProviderConfig
 from market_reporter.core.types import AnalysisInput, AnalysisOutput
@@ -23,27 +28,15 @@ class CodexAppServerProvider:
         callback_url: str,
         redirect_to: Optional[str] = None,
     ) -> Dict[str, object]:
-        payload = {
-            "type": "chatgpt",
-            "state": state,
-            "redirect_uri": callback_url,
-            "redirectUri": callback_url,
-        }
-        if redirect_to:
-            payload["redirect_to"] = redirect_to
-            payload["redirectTo"] = redirect_to
-
-        data = await self._post_with_fallback(
-            paths=["/account/login/start", "/v1/account/login/start"],
-            json_body=payload,
-        )
-        auth_url = self._pick_string(data, ["authUrl", "auth_url", "url", "loginUrl", "login_url"])
+        del state, callback_url, redirect_to
+        result = await asyncio.to_thread(self._start_login_sync)
+        auth_url = self._pick_string(result, ["authUrl", "auth_url", "url", "loginUrl", "login_url"])
         if not auth_url:
-            raise ValueError("Codex App Server did not return auth URL")
+            raise ValueError("Codex app-server did not return auth URL.")
         return {
             "auth_url": auth_url,
-            "state": state,
-            "raw": data,
+            "state": "codex-app-server",
+            "raw": result,
         }
 
     async def complete_login(
@@ -53,63 +46,49 @@ class CodexAppServerProvider:
         callback_url: str,
         query_params: Optional[Dict[str, str]] = None,
     ) -> Dict[str, object]:
-        query_params = query_params or {}
-
-        direct_access_token = (
-            query_params.get("access_token")
-            or query_params.get("token")
-            or query_params.get("id_token")
-        )
-        if direct_access_token:
-            return {
-                "access_token": direct_access_token,
-                "refresh_token": query_params.get("refresh_token"),
-                "expires_at": query_params.get("expires_at"),
-                "token_type": query_params.get("token_type") or "Bearer",
-                "raw": query_params,
-            }
-
-        if not code:
-            raise ValueError("Missing login code from callback.")
-
-        payload = {
-            "type": "chatgpt",
-            "code": code,
-            "state": state,
-            "redirect_uri": callback_url,
-            "redirectUri": callback_url,
-        }
-        data = await self._post_with_fallback(
-            paths=[
-                "/account/login/complete",
-                "/v1/account/login/complete",
-                "/account/login/callback",
-                "/v1/account/login/callback",
-            ],
-            json_body=payload,
-        )
-        access_token = self._pick_string(
-            data,
-            ["access_token", "accessToken", "token", "id_token"],
-        )
-        if not access_token:
-            raise ValueError("Codex App Server did not return access token")
+        del code, state, callback_url, query_params
+        status = await self.get_auth_status()
+        if not status.get("connected"):
+            raise ValueError("Codex account is not connected yet.")
         return {
-            "access_token": access_token,
-            "refresh_token": self._pick_string(data, ["refresh_token", "refreshToken"]),
-            "expires_at": self._pick_string(data, ["expires_at", "expiresAt"]),
-            "expires_in": self._pick_number(data, ["expires_in", "expiresIn"]),
-            "token_type": self._pick_string(data, ["token_type", "tokenType"]) or "Bearer",
-            "raw": data,
+            "access_token": "codex_app_server_session",
+            "token_type": "Bearer",
+            "raw": status.get("raw") or {},
         }
 
-    async def list_models(self, access_token: str) -> List[str]:
-        headers = {"Authorization": f"Bearer {access_token}"}
-        data = await self._get_with_fallback(paths=["/models", "/v1/models"], headers=headers, allow_error=True)
-        if data is None:
+    async def get_auth_status(self) -> Dict[str, object]:
+        try:
+            payload = await asyncio.to_thread(self._read_account_payload_sync)
+        except Exception as exc:
+            return {
+                "connected": False,
+                "message": str(exc),
+                "raw": {},
+            }
+        connected, message = self._extract_connection_status(payload)
+        return {
+            "connected": connected,
+            "message": message,
+            "raw": payload,
+        }
+
+    async def logout(self) -> bool:
+        return await asyncio.to_thread(self._logout_sync)
+
+    async def list_models(self, access_token: Optional[str] = None) -> List[str]:
+        del access_token
+        try:
+            payload = await asyncio.to_thread(
+                self._request_with_fallback_sync,
+                [
+                    ("model/list", {}),
+                    ("models/list", {}),
+                ],
+                float(self.provider_config.timeout),
+            )
+        except Exception:
             return []
-        models = self._extract_models(data)
-        return models
+        return self._extract_models(payload)
 
     async def analyze(
         self,
@@ -118,35 +97,22 @@ class CodexAppServerProvider:
         api_key: Optional[str] = None,
         access_token: Optional[str] = None,
     ) -> AnalysisOutput:
-        token = access_token or api_key
-        if not token:
-            raise ValueError("Codex account is not connected.")
+        del api_key, access_token
+        status = await self.get_auth_status()
+        if not status.get("connected"):
+            raise ValueError("Codex account is not connected. Please click Connect in Providers page.")
 
-        request_payload = {
-            "model": model,
-            "temperature": 0.2,
-            "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": build_user_prompt(payload)},
-            ],
-        }
-        headers = {"Authorization": f"Bearer {token}"}
-        data = await self._post_with_fallback(
-            paths=["/v1/chat/completions", "/chat/completions"],
-            json_body=request_payload,
-            headers=headers,
-        )
-        content = self._extract_content(data)
+        content = await asyncio.to_thread(self._run_turn_sync, build_user_prompt(payload), model)
         structured = self._parse_json(content)
         if structured is None:
             structured = {
-                "summary": content[:300] if content else "模型未返回结构化内容",
+                "summary": content[:300] if content else "Model did not return structured output.",
                 "sentiment": "neutral",
                 "key_levels": [],
                 "risks": [],
                 "action_items": [],
                 "confidence": 0.4,
-                "markdown": content or "模型未返回可读内容。",
+                "markdown": content or "Model returned empty output.",
             }
 
         return AnalysisOutput.model_validate(
@@ -162,69 +128,339 @@ class CodexAppServerProvider:
             }
         )
 
-    async def _post_with_fallback(
+    def _start_login_sync(self) -> Dict[str, object]:
+        return self._request_with_fallback_sync(
+            calls=[
+                ("account/login/start", {"type": "chatgpt"}),
+                ("loginChatGpt", {}),
+            ],
+            timeout=float(self.provider_config.timeout),
+        )
+
+    def _logout_sync(self) -> bool:
+        try:
+            self._request_with_fallback_sync(
+                calls=[
+                    ("account/logout", {}),
+                    ("logoutChatGpt", {}),
+                ],
+                timeout=float(self.provider_config.timeout),
+            )
+            return True
+        except Exception:
+            return False
+
+    def _read_account_payload_sync(self) -> Dict[str, object]:
+        return self._request_with_fallback_sync(
+            calls=[
+                ("account/read", {}),
+                ("userInfo", {}),
+                ("getAuthStatus", {}),
+            ],
+            timeout=float(self.provider_config.timeout),
+        )
+
+    def _run_turn_sync(self, user_prompt: str, model: str) -> str:
+        timeout_seconds = float(max(self.provider_config.timeout * 3, 300))
+        process = self._spawn_process()
+        deadline = time.time() + timeout_seconds
+        try:
+            self._send_request(
+                process=process,
+                request_id=1,
+                method="initialize",
+                params={
+                    "protocolVersion": "2025-09-01",
+                    "clientInfo": {"name": "market-reporter", "version": "1.0"},
+                },
+            )
+            self._wait_for_response(process=process, request_id=1, deadline=deadline)
+
+            self._send_request(
+                process=process,
+                request_id=2,
+                method="thread/start",
+                params={
+                    "ephemeral": True,
+                    "model": model,
+                    "approvalPolicy": "never",
+                    "sandbox": "read-only",
+                    "developerInstructions": SYSTEM_PROMPT,
+                    "personality": "pragmatic",
+                },
+            )
+            thread_payload = self._wait_for_response(process=process, request_id=2, deadline=deadline)
+            thread_id = self._extract_thread_id(thread_payload)
+            if not thread_id:
+                raise ValueError("Codex app-server did not return thread id.")
+
+            self._send_request(
+                process=process,
+                request_id=3,
+                method="turn/start",
+                params={
+                    "threadId": thread_id,
+                    "input": [{"type": "text", "text": user_prompt}],
+                    "model": model,
+                    "approvalPolicy": "never",
+                    "sandboxPolicy": {"type": "readOnly"},
+                    "summary": "none",
+                },
+            )
+
+            turn_started = False
+            turn_status: Optional[str] = None
+            turn_error: Optional[str] = None
+            chunks: List[str] = []
+            messages: List[str] = []
+
+            while time.time() < deadline:
+                message = self._read_message(process=process, deadline=deadline)
+                if message is None:
+                    continue
+
+                response_id = message.get("id")
+                if response_id == 3:
+                    if "error" in message:
+                        raise ValueError(self._format_rpc_error(message["error"]))
+                    turn_started = True
+                    continue
+
+                method = message.get("method")
+                params = message.get("params")
+                if not isinstance(params, dict):
+                    params = {}
+
+                if method == "item/agentMessage/delta":
+                    delta = params.get("delta")
+                    if isinstance(delta, str) and delta:
+                        chunks.append(delta)
+                    continue
+
+                if method == "item/completed":
+                    item = params.get("item")
+                    if isinstance(item, dict) and item.get("type") == "agentMessage":
+                        text = item.get("text")
+                        if isinstance(text, str) and text.strip():
+                            messages.append(text.strip())
+                    continue
+
+                if method == "turn/completed":
+                    turn = params.get("turn")
+                    if isinstance(turn, dict):
+                        status = turn.get("status")
+                        if isinstance(status, str):
+                            turn_status = status
+                        error_payload = turn.get("error")
+                        if isinstance(error_payload, dict):
+                            turn_error = self._pick_string(
+                                error_payload,
+                                ["message", "additionalDetails"],
+                            )
+                    break
+
+                if method == "error":
+                    turn_error = self._pick_string(params, ["message"]) or turn_error
+
+            if not turn_started:
+                raise ValueError("Codex app-server did not acknowledge turn/start request.")
+            final_text = messages[-1] if messages else "".join(chunks).strip()
+            if turn_status is None:
+                if final_text:
+                    return final_text
+                raise ValueError(f"Timed out waiting for codex turn completion after {int(timeout_seconds)}s.")
+            if turn_status != "completed":
+                if final_text and turn_status in {"cancelled", "aborted"}:
+                    return final_text
+                suffix = f" ({turn_error})" if turn_error else ""
+                raise ValueError(f"Codex turn failed: {turn_status}{suffix}")
+
+            if not final_text:
+                raise ValueError("Codex app-server returned empty analysis output.")
+            return final_text
+        finally:
+            self._close_process(process)
+
+    def _request_with_fallback_sync(
         self,
-        paths: Sequence[str],
-        json_body: Dict[str, object],
-        headers: Optional[Dict[str, str]] = None,
+        calls: Sequence[Tuple[str, Dict[str, object]]],
+        timeout: float,
     ) -> Dict[str, object]:
         errors: List[str] = []
-        for path in paths:
+        for method, params in calls:
             try:
-                response = await self._request("POST", path=path, headers=headers, json_body=json_body)
-                return self._to_json(response)
+                return self._request_once_sync(method=method, params=params, timeout=timeout)
             except Exception as exc:
                 errors.append(str(exc))
-        raise ValueError("; ".join(errors) if errors else "Codex App Server request failed")
+        raise ValueError(self._join_unique_errors(errors))
 
-    async def _get_with_fallback(
-        self,
-        paths: Sequence[str],
-        headers: Optional[Dict[str, str]] = None,
-        allow_error: bool = False,
-    ) -> Optional[Dict[str, object]]:
-        errors: List[str] = []
-        for path in paths:
-            try:
-                response = await self._request("GET", path=path, headers=headers)
-                return self._to_json(response)
-            except Exception as exc:
-                errors.append(str(exc))
-        if allow_error:
-            return None
-        raise ValueError("; ".join(errors) if errors else "Codex App Server request failed")
-
-    async def _request(
+    def _request_once_sync(
         self,
         method: str,
-        path: str,
-        headers: Optional[Dict[str, str]] = None,
-        json_body: Optional[Dict[str, object]] = None,
-    ) -> httpx.Response:
-        base_url = (self.provider_config.base_url or "").strip()
-        if not base_url:
-            raise ValueError("Provider base_url is empty. Please configure codex_app_server base_url first.")
-        url = f"{base_url.rstrip('/')}/{path.lstrip('/')}"
-        async with httpx.AsyncClient(timeout=self.provider_config.timeout) as client:
-            response = await client.request(
-                method=method,
-                url=url,
-                json=json_body,
-                headers=headers,
+        params: Dict[str, object],
+        timeout: float,
+    ) -> Dict[str, object]:
+        process = self._spawn_process()
+        deadline = time.time() + timeout
+        try:
+            self._send_request(
+                process=process,
+                request_id=1,
+                method="initialize",
+                params={
+                    "protocolVersion": "2025-09-01",
+                    "clientInfo": {"name": "market-reporter", "version": "1.0"},
+                },
             )
-        if response.status_code >= 400:
-            raise ValueError(f"{method} {path} failed ({response.status_code}): {response.text[:300]}")
-        return response
+            self._wait_for_response(process=process, request_id=1, deadline=deadline)
+            self._send_request(process=process, request_id=2, method=method, params=params)
+            return self._wait_for_response(process=process, request_id=2, deadline=deadline)
+        finally:
+            self._close_process(process)
+
+    def _wait_for_response(
+        self,
+        process: subprocess.Popen[str],
+        request_id: int,
+        deadline: float,
+    ) -> Dict[str, object]:
+        while time.time() < deadline:
+            message = self._read_message(process=process, deadline=deadline)
+            if message is None:
+                continue
+            if message.get("id") != request_id:
+                continue
+            if "error" in message:
+                raise ValueError(self._format_rpc_error(message["error"]))
+            payload = message.get("result")
+            if isinstance(payload, dict):
+                return payload
+            if payload is None:
+                return {}
+            return {"data": payload}
+        raise ValueError(f"Timed out waiting for response: request_id={request_id}")
 
     @staticmethod
-    def _to_json(response: httpx.Response) -> Dict[str, object]:
-        try:
-            payload = response.json()
-        except Exception as exc:
-            raise ValueError(f"Invalid JSON response: {exc}") from exc
-        if isinstance(payload, dict):
-            return payload
-        return {"data": payload}
+    def _read_message(
+        process: subprocess.Popen[str],
+        deadline: float,
+    ) -> Optional[Dict[str, object]]:
+        if process.stdout is None:
+            raise ValueError("Codex app-server stdout is unavailable.")
+
+        while time.time() < deadline:
+            remaining = max(0.0, deadline - time.time())
+            readable, _, _ = select.select([process.stdout], [], [], remaining)
+            if not readable:
+                return None
+            line = process.stdout.readline()
+            if not line:
+                if process.poll() is not None:
+                    return None
+                continue
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                message = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(message, dict):
+                return message
+        return None
+
+    @staticmethod
+    def _send_request(
+        process: subprocess.Popen[str],
+        request_id: int,
+        method: str,
+        params: Dict[str, object],
+    ) -> None:
+        if process.stdin is None:
+            raise ValueError("Codex app-server stdin is unavailable.")
+        packet = {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "method": method,
+            "params": params,
+        }
+        process.stdin.write(json.dumps(packet, ensure_ascii=False) + "\n")
+        process.stdin.flush()
+
+    @classmethod
+    def _spawn_process(cls) -> subprocess.Popen[str]:
+        binary = cls._resolve_codex_binary()
+        process = subprocess.Popen(
+            [binary, "app-server"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+        )
+        return process
+
+    @staticmethod
+    def _close_process(process: subprocess.Popen[str]) -> None:
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=0.8)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=0.8)
+        if process.stdin:
+            process.stdin.close()
+        if process.stdout:
+            process.stdout.close()
+        if process.stderr:
+            process.stderr.close()
+
+    @staticmethod
+    def _resolve_codex_binary() -> str:
+        candidates: List[Optional[str]] = [
+            os.environ.get("CODEX_BIN"),
+            shutil.which("codex"),
+            "/opt/homebrew/bin/codex",
+            "/usr/local/bin/codex",
+        ]
+        for candidate in candidates:
+            if not candidate:
+                continue
+            path = Path(candidate).expanduser()
+            if path.exists() and os.access(path, os.X_OK):
+                return str(path)
+        raise ValueError("`codex` CLI not found. Please install Codex CLI and ensure it is in PATH.")
+
+    @staticmethod
+    def _extract_thread_id(payload: Dict[str, object]) -> Optional[str]:
+        thread = payload.get("thread")
+        if isinstance(thread, dict):
+            thread_id = thread.get("id")
+            if isinstance(thread_id, str) and thread_id.strip():
+                return thread_id.strip()
+        return None
+
+    @staticmethod
+    def _extract_connection_status(payload: Dict[str, object]) -> Tuple[bool, str]:
+        account = payload.get("account")
+        if isinstance(account, dict) and account:
+            return True, "Connected."
+        auth_token = payload.get("authToken")
+        if isinstance(auth_token, str) and auth_token.strip():
+            return True, "Connected."
+        return False, "Provider account is not connected."
+
+    @staticmethod
+    def _format_rpc_error(error_payload: object) -> str:
+        if isinstance(error_payload, dict):
+            message = error_payload.get("message")
+            code = error_payload.get("code")
+            if isinstance(message, str) and isinstance(code, int):
+                return f"{message} (code={code})"
+            if isinstance(message, str):
+                return message
+        return "Codex app-server request failed."
 
     @staticmethod
     def _extract_models(data: Dict[str, object]) -> List[str]:
@@ -242,27 +478,7 @@ class CodexAppServerProvider:
             model_id = rows.get("id") or rows.get("model") or rows.get("name")
             if isinstance(model_id, str) and model_id.strip():
                 values.append(model_id.strip())
-        unique = sorted({value for value in values if value})
-        return unique
-
-    @staticmethod
-    def _extract_content(data: Dict[str, object]) -> str:
-        choices = data.get("choices")
-        if isinstance(choices, list) and choices:
-            first = choices[0]
-            if isinstance(first, dict):
-                message = first.get("message")
-                if isinstance(message, dict):
-                    content = message.get("content")
-                    if isinstance(content, str):
-                        return content.strip()
-                content = first.get("text")
-                if isinstance(content, str):
-                    return content.strip()
-        output = data.get("output_text")
-        if isinstance(output, str):
-            return output.strip()
-        return json.dumps(data, ensure_ascii=False)
+        return sorted({entry for entry in values if entry})
 
     @staticmethod
     def _parse_json(content: str):
@@ -295,28 +511,12 @@ class CodexAppServerProvider:
         return None
 
     @staticmethod
-    def _pick_number(data: Dict[str, object], keys: Sequence[str]) -> Optional[float]:
-        for key in keys:
-            value = data.get(key)
-            if isinstance(value, (int, float)):
-                return float(value)
-            if isinstance(value, str):
-                try:
-                    return float(value)
-                except ValueError:
-                    continue
-        nested = data.get("data")
-        if isinstance(nested, dict):
-            for key in keys:
-                value = nested.get(key)
-                if isinstance(value, (int, float)):
-                    return float(value)
-                if isinstance(value, str):
-                    try:
-                        return float(value)
-                    except ValueError:
-                        continue
-        return None
+    def _join_unique_errors(errors: Sequence[str]) -> str:
+        values = [item.strip() for item in errors if item and item.strip()]
+        unique = list(dict.fromkeys(values))
+        if not unique:
+            return "Codex app-server request failed."
+        return "; ".join(unique)
 
     @staticmethod
     def normalize_expires_at(expires_at: Optional[str], expires_in: Optional[float]) -> Optional[datetime]:

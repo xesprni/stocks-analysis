@@ -66,6 +66,7 @@ export function DashboardPage({
     () => analysisProviders.find((item) => item.provider_id === selectedProviderId) ?? null,
     [analysisProviders, selectedProviderId]
   );
+  const selectedProviderModelsKey = selectedProvider?.models.join("|") ?? "";
 
   useEffect(() => {
     let cancelled = false;
@@ -99,7 +100,7 @@ export function DashboardPage({
     return () => {
       cancelled = true;
     };
-  }, [onLoadProviderModels, selectedProvider]);
+  }, [onLoadProviderModels, selectedProviderId, selectedProviderModelsKey]);
 
   useEffect(() => {
     if (!analysisModelOptions.length) {
@@ -230,15 +231,19 @@ export function DashboardPage({
                 <Label htmlFor="analysis_default_provider">分析默认 Provider</Label>
                 <Select
                   value={config.analysis.default_provider}
-                  onValueChange={(value: string) =>
+                  onValueChange={(value: string) => {
+                    const nextProviders = config.analysis.providers.map((provider) =>
+                      provider.provider_id === value ? { ...provider, enabled: true } : provider
+                    );
                     setConfig({
                       ...config,
                       analysis: {
                         ...config.analysis,
                         default_provider: value,
+                        providers: nextProviders,
                       },
-                    })
-                  }
+                    });
+                  }}
                 >
                   <SelectTrigger id="analysis_default_provider">
                     <SelectValue placeholder="分析 Provider" />
@@ -246,7 +251,7 @@ export function DashboardPage({
                   <SelectContent>
                     {analysisProviderOptions.map((entry) => (
                       <SelectItem key={entry.provider_id} value={entry.provider_id}>
-                        {entry.provider_id}
+                        {entry.provider_id} {!entry.enabled ? "(disabled)" : ""}
                       </SelectItem>
                     ))}
                   </SelectContent>

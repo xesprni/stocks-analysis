@@ -203,14 +203,34 @@ export default function App() {
   });
 
   const runReportMutation = useMutation({
-    mutationFn: () =>
-      api.runReport({
+    mutationFn: async () => {
+      const task = await api.runReportAsync({
         news_limit: configDraft.news_limit,
         flow_periods: configDraft.flow_periods,
         timezone: configDraft.timezone,
         provider_id: configDraft.analysis.default_provider,
         model: configDraft.analysis.default_model,
-      }),
+      });
+
+      const deadline = Date.now() + 15 * 60 * 1000;
+      while (Date.now() < deadline) {
+        const snapshot = await api.getReportTask(task.task_id);
+        if (snapshot.status === "SUCCEEDED") {
+          if (snapshot.result) {
+            return snapshot.result;
+          }
+          throw new Error("报告任务已完成，但结果为空。");
+        }
+        if (snapshot.status === "FAILED") {
+          throw new Error(snapshot.error_message || "报告任务失败。");
+        }
+        await new Promise<void>((resolve) => window.setTimeout(resolve, 2000));
+      }
+      throw new Error("报告任务执行超时，请稍后在 Reports 页面检查结果。");
+    },
+    onMutate: () => {
+      notifier.info("报告任务已提交", "后台正在生成，请稍候。");
+    },
     onSuccess: async (result) => {
       await queryClient.invalidateQueries({ queryKey: ["reports"] });
       setSelectedRunId(result.summary.run_id);
@@ -260,9 +280,20 @@ export default function App() {
   ];
 
   const sleep = useCallback((ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms)), []);
+  const loadAnalysisModels = useCallback(async (providerId: string) => {
+    const payload = await api.listAnalysisProviderModels(providerId);
+    return payload.models;
+  }, []);
 
   const connectProviderAuth = useCallback(
     async (providerId: string) => {
+      const preStatus = await api.getAnalysisProviderAuthStatus(providerId).catch(() => null);
+      if (preStatus?.connected) {
+        await queryClient.invalidateQueries({ queryKey: ["providers"] });
+        notifier.success("Provider 已连接", providerId);
+        return;
+      }
+
       const started = await api.startAnalysisProviderAuth(providerId, {
         redirect_to: window.location.href,
       });
@@ -360,10 +391,7 @@ export default function App() {
             options={options}
             analysisProviders={providersQuery.data ?? []}
             newsSources={newsSourcesQuery.data ?? configDraft.news_sources}
-            onLoadProviderModels={async (providerId) => {
-              const payload = await api.listAnalysisProviderModels(providerId);
-              return payload.models;
-            }}
+            onLoadProviderModels={loadAnalysisModels}
             onCreateNewsSource={async (payload) => {
               try {
                 await api.createNewsSource(payload);
@@ -451,9 +479,8 @@ export default function App() {
           <StockTerminalPage
             defaultProvider={configDraft.analysis.default_provider}
             defaultModel={configDraft.analysis.default_model}
-            markets={options.markets}
             intervals={options.intervals}
-            onSearch={(query, market) => api.searchStocks(query, market, configDraft.symbol_search.max_results)}
+            watchlistItems={watchlistQuery.data ?? []}
           />
         </TabsContent>
 
@@ -561,9 +588,23 @@ export default function App() {
                 notifier.error("断开登录失败", message);
               }
             }}
-            onLoadModels={async (providerId) => {
-              const payload = await api.listAnalysisProviderModels(providerId);
-              return payload.models;
+            onLoadModels={loadAnalysisModels}
+            onDeleteProvider={async (providerId) => {
+              try {
+                if (!window.confirm(`确认删除 Provider: ${providerId} ?`)) {
+                  return;
+                }
+                const next = await api.deleteAnalysisProvider(providerId);
+                setConfigDraft(next);
+                await queryClient.invalidateQueries({ queryKey: ["config"] });
+                await queryClient.invalidateQueries({ queryKey: ["providers"] });
+                await queryClient.invalidateQueries({ queryKey: ["ui-options"] });
+                notifier.success("Provider 已删除", providerId);
+              } catch (error) {
+                const message = toErrorMessage(error);
+                setErrorMessage(message);
+                notifier.error("删除 Provider 失败", message);
+              }
             }}
             onSaveProviderConfig={async (providerId, patch) => {
               try {
@@ -604,6 +645,27 @@ export default function App() {
             selectedRunId={selectedRunId}
             detail={detailQuery.data ?? null}
             onSelect={(runId) => setSelectedRunId(runId)}
+            onDelete={async (runId) => {
+              try {
+                if (!window.confirm(`确认删除报告 ${runId} ?`)) {
+                  return;
+                }
+                const payload = await api.deleteReport(runId);
+                if (!payload.deleted) {
+                  notifier.warning("报告不存在或已删除", runId);
+                  return;
+                }
+                await queryClient.invalidateQueries({ queryKey: ["reports"] });
+                if (selectedRunId === runId) {
+                  setSelectedRunId("");
+                }
+                notifier.success("报告已删除", runId);
+              } catch (error) {
+                const message = toErrorMessage(error);
+                setErrorMessage(message);
+                notifier.error("删除报告失败", message);
+              }
+            }}
           />
         </TabsContent>
       </Tabs>
