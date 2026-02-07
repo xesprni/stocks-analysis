@@ -94,7 +94,7 @@ export function NewsFeedPage() {
           </div>
 
           {warnings.length ? (
-            <div className="space-y-2 rounded-md border border-amber-300/70 bg-amber-50 p-3 text-sm text-amber-800">
+            <div className="space-y-2 rounded-md border border-amber-300/70 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-700/70 dark:bg-amber-950/50 dark:text-amber-200">
               {warnings.map((warning) => (
                 <div key={warning}>{warning}</div>
               ))}

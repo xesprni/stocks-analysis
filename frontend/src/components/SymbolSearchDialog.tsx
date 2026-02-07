@@ -126,7 +126,7 @@ export function SymbolSearchDialog({
             </div>
           </div>
 
-          <div className="rounded-xl border border-border/80 bg-white">
+          <div className="rounded-xl border border-border/80 bg-card">
             <div className="border-b border-border/70 px-4 py-2 text-xs text-muted-foreground">搜索结果</div>
             <div className="max-h-72 overflow-y-auto p-2">
               {query.trim().length < 2 ? (

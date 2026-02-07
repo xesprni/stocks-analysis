@@ -139,15 +139,14 @@ class NewsListenerService:
             with session_scope(self.config.database.url) as session:
                 repo = NewsListenerRunRepo(session)
                 rows = repo.list_recent(limit=limit)
+                result: List[NewsListenerRunView] = []
+                for row in rows:
+                    try:
+                        result.append(NewsListenerRunView.model_validate(row, from_attributes=True))
+                    except Exception:
+                        continue
         except Exception:
             return []
-
-        result: List[NewsListenerRunView] = []
-        for row in rows:
-            try:
-                result.append(NewsListenerRunView.model_validate(row, from_attributes=True))
-            except Exception:
-                continue
         return result
 
     def list_alerts(
@@ -168,9 +167,9 @@ class NewsListenerService:
                     market=market_value,
                     limit=limit,
                 )
+                return [self._to_alert_view(row) for row in rows]
         except Exception:
             return []
-        return [self._to_alert_view(row) for row in rows]
 
     def update_alert_status(self, alert_id: int, status: str) -> NewsAlertView:
         with session_scope(self.config.database.url) as session:

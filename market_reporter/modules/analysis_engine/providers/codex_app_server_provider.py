@@ -13,7 +13,10 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 from market_reporter.config import AnalysisProviderConfig
 from market_reporter.core.types import AnalysisInput, AnalysisOutput
-from market_reporter.modules.analysis_engine.prompt_builder import SYSTEM_PROMPT, build_user_prompt
+from market_reporter.modules.analysis_engine.prompt_builder import (
+    build_user_prompt,
+    get_system_prompt,
+)
 
 
 class CodexAppServerProvider:
@@ -30,7 +33,9 @@ class CodexAppServerProvider:
     ) -> Dict[str, object]:
         del state, callback_url, redirect_to
         result = await asyncio.to_thread(self._start_login_sync)
-        auth_url = self._pick_string(result, ["authUrl", "auth_url", "url", "loginUrl", "login_url"])
+        auth_url = self._pick_string(
+            result, ["authUrl", "auth_url", "url", "loginUrl", "login_url"]
+        )
         if not auth_url:
             raise ValueError("Codex app-server did not return auth URL.")
         return {
@@ -100,13 +105,22 @@ class CodexAppServerProvider:
         del api_key, access_token
         status = await self.get_auth_status()
         if not status.get("connected"):
-            raise ValueError("Codex account is not connected. Please click Connect in Providers page.")
+            raise ValueError(
+                "Codex account is not connected. Please click Connect in Providers page."
+            )
 
-        content = await asyncio.to_thread(self._run_turn_sync, build_user_prompt(payload), model)
+        content = await asyncio.to_thread(
+            self._run_turn_sync,
+            build_user_prompt(payload),
+            model,
+            get_system_prompt(payload),
+        )
         structured = self._parse_json(content)
         if structured is None:
             structured = {
-                "summary": content[:300] if content else "Model did not return structured output.",
+                "summary": content[:300]
+                if content
+                else "Model did not return structured output.",
                 "sentiment": "neutral",
                 "key_levels": [],
                 "risks": [],
@@ -160,7 +174,9 @@ class CodexAppServerProvider:
             timeout=float(self.provider_config.timeout),
         )
 
-    def _run_turn_sync(self, user_prompt: str, model: str) -> str:
+    def _run_turn_sync(
+        self, user_prompt: str, model: str, system_prompt: str = ""
+    ) -> str:
         timeout_seconds = float(max(self.provider_config.timeout * 3, 300))
         process = self._spawn_process()
         deadline = time.time() + timeout_seconds
@@ -185,11 +201,13 @@ class CodexAppServerProvider:
                     "model": model,
                     "approvalPolicy": "never",
                     "sandbox": "read-only",
-                    "developerInstructions": SYSTEM_PROMPT,
+                    "developerInstructions": system_prompt,
                     "personality": "pragmatic",
                 },
             )
-            thread_payload = self._wait_for_response(process=process, request_id=2, deadline=deadline)
+            thread_payload = self._wait_for_response(
+                process=process, request_id=2, deadline=deadline
+            )
             thread_id = self._extract_thread_id(thread_payload)
             if not thread_id:
                 raise ValueError("Codex app-server did not return thread id.")
@@ -263,12 +281,16 @@ class CodexAppServerProvider:
                     turn_error = self._pick_string(params, ["message"]) or turn_error
 
             if not turn_started:
-                raise ValueError("Codex app-server did not acknowledge turn/start request.")
+                raise ValueError(
+                    "Codex app-server did not acknowledge turn/start request."
+                )
             final_text = messages[-1] if messages else "".join(chunks).strip()
             if turn_status is None:
                 if final_text:
                     return final_text
-                raise ValueError(f"Timed out waiting for codex turn completion after {int(timeout_seconds)}s.")
+                raise ValueError(
+                    f"Timed out waiting for codex turn completion after {int(timeout_seconds)}s."
+                )
             if turn_status != "completed":
                 if final_text and turn_status in {"cancelled", "aborted"}:
                     return final_text
@@ -289,7 +311,9 @@ class CodexAppServerProvider:
         errors: List[str] = []
         for method, params in calls:
             try:
-                return self._request_once_sync(method=method, params=params, timeout=timeout)
+                return self._request_once_sync(
+                    method=method, params=params, timeout=timeout
+                )
             except Exception as exc:
                 errors.append(str(exc))
         raise ValueError(self._join_unique_errors(errors))
@@ -313,8 +337,12 @@ class CodexAppServerProvider:
                 },
             )
             self._wait_for_response(process=process, request_id=1, deadline=deadline)
-            self._send_request(process=process, request_id=2, method=method, params=params)
-            return self._wait_for_response(process=process, request_id=2, deadline=deadline)
+            self._send_request(
+                process=process, request_id=2, method=method, params=params
+            )
+            return self._wait_for_response(
+                process=process, request_id=2, deadline=deadline
+            )
         finally:
             self._close_process(process)
 
@@ -430,7 +458,9 @@ class CodexAppServerProvider:
             path = Path(candidate).expanduser()
             if path.exists() and os.access(path, os.X_OK):
                 return str(path)
-        raise ValueError("`codex` CLI not found. Please install Codex CLI and ensure it is in PATH.")
+        raise ValueError(
+            "`codex` CLI not found. Please install Codex CLI and ensure it is in PATH."
+        )
 
     @staticmethod
     def _extract_thread_id(payload: Dict[str, object]) -> Optional[str]:
@@ -519,7 +549,9 @@ class CodexAppServerProvider:
         return "; ".join(unique)
 
     @staticmethod
-    def normalize_expires_at(expires_at: Optional[str], expires_in: Optional[float]) -> Optional[datetime]:
+    def normalize_expires_at(
+        expires_at: Optional[str], expires_in: Optional[float]
+    ) -> Optional[datetime]:
         if expires_at:
             raw = expires_at.strip()
             if raw:

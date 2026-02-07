@@ -6,12 +6,15 @@ import {
   ClipboardList,
   LayoutDashboard,
   ListChecks,
+  Moon,
   Newspaper,
   Settings2,
+  Sun,
 } from "lucide-react";
 
 import { api, type AppConfig, type ReportSummary, type UIOptions } from "@/api/client";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useNotifier } from "@/components/ui/notifier";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -94,11 +97,36 @@ export default function App() {
   const [alertStatus, setAlertStatus] = useState("UNREAD");
   const [alertMarket, setAlertMarket] = useState("ALL");
   const [alertSymbol, setAlertSymbol] = useState("");
+  const [dark, setDark] = useState(() => {
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem("theme");
+      if (stored === "dark") return true;
+      if (stored === "light") return false;
+      return window.matchMedia("(prefers-color-scheme: dark)").matches;
+    }
+    return false;
+  });
   const queryErrorCache = useRef<Record<string, string>>({});
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", dark);
+    localStorage.setItem("theme", dark ? "dark" : "light");
+  }, [dark]);
 
   const configQuery = useQuery({ queryKey: ["config"], queryFn: api.getConfig });
   const uiOptionsQuery = useQuery({ queryKey: ["ui-options"], queryFn: api.getUiOptions });
   const reportsQuery = useQuery({ queryKey: ["reports"], queryFn: api.listReports });
+  const reportTasksQuery = useQuery({
+    queryKey: ["report-tasks"],
+    queryFn: api.listReportTasks,
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      if (data?.some((t) => t.status === "PENDING" || t.status === "RUNNING")) {
+        return 2000;
+      }
+      return 30000;
+    },
+  });
   const watchlistQuery = useQuery({ queryKey: ["watchlist"], queryFn: api.listWatchlist });
   const newsSourcesQuery = useQuery({ queryKey: ["news-sources"], queryFn: api.listNewsSources });
   const providersQuery = useQuery({ queryKey: ["providers"], queryFn: api.listAnalysisProviders });
@@ -152,6 +180,10 @@ export default function App() {
   useEffect(() => {
     notifyQueryError("reports", "加载报告列表失败", reportsQuery.error);
   }, [reportsQuery.error, notifyQueryError]);
+
+  useEffect(() => {
+    notifyQueryError("report-tasks", "加载报告任务失败", reportTasksQuery.error);
+  }, [reportTasksQuery.error, notifyQueryError]);
 
   useEffect(() => {
     notifyQueryError("report-detail", "加载报告详情失败", detailQuery.error);
@@ -230,9 +262,11 @@ export default function App() {
     },
     onMutate: () => {
       notifier.info("报告任务已提交", "后台正在生成，请稍候。");
+      void queryClient.invalidateQueries({ queryKey: ["report-tasks"] });
     },
     onSuccess: async (result) => {
       await queryClient.invalidateQueries({ queryKey: ["reports"] });
+      await queryClient.invalidateQueries({ queryKey: ["report-tasks"] });
       setSelectedRunId(result.summary.run_id);
       setWarningMessage(result.warnings[0] || "");
       setErrorMessage("");
@@ -340,8 +374,8 @@ export default function App() {
   );
 
   return (
-    <main className="container py-10">
-      <section className="mb-8 rounded-2xl border border-border/80 bg-white/70 p-6 shadow-[0_20px_60px_rgba(0,0,0,0.08)] backdrop-blur">
+    <main className="mx-auto w-full max-w-[1920px] px-4 py-6 sm:px-6 lg:px-8 xl:px-10">
+      <section className="mb-6 rounded-2xl border border-border/80 bg-card p-4 shadow-[0_20px_60px_rgba(0,0,0,0.08)] sm:p-6 dark:shadow-[0_20px_60px_rgba(0,0,0,0.25)]">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <h1 className="text-3xl font-semibold tracking-tight text-foreground">Market Reporter Pro Console</h1>
@@ -352,6 +386,9 @@ export default function App() {
             <Badge>shadcn/ui</Badge>
             <Badge variant="outline">react-query</Badge>
             <Badge variant="outline">lightweight-charts</Badge>
+            <Button variant="ghost" size="sm" onClick={() => setDark((prev) => !prev)} aria-label="Toggle dark mode">
+              {dark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            </Button>
           </div>
         </div>
       </section>
@@ -362,22 +399,22 @@ export default function App() {
         </Card>
       ) : null}
       {warningMessage ? (
-        <Card className="mb-6 border-amber-300/70 bg-amber-50">
-          <CardContent className="py-4 text-sm text-amber-800">{warningMessage}</CardContent>
+        <Card className="mb-6 border-amber-300/70 bg-amber-50 dark:border-amber-700/70 dark:bg-amber-950/50">
+          <CardContent className="py-4 text-sm text-amber-800 dark:text-amber-200">{warningMessage}</CardContent>
         </Card>
       ) : null}
 
       <Tabs
         defaultValue="dashboard"
         orientation="vertical"
-        className="grid items-start gap-5 lg:grid-cols-[220px_minmax(0,1fr)]"
+        className="grid items-start gap-4 lg:grid-cols-[200px_minmax(0,1fr)] xl:grid-cols-[220px_minmax(0,1fr)]"
       >
-        <TabsList className="h-auto w-full flex-col items-stretch rounded-2xl border border-border/80 bg-white/80 p-2 lg:sticky lg:top-6">
+        <TabsList className="h-auto w-full flex-col items-stretch rounded-2xl border border-border/80 bg-card p-2 lg:sticky lg:top-6">
           {navItems.map((item) => (
             <TabsTrigger
               key={item.key}
               value={item.key}
-              className="relative w-full justify-start gap-3 px-4 py-2 text-sm data-[state=active]:bg-white data-[state=active]:shadow-sm before:absolute before:left-1 before:top-2 before:bottom-2 before:w-1 before:rounded-full before:bg-foreground before:opacity-0 before:transition-opacity data-[state=active]:before:opacity-100"
+              className="relative w-full justify-start gap-3 px-4 py-2 text-sm data-[state=active]:bg-accent data-[state=active]:shadow-sm before:absolute before:left-1 before:top-2 before:bottom-2 before:w-1 before:rounded-full before:bg-foreground before:opacity-0 before:transition-opacity data-[state=active]:before:opacity-100"
             >
               <item.icon className="h-4 w-4" />
               {item.label}
@@ -642,6 +679,7 @@ export default function App() {
         <TabsContent value="reports" className="mt-0">
           <ReportsPage
             reports={sortedReports}
+            tasks={reportTasksQuery.data ?? []}
             selectedRunId={selectedRunId}
             detail={detailQuery.data ?? null}
             onSelect={(runId) => setSelectedRunId(runId)}

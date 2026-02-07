@@ -1,13 +1,20 @@
 from __future__ import annotations
 
 import re
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from market_reporter.config import AppConfig
 from market_reporter.core.registry import ProviderRegistry
 from market_reporter.modules.market_data.symbol_mapper import normalize_symbol
-from market_reporter.modules.symbol_search.providers.akshare_search_provider import AkshareSearchProvider
-from market_reporter.modules.symbol_search.providers.yfinance_search_provider import YahooFinanceSearchProvider
+from market_reporter.modules.symbol_search.providers.akshare_search_provider import (
+    AkshareSearchProvider,
+)
+from market_reporter.modules.symbol_search.providers.finnhub_search_provider import (
+    FinnhubSearchProvider,
+)
+from market_reporter.modules.symbol_search.providers.yfinance_search_provider import (
+    YahooFinanceSearchProvider,
+)
 from market_reporter.modules.symbol_search.schemas import StockSearchResult
 
 
@@ -19,6 +26,7 @@ class SymbolSearchService:
         self.registry = registry
         self.registry.register(self.MODULE_NAME, "yfinance", self._build_yfinance)
         self.registry.register(self.MODULE_NAME, "akshare", self._build_akshare)
+        self.registry.register(self.MODULE_NAME, "finnhub", self._build_finnhub)
         self.registry.register(self.MODULE_NAME, "composite", self._build_composite)
 
     def _build_yfinance(self):
@@ -27,9 +35,13 @@ class SymbolSearchService:
     def _build_akshare(self):
         return AkshareSearchProvider()
 
+    def _build_finnhub(self):
+        return FinnhubSearchProvider()
+
     def _build_composite(self):
         return CompositeSymbolSearchProvider(
             providers={
+                "finnhub": self._build_finnhub(),
                 "yfinance": self._build_yfinance(),
                 "akshare": self._build_akshare(),
             }
@@ -53,12 +65,20 @@ class SymbolSearchService:
         )
         provider = self._resolve_provider_with_fallback(chosen_provider=chosen_provider)
         try:
-            rows = await provider.search(query=normalized_query, market=market.upper(), limit=resolved_limit)
+            rows = await provider.search(
+                query=normalized_query, market=market.upper(), limit=resolved_limit
+            )
         except Exception:
             if chosen_provider != "composite":
-                fallback = self._resolve_provider_with_fallback(chosen_provider="composite")
+                fallback = self._resolve_provider_with_fallback(
+                    chosen_provider="composite"
+                )
                 try:
-                    rows = await fallback.search(query=normalized_query, market=market.upper(), limit=resolved_limit)
+                    rows = await fallback.search(
+                        query=normalized_query,
+                        market=market.upper(),
+                        limit=resolved_limit,
+                    )
                 except Exception:
                     rows = []
             else:
@@ -72,7 +92,9 @@ class SymbolSearchService:
         merged = sorted(dedup.values(), key=lambda item: item.score, reverse=True)
         if merged:
             return merged[:resolved_limit]
-        return self._heuristic_results(query=normalized_query, market=market.upper(), limit=resolved_limit)
+        return self._heuristic_results(
+            query=normalized_query, market=market.upper(), limit=resolved_limit
+        )
 
     def _resolve_provider_with_fallback(self, chosen_provider: str):
         provider_id = (chosen_provider or "").strip() or "composite"
@@ -82,7 +104,9 @@ class SymbolSearchService:
             return self.registry.resolve(self.MODULE_NAME, "composite")
 
     @staticmethod
-    def _heuristic_results(query: str, market: str, limit: int) -> List[StockSearchResult]:
+    def _heuristic_results(
+        query: str, market: str, limit: int
+    ) -> List[StockSearchResult]:
         q = query.strip().upper()
         if not q:
             return []
@@ -142,10 +166,12 @@ class SymbolSearchService:
 class CompositeSymbolSearchProvider:
     provider_id = "composite"
 
-    def __init__(self, providers: Dict[str, object]) -> None:
+    def __init__(self, providers: Dict[str, Any]) -> None:
         self.providers = providers
 
-    async def search(self, query: str, market: str, limit: int) -> List[StockSearchResult]:
+    async def search(
+        self, query: str, market: str, limit: int
+    ) -> List[StockSearchResult]:
         merged: List[StockSearchResult] = []
         for provider in self._ordered(market=market):
             try:
@@ -160,6 +186,11 @@ class CompositeSymbolSearchProvider:
 
     def _ordered(self, market: str):
         market = market.upper()
+        finnhub = self.providers.get("finnhub")
+        yfinance = self.providers.get("yfinance")
+        akshare = self.providers.get("akshare")
         if market in {"CN", "HK"}:
-            return [self.providers["akshare"], self.providers["yfinance"]]
-        return [self.providers["yfinance"], self.providers["akshare"]]
+            order = [akshare, finnhub, yfinance]
+        else:
+            order = [finnhub, yfinance, akshare]
+        return [p for p in order if p is not None]

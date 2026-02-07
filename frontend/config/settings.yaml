@@ -21,8 +21,8 @@ modules:
   symbol_search:
     default_provider: composite
 analysis:
-  default_provider: codex_app_server
-  default_model: gpt-5.2
+  default_provider: mock
+  default_model: market-default
   providers:
   - provider_id: mock
     type: mock
@@ -49,7 +49,7 @@ analysis:
     type: codex_app_server
     base_url: ''
     models:
-    - gpt-5-codex
+    - gpt-5.2
     timeout: 30
     enabled: true
     auth_mode: chatgpt_oauth
@@ -84,11 +84,6 @@ news_sources:
   category: finance
   url: https://feeds.reuters.com/reuters/businessNews
   enabled: false
-- source_id: google-news-cn-finance
-  name: Google News CN Finance
-  category: finance
-  url: https://news.google.com/rss/search?q=%E8%B4%A2%E7%BB%8F+%E8%82%A1%E5%B8%82+%E7%BB%8F%E6%B5%8E&hl=zh-CN&gl=CN&ceid=CN:zh-Hans
-  enabled: true
 - source_id: federal-reserve-monetary-policy
   name: Federal Reserve Monetary Policy
   category: policy
@@ -99,13 +94,3 @@ news_sources:
   category: policy
   url: https://home.treasury.gov/news/press-releases/feed
   enabled: false
-- source_id: ecb-press
-  name: ECB Press
-  category: policy
-  url: https://www.ecb.europa.eu/press/rss/press.html
-  enabled: false
-- source_id: google-news-cn-policy
-  name: Google News CN Policy
-  category: policy
-  url: https://news.google.com/rss/search?q=%E5%AE%8F%E8%A7%82+%E6%94%BF%E7%AD%96+%E5%A4%AE%E8%A1%8C&hl=zh-CN&gl=CN&ceid=CN:zh-Hans
-  enabled: true

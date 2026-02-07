@@ -8,7 +8,12 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from market_reporter.config import AnalysisProviderConfig, AppConfig
 from market_reporter.core.registry import ProviderRegistry
-from market_reporter.core.types import AnalysisInput, AnalysisOutput, FlowPoint, NewsItem
+from market_reporter.core.types import (
+    AnalysisInput,
+    AnalysisOutput,
+    FlowPoint,
+    NewsItem,
+)
 from market_reporter.infra.db.repos import (
     AnalysisProviderAccountRepo,
     AnalysisProviderAuthStateRepo,
@@ -18,9 +23,15 @@ from market_reporter.infra.db.repos import (
 from market_reporter.infra.db.session import session_scope
 from market_reporter.infra.security.crypto import decrypt_text, encrypt_text
 from market_reporter.infra.security.keychain_store import KeychainStore
-from market_reporter.modules.analysis_engine.providers.codex_app_server_provider import CodexAppServerProvider
-from market_reporter.modules.analysis_engine.providers.mock_provider import MockAnalysisProvider
-from market_reporter.modules.analysis_engine.providers.openai_compatible_provider import OpenAICompatibleProvider
+from market_reporter.modules.analysis_engine.providers.codex_app_server_provider import (
+    CodexAppServerProvider,
+)
+from market_reporter.modules.analysis_engine.providers.mock_provider import (
+    MockAnalysisProvider,
+)
+from market_reporter.modules.analysis_engine.providers.openai_compatible_provider import (
+    OpenAICompatibleProvider,
+)
 from market_reporter.modules.analysis_engine.schemas import (
     AnalysisProviderView,
     ProviderAuthStartResponse,
@@ -55,8 +66,12 @@ class AnalysisService:
         self.keychain_store = keychain_store or KeychainStore()
 
         self.registry.register(self.MODULE_NAME, "mock", self._build_mock)
-        self.registry.register(self.MODULE_NAME, "openai_compatible", self._build_openai_compatible)
-        self.registry.register(self.MODULE_NAME, "codex_app_server", self._build_codex_app_server)
+        self.registry.register(
+            self.MODULE_NAME, "openai_compatible", self._build_openai_compatible
+        )
+        self.registry.register(
+            self.MODULE_NAME, "codex_app_server", self._build_codex_app_server
+        )
 
     def _build_mock(self, provider_config: AnalysisProviderConfig):
         return MockAnalysisProvider()
@@ -80,7 +95,11 @@ class AnalysisService:
                 connected = self._is_account_connected(account)
                 secret_required = auth_mode == "api_key"
                 base_url_required = provider.type not in {"mock", "codex_app_server"}
-                has_base_url = bool((provider.base_url or "").strip()) if base_url_required else True
+                has_base_url = (
+                    bool((provider.base_url or "").strip())
+                    if base_url_required
+                    else True
+                )
                 status, status_message, ready = self._evaluate_provider_state(
                     enabled=provider.enabled,
                     has_models=bool(provider.models),
@@ -104,7 +123,8 @@ class AnalysisService:
                         ready=ready,
                         status=status,
                         status_message=status_message,
-                        is_default=provider.provider_id == self.config.analysis.default_provider,
+                        is_default=provider.provider_id
+                        == self.config.analysis.default_provider,
                         auth_mode=auth_mode,
                         connected=connected,
                         credential_expires_at=credential_expires_at,
@@ -118,7 +138,9 @@ class AnalysisService:
         if auth_mode == "none":
             return
         if auth_mode != "api_key":
-            raise ValueError(f"Provider does not use API key authentication: {provider.provider_id}")
+            raise ValueError(
+                f"Provider does not use API key authentication: {provider.provider_id}"
+            )
 
         master_key = self.keychain_store.get_or_create_master_key()
         ciphertext, nonce = encrypt_text(api_key, master_key)
@@ -162,7 +184,9 @@ class AnalysisService:
         )
         payload = await provider.start_login(
             state=state,
-            callback_url=self._resolve_callback_url(provider_cfg=provider_cfg, fallback=callback_url),
+            callback_url=self._resolve_callback_url(
+                provider_cfg=provider_cfg, fallback=callback_url
+            ),
             redirect_to=redirect_to,
         )
         auth_url = str(payload.get("auth_url") or "").strip()
@@ -207,7 +231,9 @@ class AnalysisService:
         token_payload = await provider.complete_login(
             code=code,
             state=state,
-            callback_url=self._resolve_callback_url(provider_cfg=provider_cfg, fallback=callback_url),
+            callback_url=self._resolve_callback_url(
+                provider_cfg=provider_cfg, fallback=callback_url
+            ),
             query_params=query_params or {},
         )
         access_token = str(token_payload.get("access_token") or "").strip()
@@ -220,11 +246,16 @@ class AnalysisService:
         )
         credential_payload = {
             "access_token": access_token,
-            "refresh_token": self._to_optional_string(token_payload.get("refresh_token")),
-            "token_type": self._to_optional_string(token_payload.get("token_type")) or "Bearer",
+            "refresh_token": self._to_optional_string(
+                token_payload.get("refresh_token")
+            ),
+            "token_type": self._to_optional_string(token_payload.get("token_type"))
+            or "Bearer",
         }
         master_key = self.keychain_store.get_or_create_master_key()
-        ciphertext, nonce = encrypt_text(json.dumps(credential_payload, ensure_ascii=False), master_key)
+        ciphertext, nonce = encrypt_text(
+            json.dumps(credential_payload, ensure_ascii=False), master_key
+        )
         with session_scope(self.config.database.url) as session:
             account_repo = AnalysisProviderAccountRepo(session)
             account_repo.upsert(
@@ -236,7 +267,9 @@ class AnalysisService:
             )
         return await self.get_provider_auth_status(provider_id=provider_id)
 
-    async def get_provider_auth_status(self, provider_id: str) -> ProviderAuthStatusView:
+    async def get_provider_auth_status(
+        self, provider_id: str
+    ) -> ProviderAuthStatusView:
         provider_cfg = self._find_provider(provider_id)
         auth_mode = self._resolve_auth_mode(provider_cfg)
         if auth_mode == "none":
@@ -267,7 +300,12 @@ class AnalysisService:
                     auth_mode=auth_mode,
                     connected=connected,
                     status="connected" if connected else "disconnected",
-                    message=message or ("Connected." if connected else "Provider account is not connected."),
+                    message=message
+                    or (
+                        "Connected."
+                        if connected
+                        else "Provider account is not connected."
+                    ),
                     expires_at=None,
                 )
             account = self._get_account(provider_id=provider_cfg.provider_id)
@@ -362,7 +400,9 @@ class AnalysisService:
         has_secret = self._has_secret(provider.provider_id)
         connected = self._has_connected_account(provider.provider_id)
         base_url_required = provider.type not in {"mock", "codex_app_server"}
-        has_base_url = bool((provider.base_url or "").strip()) if base_url_required else True
+        has_base_url = (
+            bool((provider.base_url or "").strip()) if base_url_required else True
+        )
         _, status_message, ready = self._evaluate_provider_state(
             enabled=provider.enabled,
             has_models=bool(provider.models),
@@ -376,7 +416,12 @@ class AnalysisService:
         if not ready:
             raise ValueError(status_message)
         is_dynamic_model_provider = self._resolve_auth_mode(provider) == "chatgpt_oauth"
-        if model and provider.models and model not in provider.models and not is_dynamic_model_provider:
+        if (
+            model
+            and provider.models
+            and model not in provider.models
+            and not is_dynamic_model_provider
+        ):
             raise ValueError(f"Model not found in provider models: {model}")
         return provider
 
@@ -389,21 +434,35 @@ class AnalysisService:
         interval: str = "5m",
         lookback_bars: int = 120,
     ) -> StockAnalysisRunView:
-        provider_cfg, selected_model = self._select_provider_and_model(provider_id=provider_id, model=model)
-        if self.market_data_service is None or self.news_service is None or self.fund_flow_service is None:
-            raise ValueError("AnalysisService missing runtime dependencies for stock analysis")
+        provider_cfg, selected_model = self._select_provider_and_model(
+            provider_id=provider_id, model=model
+        )
+        if (
+            self.market_data_service is None
+            or self.news_service is None
+            or self.fund_flow_service is None
+        ):
+            raise ValueError(
+                "AnalysisService missing runtime dependencies for stock analysis"
+            )
         normalized_symbol = normalize_symbol(symbol=symbol, market=market)
 
-        quote_task = self.market_data_service.get_quote(symbol=normalized_symbol, market=market)
+        quote_task = self.market_data_service.get_quote(
+            symbol=normalized_symbol, market=market
+        )
         kline_task = self.market_data_service.get_kline(
             symbol=normalized_symbol,
             market=market,
             interval=interval,
-            limit=lookback_bars,
+            limit=max(lookback_bars, 200),
         )
-        curve_task = self.market_data_service.get_curve(symbol=normalized_symbol, market=market, window="1d")
-        news_task = self.news_service.collect(limit=min(self.config.news_limit, 30))
-        flow_task = self.fund_flow_service.collect(periods=min(self.config.flow_periods, 12))
+        curve_task = self.market_data_service.get_curve(
+            symbol=normalized_symbol, market=market, window="1d"
+        )
+        news_task = self.news_service.collect(limit=min(self.config.news_limit, 50))
+        flow_task = self.fund_flow_service.collect(
+            periods=min(self.config.flow_periods, 20)
+        )
 
         quote, kline, curve, news_result, flow_result = await asyncio.gather(
             quote_task,
@@ -426,7 +485,9 @@ class AnalysisService:
             watch_meta={"interval": interval, "lookback_bars": lookback_bars},
         )
 
-        output = await self._invoke_provider(provider_cfg=provider_cfg, model=selected_model, payload=payload)
+        output = await self._invoke_provider(
+            provider_cfg=provider_cfg, model=selected_model, payload=payload
+        )
         run_id, created_at = self._save_run(
             symbol=normalized_symbol,
             market=market,
@@ -454,7 +515,9 @@ class AnalysisService:
         news_items: List[NewsItem],
         flow_series: Dict[str, List[FlowPoint]],
     ) -> Tuple[AnalysisOutput, str, str]:
-        provider_cfg, selected_model = self._select_provider_and_model(provider_id=None, model=None)
+        provider_cfg, selected_model = self._select_provider_and_model(
+            provider_id=None, model=None
+        )
         payload = AnalysisInput(
             symbol="MARKET",
             market="GLOBAL",
@@ -465,7 +528,9 @@ class AnalysisService:
             fund_flow=flow_series,
             watch_meta={"mode": "overview"},
         )
-        output = await self._invoke_provider(provider_cfg=provider_cfg, model=selected_model, payload=payload)
+        output = await self._invoke_provider(
+            provider_cfg=provider_cfg, model=selected_model, payload=payload
+        )
         return output, provider_cfg.provider_id, selected_model
 
     async def analyze_news_alert_batch(
@@ -474,7 +539,9 @@ class AnalysisService:
         provider_id: Optional[str] = None,
         model: Optional[str] = None,
     ) -> List[Dict[str, object]]:
-        provider_cfg, selected_model = self._select_provider_and_model(provider_id=provider_id, model=model)
+        provider_cfg, selected_model = self._select_provider_and_model(
+            provider_id=provider_id, model=model
+        )
         payload = AnalysisInput(
             symbol="WATCHLIST_ALERTS",
             market="GLOBAL",
@@ -498,30 +565,36 @@ class AnalysisService:
                 },
             },
         )
-        output = await self._invoke_provider(provider_cfg=provider_cfg, model=selected_model, payload=payload)
+        output = await self._invoke_provider(
+            provider_cfg=provider_cfg, model=selected_model, payload=payload
+        )
         return self._extract_alerts(output=output, size=len(candidates))
 
-    def list_history(self, symbol: str, market: str, limit: int = 20) -> List[StockAnalysisHistoryItem]:
+    def list_history(
+        self, symbol: str, market: str, limit: int = 20
+    ) -> List[StockAnalysisHistoryItem]:
         normalized_symbol = normalize_symbol(symbol=symbol, market=market)
         with session_scope(self.config.database.url) as session:
             repo = StockAnalysisRunRepo(session)
-            rows = repo.list_by_symbol(symbol=normalized_symbol, market=market.upper(), limit=limit)
-        result: List[StockAnalysisHistoryItem] = []
-        for row in rows:
-            parsed_output = self._parse_json(row.output_json)
-            result.append(
-                StockAnalysisHistoryItem(
-                    id=row.id,
-                    symbol=row.symbol,
-                    market=row.market,
-                    provider_id=row.provider_id,
-                    model=row.model,
-                    status=row.status,
-                    created_at=row.created_at,
-                    markdown=row.markdown,
-                    output_json=parsed_output,
-                )
+            rows = repo.list_by_symbol(
+                symbol=normalized_symbol, market=market.upper(), limit=limit
             )
+            result: List[StockAnalysisHistoryItem] = []
+            for row in rows:
+                parsed_output = self._parse_json(row.output_json)
+                result.append(
+                    StockAnalysisHistoryItem(
+                        id=row.id,
+                        symbol=row.symbol,
+                        market=row.market,
+                        provider_id=row.provider_id,
+                        model=row.model,
+                        status=row.status,
+                        created_at=row.created_at,
+                        markdown=row.markdown,
+                        output_json=parsed_output,
+                    )
+                )
         return result
 
     async def _invoke_provider(
@@ -558,13 +631,17 @@ class AnalysisService:
         with session_scope(self.config.database.url) as session:
             secret_repo = AnalysisProviderSecretRepo(session)
             secret = secret_repo.get(provider_cfg.provider_id)
-        if secret is None:
-            return None
+            if secret is None:
+                return None
+            key_ciphertext = secret.key_ciphertext
+            nonce = secret.nonce
 
         master_key = self.keychain_store.get_or_create_master_key()
-        return decrypt_text(secret.key_ciphertext, secret.nonce, master_key)
+        return decrypt_text(key_ciphertext, nonce, master_key)
 
-    def _resolve_access_token(self, provider_cfg: AnalysisProviderConfig) -> Optional[str]:
+    def _resolve_access_token(
+        self, provider_cfg: AnalysisProviderConfig
+    ) -> Optional[str]:
         if self._resolve_auth_mode(provider_cfg) != "chatgpt_oauth":
             return None
         account = self._get_account(provider_id=provider_cfg.provider_id)
@@ -595,7 +672,10 @@ class AnalysisService:
     def _get_account(self, provider_id: str):
         with session_scope(self.config.database.url) as session:
             repo = AnalysisProviderAccountRepo(session)
-            return repo.get(provider_id=provider_id)
+            account = repo.get(provider_id=provider_id)
+            if account is not None:
+                session.expunge(account)
+            return account
 
     def _sync_oauth_connection_marker(
         self,
@@ -615,9 +695,13 @@ class AnalysisService:
                     "provider_id": provider_id,
                     "marker_type": "codex_app_server",
                     "connected": True,
-                    "payload": marker_payload if isinstance(marker_payload, dict) else {},
+                    "payload": marker_payload
+                    if isinstance(marker_payload, dict)
+                    else {},
                 }
-                ciphertext, nonce = encrypt_text(json.dumps(payload, ensure_ascii=False), master_key)
+                ciphertext, nonce = encrypt_text(
+                    json.dumps(payload, ensure_ascii=False), master_key
+                )
                 repo.upsert(
                     provider_id=provider_id,
                     account_type="chatgpt",
@@ -646,7 +730,10 @@ class AnalysisService:
         provider_id: Optional[str],
         model: Optional[str],
     ) -> Tuple[AnalysisProviderConfig, str]:
-        provider_map = {provider.provider_id: provider for provider in self.config.analysis.providers}
+        provider_map = {
+            provider.provider_id: provider
+            for provider in self.config.analysis.providers
+        }
         selected_provider_id = provider_id or self.config.analysis.default_provider
         if selected_provider_id not in provider_map:
             raise ValueError(f"Selected provider not found: {selected_provider_id}")
@@ -655,16 +742,26 @@ class AnalysisService:
             if provider_id:
                 provider_cfg = provider_cfg.model_copy(update={"enabled": True})
             else:
-                fallback_enabled = next((item for item in provider_map.values() if item.enabled), None)
+                fallback_enabled = next(
+                    (item for item in provider_map.values() if item.enabled), None
+                )
                 if fallback_enabled is None:
-                    raise ValueError(f"Selected provider not enabled: {selected_provider_id}")
+                    raise ValueError(
+                        f"Selected provider not enabled: {selected_provider_id}"
+                    )
                 provider_cfg = fallback_enabled
 
         selected_model = model or self.config.analysis.default_model
         if not selected_model and provider_cfg.models:
             selected_model = provider_cfg.models[0]
-        is_dynamic_model_provider = self._resolve_auth_mode(provider_cfg) == "chatgpt_oauth"
-        if not is_dynamic_model_provider and selected_model not in provider_cfg.models and provider_cfg.models:
+        is_dynamic_model_provider = (
+            self._resolve_auth_mode(provider_cfg) == "chatgpt_oauth"
+        )
+        if (
+            not is_dynamic_model_provider
+            and selected_model not in provider_cfg.models
+            and provider_cfg.models
+        ):
             selected_model = provider_cfg.models[0]
         return provider_cfg, selected_model
 
@@ -705,7 +802,9 @@ class AnalysisService:
         return "api_key"
 
     @staticmethod
-    def _resolve_callback_url(provider_cfg: AnalysisProviderConfig, fallback: str) -> str:
+    def _resolve_callback_url(
+        provider_cfg: AnalysisProviderConfig, fallback: str
+    ) -> str:
         if provider_cfg.login_callback_url and provider_cfg.login_callback_url.strip():
             return provider_cfg.login_callback_url.strip()
         return fallback
@@ -760,7 +859,11 @@ class AnalysisService:
         if not enabled:
             return "disabled", "Provider is disabled in config.", False
         if not has_models:
-            return "no-model", "No available models configured for this provider.", False
+            return (
+                "no-model",
+                "No available models configured for this provider.",
+                False,
+            )
         if base_url_required and not has_base_url:
             return "missing-base-url", "Provider base_url is not configured.", False
         if auth_mode == "chatgpt_oauth" and not connected:
@@ -785,7 +888,9 @@ class AnalysisService:
                 {
                     "summary": str(item.get("summary") or output.summary),
                     "severity": str(item.get("severity") or "MEDIUM").upper(),
-                    "markdown": str(item.get("markdown") or item.get("summary") or output.markdown),
+                    "markdown": str(
+                        item.get("markdown") or item.get("summary") or output.markdown
+                    ),
                     "reason": str(item.get("reason") or ""),
                     "raw": item,
                 }

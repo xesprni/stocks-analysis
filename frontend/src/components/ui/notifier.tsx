@@ -33,10 +33,10 @@ const DEFAULT_DURATION_MS = 3500;
 const DEDUPE_WINDOW_MS = 2000;
 
 const variantStyle: Record<NoticeVariant, string> = {
-  info: "border-zinc-300 bg-white text-zinc-900",
-  success: "border-emerald-300 bg-emerald-50 text-emerald-900",
-  warning: "border-amber-300 bg-amber-50 text-amber-900",
-  error: "border-red-300 bg-red-50 text-red-900",
+  info: "border-border bg-card text-foreground",
+  success: "border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-700 dark:bg-emerald-950 dark:text-emerald-200",
+  warning: "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200",
+  error: "border-red-300 bg-red-50 text-red-900 dark:border-red-700 dark:bg-red-950 dark:text-red-200",
 };
 
 const VariantIcon: Record<NoticeVariant, typeof Info> = {

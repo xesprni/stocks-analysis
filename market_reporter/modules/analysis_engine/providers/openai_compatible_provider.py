@@ -7,7 +7,10 @@ from openai import AsyncOpenAI
 
 from market_reporter.config import AnalysisProviderConfig
 from market_reporter.core.types import AnalysisInput, AnalysisOutput
-from market_reporter.modules.analysis_engine.prompt_builder import SYSTEM_PROMPT, build_user_prompt
+from market_reporter.modules.analysis_engine.prompt_builder import (
+    build_user_prompt,
+    get_system_prompt,
+)
 
 
 class OpenAICompatibleProvider:
@@ -16,7 +19,9 @@ class OpenAICompatibleProvider:
     def __init__(self, provider_config: AnalysisProviderConfig) -> None:
         self.provider_config = provider_config
 
-    async def analyze(self, payload: AnalysisInput, model: str, api_key: Optional[str] = None) -> AnalysisOutput:
+    async def analyze(
+        self, payload: AnalysisInput, model: str, api_key: Optional[str] = None
+    ) -> AnalysisOutput:
         if not api_key:
             raise ValueError("API key is required for openai_compatible provider")
 
@@ -30,7 +35,7 @@ class OpenAICompatibleProvider:
             model=model,
             temperature=0.2,
             messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": get_system_prompt(payload)},
                 {"role": "user", "content": build_user_prompt(payload)},
             ],
         )
@@ -48,16 +53,18 @@ class OpenAICompatibleProvider:
                 "markdown": content or "模型未返回可读内容。",
             }
 
-        output = AnalysisOutput.model_validate({
-            "summary": structured.get("summary", ""),
-            "sentiment": structured.get("sentiment", "neutral"),
-            "key_levels": structured.get("key_levels", []),
-            "risks": structured.get("risks", []),
-            "action_items": structured.get("action_items", []),
-            "confidence": float(structured.get("confidence", 0.5)),
-            "markdown": structured.get("markdown") or structured.get("summary", ""),
-            "raw": structured,
-        })
+        output = AnalysisOutput.model_validate(
+            {
+                "summary": structured.get("summary", ""),
+                "sentiment": structured.get("sentiment", "neutral"),
+                "key_levels": structured.get("key_levels", []),
+                "risks": structured.get("risks", []),
+                "action_items": structured.get("action_items", []),
+                "confidence": float(structured.get("confidence", 0.5)),
+                "markdown": structured.get("markdown") or structured.get("summary", ""),
+                "raw": structured,
+            }
+        )
         return output
 
     @staticmethod

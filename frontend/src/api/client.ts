@@ -359,6 +359,7 @@ export const api = {
     }),
   getReportTask: (taskId: string) =>
     request(`/reports/tasks/${encodeURIComponent(taskId)}`, reportTaskSchema),
+  listReportTasks: () => request("/reports/tasks", z.array(reportTaskSchema)),
   listWatchlist: () => request("/watchlist", z.array(watchlistItemSchema)),
   createWatchlistItem: (payload: Record<string, unknown>) =>
     request("/watchlist", watchlistItemSchema, {

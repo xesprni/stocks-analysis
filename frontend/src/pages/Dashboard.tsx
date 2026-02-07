@@ -338,7 +338,7 @@ export function DashboardPage({
                     <SelectValue placeholder="搜索 Provider" />
                   </SelectTrigger>
                   <SelectContent>
-                    {["composite", "yfinance", "akshare"].map((entry) => (
+                    {["composite", "finnhub", "yfinance", "akshare"].map((entry) => (
                       <SelectItem key={entry} value={entry}>
                         {entry}
                       </SelectItem>

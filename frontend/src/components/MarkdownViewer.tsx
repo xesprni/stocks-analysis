@@ -27,7 +27,7 @@ function inlineMarkdownToHtml(text: string): string {
     /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
     '<a href="$2" target="_blank" rel="noreferrer" class="underline decoration-zinc-400 underline-offset-4 hover:decoration-zinc-900">$1</a>'
   );
-  html = html.replace(/`([^`]+)`/g, '<code class="rounded bg-zinc-100 px-1.5 py-0.5 text-[0.88em] text-zinc-900">$1</code>');
+  html = html.replace(/`([^`]+)`/g, '<code class="rounded bg-muted px-1.5 py-0.5 text-[0.88em]">$1</code>');
   html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
   html = html.replace(/\*([^*]+)\*/g, "<em>$1</em>");
   return html;
@@ -144,7 +144,7 @@ export function MarkdownViewer({ markdown }: MarkdownViewerProps) {
   }
 
   return (
-    <article className="prose prose-zinc max-w-none rounded-xl border border-border/70 bg-white p-5">
+    <article className="prose prose-zinc dark:prose-invert max-w-none rounded-xl border border-border/70 bg-card p-5">
       {blocks.map((block, blockIndex) => {
         switch (block.type) {
           case "heading": {
@@ -170,13 +170,13 @@ export function MarkdownViewer({ markdown }: MarkdownViewerProps) {
             return (
               <p
                 key={`paragraph-${blockIndex}`}
-                className="mb-3 text-[15px] leading-7 text-zinc-800"
+                className="mb-3 text-[15px] leading-7 text-foreground/85"
                 dangerouslySetInnerHTML={{ __html: inlineMarkdownToHtml(block.text) }}
               />
             );
           case "blockquote":
             return (
-              <blockquote key={`quote-${blockIndex}`} className="my-4 border-l-4 border-zinc-300 pl-4 text-zinc-700">
+              <blockquote key={`quote-${blockIndex}`} className="my-4 border-l-4 border-border pl-4 text-muted-foreground">
                 {block.lines.map((line, lineIndex) => (
                   <p
                     key={`quote-line-${blockIndex}-${lineIndex}`}
@@ -188,7 +188,7 @@ export function MarkdownViewer({ markdown }: MarkdownViewerProps) {
             );
           case "ul":
             return (
-              <ul key={`ul-${blockIndex}`} className="mb-4 list-disc space-y-1 pl-6 text-zinc-800">
+              <ul key={`ul-${blockIndex}`} className="mb-4 list-disc space-y-1 pl-6 text-foreground/85">
                 {block.items.map((item, itemIndex) => (
                   <li
                     key={`ul-item-${blockIndex}-${itemIndex}`}
@@ -199,7 +199,7 @@ export function MarkdownViewer({ markdown }: MarkdownViewerProps) {
             );
           case "ol":
             return (
-              <ol key={`ol-${blockIndex}`} className="mb-4 list-decimal space-y-1 pl-6 text-zinc-800">
+              <ol key={`ol-${blockIndex}`} className="mb-4 list-decimal space-y-1 pl-6 text-foreground/85">
                 {block.items.map((item, itemIndex) => (
                   <li
                     key={`ol-item-${blockIndex}-${itemIndex}`}
@@ -214,7 +214,7 @@ export function MarkdownViewer({ markdown }: MarkdownViewerProps) {
                 {block.language ? (
                   <div className="mb-1 mt-4 text-xs uppercase tracking-wide text-muted-foreground">{block.language}</div>
                 ) : null}
-                <pre className="mb-4 overflow-auto rounded-xl border border-zinc-800 bg-zinc-950 p-4 text-xs text-zinc-100 shadow-sm">
+                <pre className="mb-4 overflow-auto rounded-xl border border-border bg-muted p-4 text-xs text-foreground shadow-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100">
                   <code>{block.code}</code>
                 </pre>
               </Fragment>

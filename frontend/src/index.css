@@ -17,7 +17,7 @@
   --muted-foreground: 0 0% 38%;
   --accent: 0 0% 88%;
   --accent-foreground: 0 0% 10%;
-  --destructive: 0 0% 14%;
+  --destructive: 0 84% 60%;
   --destructive-foreground: 0 0% 98%;
   --border: 0 0% 84%;
   --input: 0 0% 84%;
@@ -25,12 +25,34 @@
   --radius: 0.95rem;
 }
 
+.dark {
+  --background: 240 6% 10%;
+  --foreground: 0 0% 93%;
+  --card: 240 5% 13%;
+  --card-foreground: 0 0% 93%;
+  --popover: 240 5% 13%;
+  --popover-foreground: 0 0% 93%;
+  --primary: 0 0% 93%;
+  --primary-foreground: 240 6% 10%;
+  --secondary: 240 4% 20%;
+  --secondary-foreground: 0 0% 88%;
+  --muted: 240 4% 18%;
+  --muted-foreground: 0 0% 55%;
+  --accent: 240 4% 22%;
+  --accent-foreground: 0 0% 93%;
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 0 0% 98%;
+  --border: 240 4% 22%;
+  --input: 240 4% 22%;
+  --ring: 0 0% 80%;
+}
+
 * {
   @apply border-border;
 }
 
 body {
-  @apply text-foreground antialiased;
+  @apply bg-background text-foreground antialiased;
   min-height: 100vh;
   background:
     radial-gradient(circle at 8% 8%, rgba(0, 0, 0, 0.08), transparent 36%),
@@ -40,15 +62,28 @@ body {
   font-family: "SF Pro Display", "Avenir Next", "Noto Sans SC", "PingFang SC", sans-serif;
 }
 
+html.dark body {
+  background: hsl(var(--background));
+}
+
 #root {
   min-height: 100vh;
 }
 
 pre {
-  @apply overflow-x-auto rounded-xl border border-zinc-800 bg-zinc-950 p-4 text-xs text-zinc-100 shadow-sm;
+  @apply overflow-x-auto rounded-xl border border-border bg-muted p-4 text-xs text-foreground shadow-sm;
+}
+
+html.dark pre {
+  @apply border-zinc-700 bg-zinc-900 text-zinc-100;
 }
 
 ::selection {
   background: rgba(0, 0, 0, 0.18);
   color: #000;
+}
+
+html.dark ::selection {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
 }

@@ -36,7 +36,9 @@ class ReportService:
         self._tasks: Dict[str, ReportRunTaskView] = {}
         self._task_handles: Dict[str, asyncio.Task[None]] = {}
 
-    async def start_report_async(self, overrides: Optional[RunRequest] = None) -> ReportRunTaskView:
+    async def start_report_async(
+        self, overrides: Optional[RunRequest] = None
+    ) -> ReportRunTaskView:
         task_id = uuid4().hex
         task_view = ReportRunTaskView(
             task_id=task_id,
@@ -45,7 +47,9 @@ class ReportService:
         )
         async with self._task_lock:
             self._tasks[task_id] = task_view
-        task = asyncio.create_task(self._run_background_task(task_id=task_id, overrides=overrides))
+        task = asyncio.create_task(
+            self._run_background_task(task_id=task_id, overrides=overrides)
+        )
         self._task_handles[task_id] = task
         task.add_done_callback(lambda _: self._task_handles.pop(task_id, None))
         return task_view
@@ -57,7 +61,16 @@ class ReportService:
                 raise FileNotFoundError(f"Report task not found: {task_id}")
             return task
 
-    async def _run_background_task(self, task_id: str, overrides: Optional[RunRequest]) -> None:
+    async def list_report_tasks(self) -> List[ReportRunTaskView]:
+        """Return all tracked report tasks, sorted by creation time (newest first)."""
+        async with self._task_lock:
+            tasks = list(self._tasks.values())
+        tasks.sort(key=lambda t: t.created_at, reverse=True)
+        return tasks
+
+    async def _run_background_task(
+        self, task_id: str, overrides: Optional[RunRequest]
+    ) -> None:
         await self._update_task(
             task_id=task_id,
             status=ReportTaskStatus.RUNNING,
@@ -96,7 +109,9 @@ class ReportService:
                 return
             update_payload = {
                 "status": status,
-                "error_message": error_message if error_message is not None else task.error_message,
+                "error_message": error_message
+                if error_message is not None
+                else task.error_message,
             }
             if started_at is not None:
                 update_payload["started_at"] = started_at
@@ -119,7 +134,9 @@ class ReportService:
         ) as client:
             registry = ProviderRegistry()
             news_service = NewsService(config=config, client=client, registry=registry)
-            fund_flow_service = FundFlowService(config=config, client=client, registry=registry)
+            fund_flow_service = FundFlowService(
+                config=config, client=client, registry=registry
+            )
             market_data_service = MarketDataService(config=config, registry=registry)
             analysis_service = AnalysisService(
                 config=config,
@@ -129,18 +146,28 @@ class ReportService:
                 fund_flow_service=fund_flow_service,
             )
 
-            news_items, news_warnings = await news_service.collect(limit=config.news_limit)
-            flow_series, flow_warnings = await fund_flow_service.collect(periods=config.flow_periods)
+            news_items, news_warnings = await news_service.collect(
+                limit=config.news_limit
+            )
+            flow_series, flow_warnings = await fund_flow_service.collect(
+                periods=config.flow_periods
+            )
             warnings.extend(news_warnings)
             warnings.extend(flow_warnings)
 
             try:
-                analysis_output, provider_id, model = await analysis_service.analyze_market_overview(
+                (
+                    analysis_output,
+                    provider_id,
+                    model,
+                ) = await analysis_service.analyze_market_overview(
                     news_items=news_items,
                     flow_series=flow_series,
                 )
             except Exception as exc:
-                warnings.append(f"Analysis provider failed, fallback to local summary: {exc}")
+                warnings.append(
+                    f"Analysis provider failed, fallback to local summary: {exc}"
+                )
                 provider_id = "fallback-local"
                 model = "n/a"
                 analysis_output = AnalysisOutput(
@@ -178,11 +205,14 @@ class ReportService:
             "analysis": analysis_output.model_dump(mode="json"),
             "news_items": [item.model_dump(mode="json") for item in news_items],
             "flow_series": {
-                key: [row.model_dump(mode="json") for row in rows] for key, rows in flow_series.items()
+                key: [row.model_dump(mode="json") for row in rows]
+                for key, rows in flow_series.items()
             },
             "warnings": warnings,
         }
-        raw_path.write_text(json.dumps(raw_payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        raw_path.write_text(
+            json.dumps(raw_payload, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
 
         summary = ReportRunSummary(
             run_id=run_dir.name,
@@ -214,7 +244,11 @@ class ReportService:
             return []
 
         summaries: List[ReportRunSummary] = []
-        run_dirs = sorted([item for item in root.iterdir() if item.is_dir()], key=lambda item: item.name, reverse=True)
+        run_dirs = sorted(
+            [item for item in root.iterdir() if item.is_dir()],
+            key=lambda item: item.name,
+            reverse=True,
+        )
         for run_dir in run_dirs:
             summary = self._read_summary(run_dir)
             if summary is not None:
@@ -327,6 +361,8 @@ class ReportService:
                 parts = run_id.split("_")
                 if len(parts) >= 2 and parts[1].isdigit() and len(parts[1]) == 6:
                     compact = f"{parts[0]}_{parts[1]}"
-            return datetime.strptime(compact, "%Y%m%d_%H%M%S").isoformat(timespec="seconds")
+            return datetime.strptime(compact, "%Y%m%d_%H%M%S").isoformat(
+                timespec="seconds"
+            )
         except Exception:
             return run_id

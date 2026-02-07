@@ -161,7 +161,7 @@ export function StockTerminalPage({ defaultProvider, defaultModel, intervals, wa
           </div>
           <div className="space-y-2">
             <Label htmlFor="market">Market</Label>
-            <div id="market" className="rounded-md border bg-white px-3 py-2 text-sm">
+            <div id="market" className="rounded-md border bg-card px-3 py-2 text-sm">
               {market || "--"}
             </div>
           </div>
@@ -182,7 +182,7 @@ export function StockTerminalPage({ defaultProvider, defaultModel, intervals, wa
           </div>
           <div className="space-y-2">
             <Label>最新价</Label>
-            <div className="rounded-md border bg-white px-3 py-2 text-sm">{quoteText}</div>
+            <div className="rounded-md border bg-card px-3 py-2 text-sm">{quoteText}</div>
           </div>
         </CardContent>
       </Card>
