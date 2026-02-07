@@ -48,8 +48,12 @@ class ModulesConfig(BaseModel):
     news: ModuleNewsConfig = Field(default_factory=ModuleNewsConfig)
     fund_flow: ModuleFundFlowConfig = Field(default_factory=ModuleFundFlowConfig)
     market_data: ModuleMarketDataConfig = Field(default_factory=ModuleMarketDataConfig)
-    news_listener: ModuleNewsListenerConfig = Field(default_factory=ModuleNewsListenerConfig)
-    symbol_search: ModuleSymbolSearchConfig = Field(default_factory=ModuleSymbolSearchConfig)
+    news_listener: ModuleNewsListenerConfig = Field(
+        default_factory=ModuleNewsListenerConfig
+    )
+    symbol_search: ModuleSymbolSearchConfig = Field(
+        default_factory=ModuleSymbolSearchConfig
+    )
 
 
 class AnalysisProviderConfig(BaseModel):
@@ -224,12 +228,13 @@ class AppConfig(BaseModel):
         "Chrome/120.0.0.0 Safari/537.36"
     )
     modules: ModulesConfig = Field(default_factory=ModulesConfig)
-    analysis: AnalysisConfig = Field(default_factory=lambda: AnalysisConfig(providers=default_analysis_providers()))
+    analysis: AnalysisConfig = Field(
+        default_factory=lambda: AnalysisConfig(providers=default_analysis_providers())
+    )
     watchlist: WatchlistConfig = Field(default_factory=WatchlistConfig)
     news_listener: NewsListenerConfig = Field(default_factory=NewsListenerConfig)
     symbol_search: SymbolSearchConfig = Field(default_factory=SymbolSearchConfig)
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
-    news_sources: List[NewsSource] = Field(default_factory=default_news_sources)
 
     def ensure_output_root(self) -> Path:
         self.output_root.mkdir(parents=True, exist_ok=True)
@@ -246,11 +251,14 @@ class AppConfig(BaseModel):
         payload = self.model_dump(mode="python")
         payload["output_root"] = Path(payload["output_root"])
         payload["config_file"] = Path(payload["config_file"])
-        payload["news_sources"] = normalize_news_sources(self.news_sources)
         return AppConfig.model_validate(payload)
 
     def analysis_provider_map(self) -> Dict[str, AnalysisProviderConfig]:
-        return {provider.provider_id: provider for provider in self.analysis.providers if provider.enabled}
+        return {
+            provider.provider_id: provider
+            for provider in self.analysis.providers
+            if provider.enabled
+        }
 
 
 def default_app_config() -> AppConfig:

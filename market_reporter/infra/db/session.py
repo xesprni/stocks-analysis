@@ -1,15 +1,20 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from datetime import datetime
 from functools import lru_cache
-from typing import Iterator
+from typing import Iterator, List
 
-from sqlmodel import Session, SQLModel, create_engine
+from sqlmodel import Session, SQLModel, create_engine, select
+
+from market_reporter.config import NewsSource
 
 
 @lru_cache(maxsize=8)
 def get_engine(database_url: str):
-    connect_args = {"check_same_thread": False} if database_url.startswith("sqlite") else {}
+    connect_args = (
+        {"check_same_thread": False} if database_url.startswith("sqlite") else {}
+    )
     return create_engine(database_url, echo=False, connect_args=connect_args)
 
 
@@ -20,6 +25,33 @@ def init_db(database_url: str) -> None:
     SQLModel.metadata.create_all(engine)
     if database_url.startswith("sqlite"):
         _ensure_sqlite_columns(engine)
+
+
+def seed_news_sources(database_url: str, sources: List[NewsSource]) -> None:
+    """Seed news sources into DB if the table is empty.
+
+    Called on startup to populate defaults or migrate from YAML.
+    """
+    from market_reporter.infra.db.models import NewsSourceTable
+
+    engine = get_engine(database_url)
+    with Session(engine) as session:
+        existing = session.exec(select(NewsSourceTable).limit(1)).first()
+        if existing is not None:
+            return
+        now = datetime.utcnow()
+        for source in sources:
+            row = NewsSourceTable(
+                source_id=source.source_id or "",
+                name=source.name,
+                category=source.category,
+                url=source.url,
+                enabled=source.enabled,
+                created_at=now,
+                updated_at=now,
+            )
+            session.add(row)
+        session.commit()
 
 
 @contextmanager
@@ -40,9 +72,15 @@ def _ensure_sqlite_columns(engine) -> None:
     with engine.begin() as connection:
         columns = {
             row[1]
-            for row in connection.exec_driver_sql("PRAGMA table_info('watchlist_items')").fetchall()
+            for row in connection.exec_driver_sql(
+                "PRAGMA table_info('watchlist_items')"
+            ).fetchall()
         }
         if "display_name" not in columns:
-            connection.exec_driver_sql("ALTER TABLE watchlist_items ADD COLUMN display_name VARCHAR")
+            connection.exec_driver_sql(
+                "ALTER TABLE watchlist_items ADD COLUMN display_name VARCHAR"
+            )
         if "keywords_json" not in columns:
-            connection.exec_driver_sql("ALTER TABLE watchlist_items ADD COLUMN keywords_json TEXT")
+            connection.exec_driver_sql(
+                "ALTER TABLE watchlist_items ADD COLUMN keywords_json TEXT"
+            )

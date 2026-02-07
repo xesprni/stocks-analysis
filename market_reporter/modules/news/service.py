@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
-from market_reporter.config import AppConfig
+from market_reporter.config import AppConfig, NewsSource
 from market_reporter.core.registry import ProviderRegistry
 from market_reporter.core.types import NewsItem
 from market_reporter.infra.http.client import HttpClient
@@ -14,14 +14,25 @@ from market_reporter.modules.news.schemas import NewsFeedItem
 class NewsService:
     MODULE_NAME = "news"
 
-    def __init__(self, config: AppConfig, client: HttpClient, registry: ProviderRegistry) -> None:
+    def __init__(
+        self,
+        config: AppConfig,
+        client: HttpClient,
+        registry: ProviderRegistry,
+        news_sources: Optional[List[NewsSource]] = None,
+    ) -> None:
         self.config = config
         self.client = client
         self.registry = registry
+        self._news_sources = news_sources
         self.registry.register(self.MODULE_NAME, "rss", self._build_rss_provider)
 
     def _build_rss_provider(self):
-        return RSSNewsProvider(config=self.config, client=self.client)
+        return RSSNewsProvider(
+            config=self.config,
+            client=self.client,
+            news_sources=self._news_sources,
+        )
 
     async def collect(self, limit: int) -> Tuple[List[NewsItem], List[str]]:
         provider_id = self.config.modules.news.default_provider
@@ -49,7 +60,9 @@ class NewsService:
         normalized_source_id = source_id.strip()
         if not normalized_source_id:
             normalized_source_id = "ALL"
-        source_filter = None if normalized_source_id.upper() == "ALL" else normalized_source_id
+        source_filter = (
+            None if normalized_source_id.upper() == "ALL" else normalized_source_id
+        )
         try:
             provider = self.registry.resolve(self.MODULE_NAME, provider_id)
             data, provider_warnings = await self._collect_with_provider(
@@ -91,7 +104,9 @@ class NewsService:
         source_id: str | None,
     ) -> Tuple[List[NewsItem], List[str]]:
         if hasattr(provider, "collect_filtered"):
-            data, warnings = await provider.collect_filtered(limit=limit, source_id=source_id)
+            data, warnings = await provider.collect_filtered(
+                limit=limit, source_id=source_id
+            )
             return list(data), list(warnings)
 
         data = await provider.collect(limit=limit)

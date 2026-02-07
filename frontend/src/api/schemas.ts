@@ -59,7 +59,6 @@ export const appConfigSchema = z.object({
     max_results: z.number(),
   }),
   database: z.object({ url: z.string() }),
-  news_sources: z.array(newsSourceSchema),
 });
 
 export const watchlistItemSchema = z.object({

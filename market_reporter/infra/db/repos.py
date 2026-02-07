@@ -56,6 +56,13 @@ class WatchlistRepo:
         self.session.refresh(item)
         return item
 
+    def get_by_symbol_market(self, symbol: str, market: str) -> Optional[WatchlistItemTable]:
+        return self.session.exec(
+            select(WatchlistItemTable)
+            .where(WatchlistItemTable.symbol == symbol)
+            .where(WatchlistItemTable.market == market)
+        ).first()
+
     def get(self, item_id: int) -> Optional[WatchlistItemTable]:
         return self.session.get(WatchlistItemTable, item_id)
 

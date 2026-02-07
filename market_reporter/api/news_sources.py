@@ -1,22 +1,23 @@
-"""News sources CRUD routes."""
+"""News sources CRUD routes — backed by SQLite."""
 
 from __future__ import annotations
 
-import re
+from datetime import datetime
 from typing import List
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlmodel import Session, select
 
-from market_reporter.api.deps import get_config_store
-from market_reporter.config import AppConfig, NewsSource, normalize_source_id
-from market_reporter.infra.db.session import init_db
+from market_reporter.api.deps import get_config
+from market_reporter.config import AppConfig, normalize_source_id
+from market_reporter.infra.db.models import NewsSourceTable
+from market_reporter.infra.db.session import get_engine
 from market_reporter.modules.news.schemas import (
     NewsSourceCreateRequest,
     NewsSourceUpdateRequest,
     NewsSourceView,
 )
-from market_reporter.services.config_store import ConfigStore
 
 router = APIRouter(prefix="/api", tags=["news-sources"])
 
@@ -29,8 +30,11 @@ def _validate_source_url(raw_url: str) -> str:
     return url
 
 
-def _next_source_id(existing: List[NewsSource], name: str) -> str:
-    used_ids = {source.source_id for source in existing if source.source_id}
+def _next_source_id(session: Session, name: str) -> str:
+    used_ids: set[str] = set()
+    rows = session.exec(select(NewsSourceTable.source_id)).all()
+    for row in rows:
+        used_ids.add(row)
     base_id = normalize_source_id(name)
     source_id = base_id
     cursor = 2
@@ -40,121 +44,115 @@ def _next_source_id(existing: List[NewsSource], name: str) -> str:
     return source_id
 
 
-def _to_news_source_view(source: NewsSource) -> NewsSourceView:
+def _to_view(row: NewsSourceTable) -> NewsSourceView:
     return NewsSourceView(
-        source_id=source.source_id or "",
-        name=source.name,
-        category=source.category,
-        url=source.url,
-        enabled=source.enabled,
+        source_id=row.source_id,
+        name=row.name,
+        category=row.category,
+        url=row.url,
+        enabled=row.enabled,
     )
+
+
+def _get_session(config: AppConfig = Depends(get_config)) -> Session:
+    engine = get_engine(config.database.url)
+    return Session(engine)
 
 
 @router.get("/news-sources", response_model=List[NewsSourceView])
 async def list_news_sources(
-    config_store: ConfigStore = Depends(get_config_store),
+    config: AppConfig = Depends(get_config),
 ) -> List[NewsSourceView]:
-    config = config_store.load()
-    return [_to_news_source_view(source) for source in config.news_sources]
+    engine = get_engine(config.database.url)
+    with Session(engine) as session:
+        rows = session.exec(select(NewsSourceTable).order_by(NewsSourceTable.id)).all()
+        return [_to_view(row) for row in rows]
 
 
 @router.post("/news-sources", response_model=NewsSourceView)
 async def create_news_source(
     payload: NewsSourceCreateRequest,
-    config_store: ConfigStore = Depends(get_config_store),
+    config: AppConfig = Depends(get_config),
 ) -> NewsSourceView:
-    config = config_store.load()
-    try:
-        source = NewsSource(
-            source_id=_next_source_id(config.news_sources, payload.name),
+    engine = get_engine(config.database.url)
+    with Session(engine) as session:
+        try:
+            url = _validate_source_url(payload.url)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        source_id = _next_source_id(session, payload.name)
+        now = datetime.utcnow()
+        row = NewsSourceTable(
+            source_id=source_id,
             name=payload.name.strip(),
             category=payload.category.strip(),
-            url=_validate_source_url(payload.url),
+            url=url,
             enabled=payload.enabled,
+            created_at=now,
+            updated_at=now,
         )
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    next_config = config.model_copy(
-        update={"news_sources": [*config.news_sources, source]}
-    )
-    saved = config_store.save(next_config)
-    init_db(saved.database.url)
-    created = next(
-        (item for item in saved.news_sources if item.source_id == source.source_id),
-        source,
-    )
-    return _to_news_source_view(created)
+        session.add(row)
+        session.commit()
+        session.refresh(row)
+        return _to_view(row)
 
 
 @router.patch("/news-sources/{source_id}", response_model=NewsSourceView)
 async def update_news_source(
     source_id: str,
     payload: NewsSourceUpdateRequest,
-    config_store: ConfigStore = Depends(get_config_store),
+    config: AppConfig = Depends(get_config),
 ) -> NewsSourceView:
-    config = config_store.load()
     normalized_source_id = normalize_source_id(source_id)
-    target = next(
-        (
-            item
-            for item in config.news_sources
-            if item.source_id == normalized_source_id
-        ),
-        None,
-    )
-    if target is None:
-        raise HTTPException(
-            status_code=404, detail=f"News source not found: {source_id}"
-        )
+    engine = get_engine(config.database.url)
+    with Session(engine) as session:
+        row = session.exec(
+            select(NewsSourceTable).where(
+                NewsSourceTable.source_id == normalized_source_id
+            )
+        ).first()
+        if row is None:
+            raise HTTPException(
+                status_code=404, detail=f"News source not found: {source_id}"
+            )
 
-    try:
-        updated = target.model_copy(
-            update={
-                "name": payload.name.strip()
-                if payload.name is not None
-                else target.name,
-                "category": payload.category.strip()
-                if payload.category is not None
-                else target.category,
-                "url": _validate_source_url(payload.url)
-                if payload.url is not None
-                else target.url,
-                "enabled": payload.enabled
-                if payload.enabled is not None
-                else target.enabled,
-            }
-        )
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        try:
+            if payload.name is not None:
+                row.name = payload.name.strip()
+            if payload.category is not None:
+                row.category = payload.category.strip()
+            if payload.url is not None:
+                row.url = _validate_source_url(payload.url)
+            if payload.enabled is not None:
+                row.enabled = payload.enabled
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    next_sources = [
-        updated if item.source_id == normalized_source_id else item
-        for item in config.news_sources
-    ]
-    saved = config_store.save(config.model_copy(update={"news_sources": next_sources}))
-    init_db(saved.database.url)
-    item = next(
-        (row for row in saved.news_sources if row.source_id == normalized_source_id),
-        updated,
-    )
-    return _to_news_source_view(item)
+        row.updated_at = datetime.utcnow()
+        session.add(row)
+        session.commit()
+        session.refresh(row)
+        return _to_view(row)
 
 
 @router.delete("/news-sources/{source_id}")
 async def delete_news_source(
     source_id: str,
-    config_store: ConfigStore = Depends(get_config_store),
+    config: AppConfig = Depends(get_config),
 ) -> dict:
-    config = config_store.load()
     normalized_source_id = normalize_source_id(source_id)
-    next_sources = [
-        row for row in config.news_sources if row.source_id != normalized_source_id
-    ]
-    if len(next_sources) == len(config.news_sources):
-        raise HTTPException(
-            status_code=404, detail=f"News source not found: {source_id}"
-        )
-    saved = config_store.save(config.model_copy(update={"news_sources": next_sources}))
-    init_db(saved.database.url)
-    return {"deleted": True}
+    engine = get_engine(config.database.url)
+    with Session(engine) as session:
+        row = session.exec(
+            select(NewsSourceTable).where(
+                NewsSourceTable.source_id == normalized_source_id
+            )
+        ).first()
+        if row is None:
+            raise HTTPException(
+                status_code=404, detail=f"News source not found: {source_id}"
+            )
+        session.delete(row)
+        session.commit()
+        return {"deleted": True}

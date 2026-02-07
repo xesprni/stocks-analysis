@@ -9,7 +9,6 @@ from market_reporter.config import (
     AppConfig,
     default_analysis_providers,
     default_app_config,
-    normalize_source_id,
 )
 
 
@@ -19,9 +18,11 @@ class ConfigStore:
 
     def load(self) -> AppConfig:
         if not self.config_path.exists():
-            config = default_app_config().model_copy(
-                update={"config_file": self.config_path}
-            ).normalized()
+            config = (
+                default_app_config()
+                .model_copy(update={"config_file": self.config_path})
+                .normalized()
+            )
             config.ensure_data_root()
             self.save(config)
             return config
@@ -32,12 +33,14 @@ class ConfigStore:
         config = AppConfig.model_validate(raw).normalized()
         config = self._normalize_analysis_providers(config)
         config.ensure_data_root()
-        if self._should_rewrite_news_sources(raw) or self._should_rewrite_analysis(raw, config):
+        if self._should_rewrite_analysis(raw, config):
             self.save(config)
         return config
 
     def save(self, config: AppConfig) -> AppConfig:
-        normalized = config.model_copy(update={"config_file": self.config_path}).normalized()
+        normalized = config.model_copy(
+            update={"config_file": self.config_path}
+        ).normalized()
         normalized.ensure_data_root()
         self.config_path.parent.mkdir(parents=True, exist_ok=True)
         payload = normalized.model_dump(mode="json")
@@ -55,28 +58,6 @@ class ConfigStore:
         return self.save(merged)
 
     @staticmethod
-    def _should_rewrite_news_sources(raw_config: Dict[str, Any]) -> bool:
-        raw_sources = raw_config.get("news_sources")
-        if not isinstance(raw_sources, list):
-            return False
-        seen: set[str] = set()
-        for row in raw_sources:
-            if not isinstance(row, dict):
-                return True
-            if "enabled" not in row:
-                return True
-            raw_source_id = row.get("source_id")
-            if not isinstance(raw_source_id, str) or not raw_source_id.strip():
-                return True
-            normalized_id = normalize_source_id(raw_source_id)
-            if normalized_id != raw_source_id.strip():
-                return True
-            if normalized_id in seen:
-                return True
-            seen.add(normalized_id)
-        return False
-
-    @staticmethod
     def _normalize_analysis_providers(config: AppConfig) -> AppConfig:
         providers = []
         seen: set[str] = set()
@@ -88,7 +69,11 @@ class ConfigStore:
             inferred_auth_mode = provider.auth_mode or (
                 "none"
                 if provider.type == "mock"
-                else ("chatgpt_oauth" if provider.type == "codex_app_server" else "api_key")
+                else (
+                    "chatgpt_oauth"
+                    if provider.type == "codex_app_server"
+                    else "api_key"
+                )
             )
             providers.append(
                 provider.model_copy(
@@ -116,22 +101,35 @@ class ConfigStore:
                 (provider.provider_id for provider in providers if provider.enabled),
                 providers[0].provider_id if providers else "mock",
             )
-            analysis = analysis.model_copy(update={"default_provider": fallback_provider})
+            analysis = analysis.model_copy(
+                update={"default_provider": fallback_provider}
+            )
 
         default_provider = provider_map.get(analysis.default_provider)
         if default_provider is not None and default_provider.models:
             auth_mode = default_provider.auth_mode or (
-                "chatgpt_oauth" if default_provider.type == "codex_app_server" else "api_key"
+                "chatgpt_oauth"
+                if default_provider.type == "codex_app_server"
+                else "api_key"
             )
-            if auth_mode != "chatgpt_oauth" and analysis.default_model not in default_provider.models:
-                analysis = analysis.model_copy(update={"default_model": default_provider.models[0]})
+            if (
+                auth_mode != "chatgpt_oauth"
+                and analysis.default_model not in default_provider.models
+            ):
+                analysis = analysis.model_copy(
+                    update={"default_model": default_provider.models[0]}
+                )
             if auth_mode == "chatgpt_oauth" and not analysis.default_model:
-                analysis = analysis.model_copy(update={"default_model": default_provider.models[0]})
+                analysis = analysis.model_copy(
+                    update={"default_model": default_provider.models[0]}
+                )
 
         return config.model_copy(update={"analysis": analysis})
 
     @staticmethod
-    def _should_rewrite_analysis(raw_config: Dict[str, Any], normalized_config: AppConfig) -> bool:
+    def _should_rewrite_analysis(
+        raw_config: Dict[str, Any], normalized_config: AppConfig
+    ) -> bool:
         raw_analysis = raw_config.get("analysis")
         if not isinstance(raw_analysis, dict):
             return True
@@ -152,11 +150,19 @@ class ConfigStore:
                 return True
             raw_ids.append(provider_id.strip())
 
-        normalized_ids = [provider.provider_id for provider in normalized_config.analysis.providers]
+        normalized_ids = [
+            provider.provider_id for provider in normalized_config.analysis.providers
+        ]
         if raw_ids != normalized_ids:
             return True
-        if raw_analysis.get("default_provider") != normalized_config.analysis.default_provider:
+        if (
+            raw_analysis.get("default_provider")
+            != normalized_config.analysis.default_provider
+        ):
             return True
-        if raw_analysis.get("default_model") != normalized_config.analysis.default_model:
+        if (
+            raw_analysis.get("default_model")
+            != normalized_config.analysis.default_model
+        ):
             return True
         return False

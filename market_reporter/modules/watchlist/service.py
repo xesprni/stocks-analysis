@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from typing import List, Optional
 
+from sqlalchemy.exc import IntegrityError
+
 from market_reporter.config import AppConfig
 from market_reporter.core.errors import ValidationError
 from market_reporter.infra.db.repos import WatchlistRepo
@@ -33,20 +35,30 @@ class WatchlistService:
         display_name: Optional[str] = None,
         keywords: Optional[List[str]] = None,
     ) -> WatchlistItem:
-        market = market.upper()
+        market = market.strip().upper()
         if market not in self.config.watchlist.default_market_scope:
             raise ValidationError(f"Market not allowed by config: {market}")
         normalized = normalize_symbol(symbol=symbol, market=market)
         keywords_json = self._serialize_keywords(keywords)
         with session_scope(self.config.database.url) as session:
             repo = WatchlistRepo(session)
-            item = repo.add(
-                symbol=normalized,
-                market=market,
-                alias=alias,
-                display_name=display_name,
-                keywords_json=keywords_json,
-            )
+            existing = repo.get_by_symbol_market(symbol=normalized, market=market)
+            if existing is not None:
+                raise ValidationError(
+                    f"Watchlist item already exists: {normalized} ({market})"
+                )
+            try:
+                item = repo.add(
+                    symbol=normalized,
+                    market=market,
+                    alias=alias,
+                    display_name=display_name,
+                    keywords_json=keywords_json,
+                )
+            except IntegrityError as exc:
+                raise ValidationError(
+                    f"Watchlist item already exists: {normalized} ({market})"
+                ) from exc
             return self._to_schema(item)
 
     def update_item(

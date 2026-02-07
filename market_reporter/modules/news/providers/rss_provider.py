@@ -14,9 +14,39 @@ from market_reporter.infra.http.client import HttpClient
 class RSSNewsProvider:
     provider_id = "rss"
 
-    def __init__(self, config: AppConfig, client: HttpClient) -> None:
+    def __init__(
+        self,
+        config: AppConfig,
+        client: HttpClient,
+        news_sources: List[NewsSource] | None = None,
+    ) -> None:
         self.config = config
         self.client = client
+        self._news_sources = news_sources
+
+    @property
+    def news_sources(self) -> List[NewsSource]:
+        if self._news_sources is not None:
+            return self._news_sources
+        # Fallback: load from DB (for legacy callers)
+        from sqlmodel import Session, select
+
+        from market_reporter.infra.db.models import NewsSourceTable
+        from market_reporter.infra.db.session import get_engine
+
+        engine = get_engine(self.config.database.url)
+        with Session(engine) as session:
+            rows = session.exec(select(NewsSourceTable)).all()
+            return [
+                NewsSource(
+                    source_id=row.source_id,
+                    name=row.name,
+                    category=row.category,
+                    url=row.url,
+                    enabled=row.enabled,
+                )
+                for row in rows
+            ]
 
     async def collect(self, limit: int) -> List[NewsItem]:
         items, _ = await self.collect_filtered(limit=limit, source_id=None)
@@ -31,7 +61,10 @@ class RSSNewsProvider:
         if source_id and not selected_sources:
             return [], [f"News source not found or disabled: {source_id}"]
 
-        tasks = [self._collect_from_source(source=source, limit=limit) for source in selected_sources]
+        tasks = [
+            self._collect_from_source(source=source, limit=limit)
+            for source in selected_sources
+        ]
         settled = await asyncio.gather(*tasks, return_exceptions=True)
         items: List[NewsItem] = []
         warnings: List[str] = []
@@ -57,12 +90,14 @@ class RSSNewsProvider:
         return items, warnings
 
     def _select_sources(self, source_id: Optional[str] = None) -> Sequence[NewsSource]:
-        sources = [source for source in self.config.news_sources if source.enabled]
+        sources = [source for source in self.news_sources if source.enabled]
         if source_id:
             return [source for source in sources if source.source_id == source_id]
         return sources
 
-    async def _collect_from_source(self, source: NewsSource, limit: int) -> List[NewsItem]:
+    async def _collect_from_source(
+        self, source: NewsSource, limit: int
+    ) -> List[NewsItem]:
         body = await self.client.get_text(source.url)
         parsed = feedparser.parse(body)
         output: List[NewsItem] = []
@@ -77,7 +112,9 @@ class RSSNewsProvider:
                     source=source.name,
                     title=title,
                     link=str(entry.get("link", "")).strip(),
-                    published=str(entry.get("published", "") or entry.get("updated", "")).strip(),
+                    published=str(
+                        entry.get("published", "") or entry.get("updated", "")
+                    ).strip(),
                 )
             )
         return output

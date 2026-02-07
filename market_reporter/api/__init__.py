@@ -11,7 +11,7 @@ from fastapi.responses import HTMLResponse, ORJSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from market_reporter.api.stock_analysis_tasks import StockAnalysisTaskManager
-from market_reporter.infra.db.session import init_db
+from market_reporter.infra.db.session import init_db, seed_news_sources
 from market_reporter.modules.reports.service import ReportService
 from market_reporter.services.config_store import ConfigStore
 from market_reporter.settings import AppSettings
@@ -33,6 +33,42 @@ from market_reporter.api import (
     stocks,
     watchlist,
 )
+
+
+def _migrate_news_sources_to_db(cfg, config_store: ConfigStore) -> None:
+    """On first run, migrate news sources from YAML config to SQLite.
+
+    If the DB table is empty:
+    1. Try to read news_sources from the raw YAML file (they may exist from
+       before the migration).
+    2. If YAML has sources, seed them into DB and strip the key from YAML.
+    3. Otherwise, seed the built-in defaults.
+    """
+    import yaml
+
+    from market_reporter.config import NewsSource, default_news_sources
+
+    raw_yaml_sources: list | None = None
+    yaml_path = config_store.config_path
+    if yaml_path.exists():
+        raw = yaml.safe_load(yaml_path.read_text(encoding="utf-8")) or {}
+        if isinstance(raw, dict) and "news_sources" in raw:
+            raw_sources = raw["news_sources"]
+            if isinstance(raw_sources, list) and raw_sources:
+                raw_yaml_sources = [NewsSource.model_validate(s) for s in raw_sources]
+
+    if raw_yaml_sources:
+        seed_news_sources(cfg.database.url, raw_yaml_sources)
+        # Remove news_sources from YAML to avoid stale data
+        raw = yaml.safe_load(yaml_path.read_text(encoding="utf-8")) or {}
+        if isinstance(raw, dict) and "news_sources" in raw:
+            del raw["news_sources"]
+            yaml_path.write_text(
+                yaml.safe_dump(raw, allow_unicode=True, sort_keys=False),
+                encoding="utf-8",
+            )
+    else:
+        seed_news_sources(cfg.database.url, default_news_sources())
 
 
 def create_app() -> FastAPI:
@@ -105,6 +141,8 @@ def create_app() -> FastAPI:
     async def startup_event() -> None:
         cfg = config_store.load()
         init_db(cfg.database.url)
+        # Migrate news sources from YAML to DB (first run), or seed defaults
+        _migrate_news_sources_to_db(cfg, config_store)
         _start_scheduler(app)
 
     @app.on_event("shutdown")

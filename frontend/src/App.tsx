@@ -66,7 +66,6 @@ const emptyConfig: AppConfig = {
     max_results: 20,
   },
   database: { url: "sqlite:///data/market_reporter.db" },
-  news_sources: [],
 };
 
 export default function App() {
@@ -126,7 +125,6 @@ export default function App() {
     setSelectedRunId,
     setErrorMessage,
     setWarningMessage,
-    newsSourcesQuery,
   );
 
   const { loadAnalysisModels, connectProviderAuth, disconnectProviderAuth } = useProviderActions();
@@ -196,7 +194,7 @@ export default function App() {
             config={configDraft}
             options={options}
             analysisProviders={providersQuery.data ?? []}
-            newsSources={newsSourcesQuery.data ?? configDraft.news_sources}
+            newsSources={newsSourcesQuery.data ?? []}
             onLoadProviderModels={loadAnalysisModels}
             onCreateNewsSource={async (payload) => {
               try {

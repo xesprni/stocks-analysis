@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
-from market_reporter.config import AppConfig, NewsSource
+from market_reporter.config import AppConfig
 
 
 class ReportRunSummary(BaseModel):
@@ -70,7 +70,6 @@ class ConfigUpdateRequest(BaseModel):
     news_listener: Optional[Dict[str, Any]] = None
     symbol_search: Optional[Dict[str, Any]] = None
     database: Dict[str, Any]
-    news_sources: List[NewsSource]
 
     def to_config(self, current: AppConfig) -> AppConfig:
         payload = current.model_dump(mode="python")
@@ -85,7 +84,6 @@ class ConfigUpdateRequest(BaseModel):
             "analysis": self.analysis,
             "watchlist": self.watchlist,
             "database": self.database,
-            "news_sources": self.news_sources,
         }
         if self.news_listener is not None:
             patch_data["news_listener"] = self.news_listener

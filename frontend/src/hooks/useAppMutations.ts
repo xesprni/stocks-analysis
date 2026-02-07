@@ -1,6 +1,6 @@
-import { useMutation, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 
-import { api, type AppConfig, type NewsSource } from "@/api/client";
+import { api, type AppConfig } from "@/api/client";
 import { useNotifier } from "@/components/ui/notifier";
 import { toErrorMessage } from "@/hooks/useAppQueries";
 
@@ -10,17 +10,12 @@ export function useAppMutations(
   setSelectedRunId: React.Dispatch<React.SetStateAction<string>>,
   setErrorMessage: React.Dispatch<React.SetStateAction<string>>,
   setWarningMessage: React.Dispatch<React.SetStateAction<string>>,
-  newsSourcesQuery: UseQueryResult<NewsSource[]>,
 ) {
   const queryClient = useQueryClient();
   const notifier = useNotifier();
 
   const saveConfigMutation = useMutation({
-    mutationFn: async () =>
-      api.updateConfig({
-        ...configDraft,
-        news_sources: newsSourcesQuery.data ?? configDraft.news_sources,
-      }),
+    mutationFn: async () => api.updateConfig(configDraft),
     onSuccess: async (nextConfig) => {
       setConfigDraft(nextConfig);
       await queryClient.invalidateQueries({ queryKey: ["config"] });

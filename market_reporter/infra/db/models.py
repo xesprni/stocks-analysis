@@ -9,6 +9,9 @@ from sqlmodel import Field, SQLModel
 
 class WatchlistItemTable(SQLModel, table=True):
     __tablename__ = "watchlist_items"
+    __table_args__ = (
+        UniqueConstraint("symbol", "market", name="uq_watchlist_symbol_market"),
+    )
 
     id: Optional[int] = Field(default=None, primary_key=True)
     symbol: str = Field(index=True)
@@ -23,7 +26,15 @@ class WatchlistItemTable(SQLModel, table=True):
 
 class StockKLineBarTable(SQLModel, table=True):
     __tablename__ = "stock_kline_bars"
-    __table_args__ = (UniqueConstraint("symbol", "market", "interval", "ts", name="uq_kline_symbol_market_interval_ts"),)
+    __table_args__ = (
+        UniqueConstraint(
+            "symbol",
+            "market",
+            "interval",
+            "ts",
+            name="uq_kline_symbol_market_interval_ts",
+        ),
+    )
 
     id: Optional[int] = Field(default=None, primary_key=True)
     symbol: str = Field(index=True)
@@ -136,3 +147,17 @@ class WatchlistNewsAlertTable(SQLModel, table=True):
     analysis_json: str
     status: str = Field(default="UNREAD", index=True)
     created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+
+
+class NewsSourceTable(SQLModel, table=True):
+    __tablename__ = "news_sources"
+    __table_args__ = (UniqueConstraint("source_id", name="uq_news_source_id"),)
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    source_id: str = Field(index=True)
+    name: str
+    category: str
+    url: str
+    enabled: bool = Field(default=True, index=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
