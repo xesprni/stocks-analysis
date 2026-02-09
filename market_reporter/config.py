@@ -114,17 +114,6 @@ def default_news_sources() -> List[NewsSource]:
             enabled=True,
         ),
         NewsSource(
-            source_id="google-news-cn-finance",
-            name="Google News CN Finance",
-            category="finance",
-            url=(
-                "https://news.google.com/rss/search"
-                "?q=%E8%B4%A2%E7%BB%8F+%E8%82%A1%E5%B8%82+%E7%BB%8F%E6%B5%8E"
-                "&hl=zh-CN&gl=CN&ceid=CN:zh-Hans"
-            ),
-            enabled=True,
-        ),
-        NewsSource(
             source_id="federal-reserve-monetary-policy",
             name="Federal Reserve Monetary Policy",
             category="policy",
@@ -143,17 +132,6 @@ def default_news_sources() -> List[NewsSource]:
             name="ECB Press",
             category="policy",
             url="https://www.ecb.europa.eu/press/rss/press.html",
-            enabled=True,
-        ),
-        NewsSource(
-            source_id="google-news-cn-policy",
-            name="Google News CN Policy",
-            category="policy",
-            url=(
-                "https://news.google.com/rss/search"
-                "?q=%E5%AE%8F%E8%A7%82+%E6%94%BF%E7%AD%96+%E5%A4%AE%E8%A1%8C"
-                "&hl=zh-CN&gl=CN&ceid=CN:zh-Hans"
-            ),
             enabled=True,
         ),
     ]

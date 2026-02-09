@@ -66,6 +66,56 @@ npm install
 npm run dev
 ```
 
+<<<<<<< HEAD
+## 数据库使用（当前实现）
+
+### 存储位置与配置
+
+- 默认数据库：`SQLite`
+- 默认文件：`data/market_reporter.db`
+- 配置项：`config/settings.yaml` -> `database.url`
+
+示例：
+
+```yaml
+database:
+  url: sqlite:///data/market_reporter.db
+```
+
+### 初始化与建表策略
+
+- 执行 `UV_CACHE_DIR=.uv-cache uv run market-reporter db init` 会初始化数据库。
+- 后端启动时也会自动执行建表检查。
+- 当前不使用 Alembic；采用 `SQLModel.metadata.create_all(...)` 自动建表。
+- 对 SQLite，启动时会自动补齐 `watchlist_items.display_name` 和 `watchlist_items.keywords_json` 两个兼容字段。
+
+### 首次启动数据
+
+- 首次启动会自动初始化新闻源数据：
+  - 若旧配置里存在 `news_sources`，会迁移到数据库。
+  - 否则写入系统默认新闻源。
+
+### 常见操作
+
+1) 查看表：
+
+```bash
+sqlite3 data/market_reporter.db ".tables"
+```
+
+2) 备份数据库：
+
+```bash
+cp data/market_reporter.db data/market_reporter_$(date +%Y%m%d_%H%M%S).db
+```
+
+3) 重建数据库（会丢失数据）：
+
+```bash
+rm -f data/market_reporter.db
+UV_CACHE_DIR=.uv-cache uv run market-reporter db init
+```
+
 ## CLI 常用命令
 
 ```bash
@@ -87,6 +137,29 @@ UV_CACHE_DIR=.uv-cache uv run market-reporter analyze stock --symbol AAPL --mark
 
 ## API 概览
 
+=======
+## CLI 常用命令
+
+```bash
+# 报告
+UV_CACHE_DIR=.uv-cache uv run market-reporter run
+
+# watchlist
+UV_CACHE_DIR=.uv-cache uv run market-reporter watchlist list
+UV_CACHE_DIR=.uv-cache uv run market-reporter watchlist add --symbol AAPL --market US
+UV_CACHE_DIR=.uv-cache uv run market-reporter watchlist remove --item-id 1
+
+# 分析 provider
+UV_CACHE_DIR=.uv-cache uv run market-reporter providers list
+UV_CACHE_DIR=.uv-cache uv run market-reporter providers set-default --provider mock --model market-default
+
+# 个股分析
+UV_CACHE_DIR=.uv-cache uv run market-reporter analyze stock --symbol AAPL --market US
+```
+
+## API 概览
+
+>>>>>>> 494ddf4 (delete some code)
 - 健康与配置：
   - `GET /api/health`
   - `GET /api/options/ui`

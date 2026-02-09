@@ -14,4 +14,9 @@ output/*
 !output/.gitkeep
 .idea/
 .vscode/
+<<<<<<< HEAD
 .jarvis/
+*.egg-info/
+=======
+.jarvis/
+>>>>>>> 494ddf4 (delete some code)
