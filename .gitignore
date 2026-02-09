@@ -12,3 +12,6 @@ frontend/dist/
 data/
 output/*
 !output/.gitkeep
+.idea/
+.vscode/
+.jarvis/
