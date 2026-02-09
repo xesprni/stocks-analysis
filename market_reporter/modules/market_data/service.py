@@ -94,21 +94,21 @@ class MarketDataService:
             with session_scope(self.config.database.url) as session:
                 repo = MarketDataRepo(session)
                 cached = repo.list_kline(normalized_symbol, market.upper(), interval, limit=limit)
-            return [
-                KLineBar(
-                    symbol=row.symbol,
-                    market=row.market,
-                    interval=row.interval,
-                    ts=row.ts,
-                    open=row.open,
-                    high=row.high,
-                    low=row.low,
-                    close=row.close,
-                    volume=row.volume,
-                    source=row.source,
-                )
-                for row in cached
-            ]
+                return [
+                    KLineBar(
+                        symbol=row.symbol,
+                        market=row.market,
+                        interval=row.interval,
+                        ts=row.ts,
+                        open=row.open,
+                        high=row.high,
+                        low=row.low,
+                        close=row.close,
+                        volume=row.volume,
+                        source=row.source,
+                    )
+                    for row in cached
+                ]
 
     async def get_curve(
         self,
@@ -129,17 +129,17 @@ class MarketDataService:
             with session_scope(self.config.database.url) as session:
                 repo = MarketDataRepo(session)
                 cached = repo.list_curve_points(normalized_symbol, market.upper(), limit=500)
-            return [
-                CurvePoint(
-                    symbol=row.symbol,
-                    market=row.market,
-                    ts=row.ts,
-                    price=row.price,
-                    volume=row.volume,
-                    source=row.source,
-                )
-                for row in cached
-            ]
+                return [
+                    CurvePoint(
+                        symbol=row.symbol,
+                        market=row.market,
+                        ts=row.ts,
+                        price=row.price,
+                        volume=row.volume,
+                        source=row.source,
+                    )
+                    for row in cached
+                ]
 
     def provider_ids(self) -> List[str]:
         return self.registry.list_ids(self.MODULE_NAME)

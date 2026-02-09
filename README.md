@@ -66,7 +66,6 @@ npm install
 npm run dev
 ```
 
-<<<<<<< HEAD
 ## 数据库使用（当前实现）
 
 ### 存储位置与配置
@@ -137,29 +136,6 @@ UV_CACHE_DIR=.uv-cache uv run market-reporter analyze stock --symbol AAPL --mark
 
 ## API 概览
 
-=======
-## CLI 常用命令
-
-```bash
-# 报告
-UV_CACHE_DIR=.uv-cache uv run market-reporter run
-
-# watchlist
-UV_CACHE_DIR=.uv-cache uv run market-reporter watchlist list
-UV_CACHE_DIR=.uv-cache uv run market-reporter watchlist add --symbol AAPL --market US
-UV_CACHE_DIR=.uv-cache uv run market-reporter watchlist remove --item-id 1
-
-# 分析 provider
-UV_CACHE_DIR=.uv-cache uv run market-reporter providers list
-UV_CACHE_DIR=.uv-cache uv run market-reporter providers set-default --provider mock --model market-default
-
-# 个股分析
-UV_CACHE_DIR=.uv-cache uv run market-reporter analyze stock --symbol AAPL --market US
-```
-
-## API 概览
-
->>>>>>> 494ddf4 (delete some code)
 - 健康与配置：
   - `GET /api/health`
   - `GET /api/options/ui`
@@ -222,3 +198,30 @@ UV_CACHE_DIR=.uv-cache uv run market-reporter analyze stock --symbol AAPL --mark
 
 1. 免费行情源可能存在延迟或限频。
 2. 在无外网环境下，网络型 provider 会失败并返回告警。
+
+## vscode
+```
+python3 -m venv .venv
+source .venv/bin/activate && pip install -e .
+source .venv/bin/activate
+# 1. 同步依赖（首次设置或更新 pyproject.toml 后）
+uv sync
+
+# 2. 运行项目命令
+uv run market-reporter serve --reload
+
+# 3. 添加新依赖
+uv add fastapi httpx
+
+# 4. 移除依赖
+uv remove package-name
+
+# 5. 安装开发依赖
+uv sync --dev
+
+# 6. 直接运行 Python 脚本
+uv run python script.py
+
+# 7. 执行 pytest
+uv run pytest
+```
