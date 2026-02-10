@@ -19,6 +19,7 @@ class FredFundFlowProvider:
     async def collect(self, periods: int) -> Dict[str, List[FlowPoint]]:
         output: Dict[str, List[FlowPoint]] = {}
         for series in FRED_SERIES:
+            # Pull each configured series independently so one failure does not block others.
             csv_text = await self.client.get_text(FRED_CSV_URL, params={"id": series.series_id})
             reader = csv.DictReader(io.StringIO(csv_text))
             points: List[FlowPoint] = []

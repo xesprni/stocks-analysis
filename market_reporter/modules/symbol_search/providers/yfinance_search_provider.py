@@ -15,12 +15,14 @@ class YahooFinanceSearchProvider:
     async def search(self, query: str, market: str, limit: int) -> List[StockSearchResult]:
         target_market = market.upper()
         try:
+            # Prefer public HTTP endpoint because it is faster and avoids heavy local objects.
             remote = await self._search_http(query=query, market=target_market, limit=limit)
             if remote:
                 return remote[:limit]
         except Exception:
             pass
         try:
+            # Fallback to yfinance SDK path when HTTP search is unavailable.
             return await asyncio.to_thread(self._search_sync, query, target_market, limit)
         except Exception:
             return []
@@ -69,6 +71,7 @@ class YahooFinanceSearchProvider:
             symbol_raw = str(item.get("symbol") or "").strip().upper()
             if not symbol_raw:
                 continue
+            # Infer market from symbol/exchange fields before normalization.
             inferred_market = self._infer_market(symbol=symbol_raw, exchange=str(item.get("exchange") or item.get("exchDisp") or ""))
             if target_market != "ALL" and inferred_market != target_market:
                 continue

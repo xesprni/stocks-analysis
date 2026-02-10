@@ -48,10 +48,11 @@ class NewsListenerService:
         if self._run_lock.locked():
             raise ValueError("News listener task is already running")
 
+        # Serialize runs so one cycle cannot overwrite another cycle's accounting data.
         async with self._run_lock:
             if self.news_service is None:
                 raise ValueError("News listener is missing news service dependency")
-            started_at = datetime.utcnow()
+            started_at = datetime.utcnow
             error_messages: List[str] = []
             status = "SUCCESS"
             scanned_news_count = 0
@@ -60,6 +61,7 @@ class NewsListenerService:
 
             try:
                 watch_items = self.watchlist_service.list_enabled_items()
+                # Provider warnings are captured without failing the whole cycle.
                 news_items, news_warnings = await self.news_service.collect(
                     limit=self.config.news_listener.max_news_per_cycle
                 )
@@ -74,8 +76,9 @@ class NewsListenerService:
                 error_messages.append(str(exc))
                 alerts = []
 
+            # LLM analysis is best-effort; fallback summaries are generated when providers fail.
             analysis_results = await self._run_analysis(alerts=alerts, errors=error_messages)
-            finished_at = datetime.utcnow()
+            finished_at = datetime.utcnow
 
             with session_scope(self.config.database.url) as session:
                 run_repo = NewsListenerRunRepo(session)
@@ -92,6 +95,7 @@ class NewsListenerService:
                 if alerts:
                     rows: List[WatchlistNewsAlertTable] = []
                     for idx, candidate in enumerate(alerts):
+                        # Keep persistence robust if provider returns fewer analysis rows than requested.
                         analysis = analysis_results[idx] if idx < len(analysis_results) else {}
                         rows.append(
                             WatchlistNewsAlertTable(
@@ -189,6 +193,7 @@ class NewsListenerService:
         tasks = []
         for key, value in matches.items():
             tasks.append(self._evaluate_symbol(symbol=key[0], market=key[1], payload=value))
+        # Evaluate all symbols concurrently to keep total latency close to the slowest symbol.
         evaluated = await asyncio.gather(*tasks) if tasks else []
 
         threshold = self.config.news_listener.move_threshold_percent
@@ -203,6 +208,7 @@ class NewsListenerService:
             severity = choose_severity(change_percent=change_percent, threshold_percent=threshold)
             news_items = payload.get("news", [])
             keywords = [str(item) for item in payload.get("keywords", [])]
+            # Cap alerts per symbol to reduce noise from duplicate same-topic headlines.
             for news in news_items[:3]:
                 alerts.append(
                     MatchedAlertCandidate(
@@ -229,6 +235,7 @@ class NewsListenerService:
     ) -> Optional[Tuple[str, str, float, Dict[str, object]]]:
         change_percent: Optional[float] = None
         try:
+            # Prefer intraday curve-based change because it aligns with listener window semantics.
             curve = await self.market_data_service.get_curve(symbol=symbol, market=market, window="1d")
             change_percent = calculate_window_change_percent(
                 points=curve,
@@ -239,6 +246,7 @@ class NewsListenerService:
 
         if change_percent is None:
             try:
+                # Fallback to quote-level change when curve data is missing.
                 quote = await self.market_data_service.get_quote(symbol=symbol, market=market)
                 change_percent = quote.change_percent
             except Exception:
@@ -257,6 +265,7 @@ class NewsListenerService:
         payload = [item.model_dump(mode="python") for item in alerts]
 
         try:
+            # Analyze in batch to minimize provider round trips and keep ordering stable.
             return await self.analysis_service.analyze_news_alert_batch(
                 candidates=payload,
                 provider_id=provider_id,
@@ -264,6 +273,7 @@ class NewsListenerService:
             )
         except Exception as exc:
             errors.append(f"analysis degraded: {exc}")
+            # Deterministic fallback keeps alert payloads complete even when model calls fail.
             fallback = []
             for item in alerts:
                 fallback.append(
@@ -282,6 +292,7 @@ class NewsListenerService:
     @staticmethod
     def _to_alert_view(row) -> NewsAlertView:
         try:
+            # Older rows may contain malformed JSON; default to empty dict instead of crashing.
             parsed = json.loads(row.analysis_json or "{}")
             if not isinstance(parsed, dict):
                 parsed = {}

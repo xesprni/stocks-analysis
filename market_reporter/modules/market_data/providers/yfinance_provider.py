@@ -12,12 +12,14 @@ class YahooFinanceMarketDataProvider:
     provider_id = "yfinance"
 
     async def get_quote(self, symbol: str, market: str) -> Quote:
+        # yfinance SDK is sync; run in thread to avoid blocking event loop.
         return await asyncio.to_thread(self._get_quote_sync, symbol, market)
 
     async def get_kline(self, symbol: str, market: str, interval: str, limit: int) -> List[KLineBar]:
         return await asyncio.to_thread(self._get_kline_sync, symbol, market, interval, limit)
 
     async def get_curve(self, symbol: str, market: str, window: str) -> List[CurvePoint]:
+        # Curve is derived from minute bars to keep one data source contract.
         bars = await self.get_kline(symbol=symbol, market=market, interval="1m", limit=300)
         return [
             CurvePoint(
@@ -66,6 +68,7 @@ class YahooFinanceMarketDataProvider:
 
         interval_map = {"1m": "1m", "5m": "5m", "1d": "1d"}
         period_map = {"1m": "5d", "5m": "1mo", "1d": "1y"}
+        # Fetch a broader period and trim locally, improving compatibility across symbols.
         yf_interval = interval_map.get(interval, "1d")
         yf_period = period_map.get(interval, "1mo")
 

@@ -28,7 +28,7 @@ class RSSNewsProvider:
     def news_sources(self) -> List[NewsSource]:
         if self._news_sources is not None:
             return self._news_sources
-        # Fallback: load from DB (for legacy callers)
+        # Fallback path keeps legacy callers working when sources are not injected.
         from sqlmodel import Session, select
 
         from market_reporter.infra.db.models import NewsSourceTable
@@ -61,6 +61,7 @@ class RSSNewsProvider:
         if source_id and not selected_sources:
             return [], [f"News source not found or disabled: {source_id}"]
 
+        # Fetch each source concurrently; failures are folded into warnings per source.
         tasks = [
             self._collect_from_source(source=source, limit=limit)
             for source in selected_sources
@@ -82,6 +83,7 @@ class RSSNewsProvider:
                     )
                 continue
             for item in result:
+                # Title + link dedup avoids duplicate entries across mirrored feeds.
                 key = f"{item.title}::{item.link}"
                 if key in dedup:
                     continue
@@ -90,6 +92,7 @@ class RSSNewsProvider:
         return items, warnings
 
     def _select_sources(self, source_id: Optional[str] = None) -> Sequence[NewsSource]:
+        # Disabled sources are filtered at provider layer for all callers.
         sources = [source for source in self.news_sources if source.enabled]
         if source_id:
             return [source for source in sources if source.source_id == source_id]
@@ -105,6 +108,7 @@ class RSSNewsProvider:
             title = str(entry.get("title", "")).strip()
             if not title:
                 continue
+            # Keep parser tolerant: only require title; other fields are optional.
             output.append(
                 NewsItem(
                     source_id=source.source_id or "",

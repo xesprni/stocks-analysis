@@ -28,6 +28,7 @@ class EastMoneyFundFlowProvider:
         northbound = self._parse_series(data.get("s2n", []))
         southbound = self._parse_series(data.get("n2s", []))
         if not northbound:
+            # Compatibility fallback for payload variants that split northbound channels.
             northbound = self._merge(data.get("hk2sh", []), data.get("hk2sz", []))
 
         return {
@@ -75,6 +76,7 @@ class EastMoneyFundFlowProvider:
         merged: Dict[str, float] = {}
         for series in (series_a, series_b):
             for date, value in EastMoneyFundFlowProvider._parse_series(series):
+                # Same date from multiple sub-series is accumulated.
                 merged[date] = merged.get(date, 0.0) + value
         return sorted(merged.items(), key=lambda x: x[0])
 

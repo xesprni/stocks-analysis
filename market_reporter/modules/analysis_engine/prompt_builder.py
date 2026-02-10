@@ -134,6 +134,7 @@ Do NOT wrap output with markdown code fences. Return raw JSON only.
 
 def build_user_prompt(payload: AnalysisInput) -> str:
     """Build the user prompt for individual stock analysis."""
+    # Reuse one prompt entry point for stock analysis, overview, and alert triage modes.
     is_market_overview = payload.symbol in (
         "MARKET",
         "WATCHLIST_ALERTS",
@@ -191,6 +192,7 @@ def _build_stock_analysis_prompt(payload: AnalysisInput) -> str:
         key: [point.model_dump(mode="json") for point in value[-12:]]
         for key, value in payload.fund_flow.items()
     }
+    # Keep payload compact but information-rich to fit provider context windows.
 
     request_json = {
         "task": "对以下股票进行专业级多维度交易分析，输出可执行的投资建议。",
@@ -306,7 +308,7 @@ def _summarize_kline(payload: AnalysisInput) -> Dict[str, object]:
     if first.close:
         change_pct = round(((last.close - first.close) / first.close) * 100, 4)
 
-    # Calculate simple moving average proxies
+    # Calculate simple moving-average proxies from available history window.
     ma5 = round(sum(closes[-5:]) / min(5, len(closes[-5:])), 4) if closes else None
     ma10 = (
         round(sum(closes[-10:]) / min(10, len(closes[-10:])), 4)
@@ -319,7 +321,7 @@ def _summarize_kline(payload: AnalysisInput) -> Dict[str, object]:
         else None
     )
 
-    # Determine trend from MAs
+    # Determine coarse trend state from MA alignment.
     trend = "unknown"
     if ma5 and ma10 and ma20:
         if ma5 > ma10 > ma20:
@@ -329,7 +331,7 @@ def _summarize_kline(payload: AnalysisInput) -> Dict[str, object]:
         else:
             trend = "mixed"
 
-    # Volume trend (recent 5 bars vs prior 5 bars)
+    # Volume trend compares recent 5 bars vs prior 5 bars.
     volume_trend = "unknown"
     if len(volumes) >= 10:
         recent_vol = sum(volumes[-5:]) / 5
@@ -373,7 +375,7 @@ def _summarize_curve(payload: AnalysisInput) -> Dict[str, object]:
     if first.price:
         change_pct = round(((last.price - first.price) / first.price) * 100, 4)
 
-    # Detect intraday momentum
+    # Detect intraday momentum via recent-vs-prior segment averages.
     momentum = "flat"
     if len(prices) >= 20:
         recent_segment = prices[-10:]
@@ -522,7 +524,7 @@ def _categorize_news(news_items: list) -> Dict[str, list]:
         else:
             categories["other"].append(entry)
 
-    # Remove empty categories
+    # Remove empty categories to reduce prompt noise.
     return {k: v for k, v in categories.items() if v}
 
 

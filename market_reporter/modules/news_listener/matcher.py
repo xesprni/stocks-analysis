@@ -9,6 +9,7 @@ from market_reporter.modules.watchlist.schemas import WatchlistItem
 
 
 def build_watch_keywords(item: WatchlistItem) -> List[str]:
+    # Build keyword pool from symbol aliases + custom watchlist keywords.
     keywords = {
         item.symbol.upper(),
         strip_market_suffix(item.symbol.upper()),
@@ -28,6 +29,7 @@ def find_symbol_news_matches(
     watch_items: Iterable[WatchlistItem],
 ) -> Dict[Tuple[str, str], Dict[str, object]]:
     result: Dict[Tuple[str, str], Dict[str, object]] = {}
+    # Cache iterable input once so multi-symbol matching does not re-consume generators.
     cached_news = list(news_items)
     for item in watch_items:
         keywords = build_watch_keywords(item)
@@ -40,6 +42,7 @@ def find_symbol_news_matches(
             if not title:
                 continue
             for keyword in keywords:
+                # Substring match keeps matcher lightweight; later stages handle signal filtering.
                 if keyword.lower() in title:
                     matched_news.append(news)
                     hit_keywords.add(keyword)
@@ -70,6 +73,7 @@ def calculate_window_change_percent(points: List[CurvePoint], window_minutes: in
     latest_ts, latest_price = parsed[-1]
     target_ts = latest_ts - timedelta(minutes=window_minutes)
 
+    # Baseline is the nearest price at or before target_ts.
     baseline_price = parsed[0][1]
     for ts, price in parsed:
         if ts <= target_ts:

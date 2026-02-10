@@ -12,6 +12,7 @@ class AkshareMarketDataProvider:
     provider_id = "akshare"
 
     async def get_quote(self, symbol: str, market: str) -> Quote:
+        # akshare calls are sync and can be slow; isolate them in worker threads.
         return await asyncio.to_thread(self._get_quote_sync, symbol, market)
 
     async def get_kline(self, symbol: str, market: str, interval: str, limit: int) -> List[KLineBar]:
@@ -40,6 +41,7 @@ class AkshareMarketDataProvider:
         now = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
         if market == "CN":
+            # CN/HK/US use different akshare spot endpoints.
             df = ak.stock_zh_a_spot_em()
             row = df[df["代码"] == code].head(1)
             if row.empty:
@@ -139,4 +141,5 @@ class AkshareMarketDataProvider:
                 )
             return rows
 
+        # Current provider implementation intentionally limits scope to CN bars.
         raise ValueError(f"Akshare kline unsupported for market={market}, interval={interval}")

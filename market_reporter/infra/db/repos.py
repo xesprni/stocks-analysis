@@ -52,6 +52,7 @@ class WatchlistRepo:
             enabled=True,
         )
         self.session.add(item)
+        # Flush + refresh makes generated fields (for example, id/timestamps) immediately available.
         self.session.flush()
         self.session.refresh(item)
         return item
@@ -82,7 +83,7 @@ class WatchlistRepo:
             item.display_name = display_name
         if keywords_json is not None:
             item.keywords_json = keywords_json
-        item.updated_at = datetime.utcnow()
+        item.updated_at = datetime.utcnow
         self.session.add(item)
         self.session.flush()
         self.session.refresh(item)
@@ -102,6 +103,7 @@ class MarketDataRepo:
         self.session = session
 
     def upsert_kline(self, bars: List[KLineBar]) -> None:
+        # Keep upsert behavior portable across engines without vendor-specific SQL.
         for bar in bars:
             existing = self.session.exec(
                 select(StockKLineBarTable)
@@ -149,6 +151,7 @@ class MarketDataRepo:
 
         symbol = points[0].symbol
         market = points[0].market
+        # Read newest first so rows beyond retention can be dropped in one pass.
         rows = list(
             self.session.exec(
                 select(StockCurvePointTable)
@@ -170,6 +173,7 @@ class MarketDataRepo:
                 .limit(limit)
             ).all()
         )
+        # Queries run descending for efficiency; API returns ascending for chart rendering.
         rows.reverse()
         return rows
 
@@ -184,6 +188,7 @@ class MarketDataRepo:
                 .limit(limit)
             ).all()
         )
+        # Queries run descending for efficiency; API returns ascending for chart rendering.
         rows.reverse()
         return rows
 
@@ -205,7 +210,7 @@ class AnalysisProviderSecretRepo:
         else:
             row.key_ciphertext = ciphertext
             row.nonce = nonce
-            row.updated_at = datetime.utcnow()
+            row.updated_at = datetime.utcnow
         self.session.add(row)
         self.session.flush()
         self.session.refresh(row)
@@ -253,7 +258,7 @@ class AnalysisProviderAccountRepo:
             row.credential_ciphertext = credential_ciphertext
             row.nonce = nonce
             row.expires_at = expires_at
-            row.updated_at = datetime.utcnow()
+            row.updated_at = datetime.utcnow
         self.session.add(row)
         self.session.flush()
         self.session.refresh(row)
@@ -313,6 +318,7 @@ class AnalysisProviderAuthStateRepo:
         return row
 
     def delete_expired(self, now: datetime) -> int:
+        # Bulk-delete in Python to keep behavior predictable on SQLite.
         expired_rows = list(
             self.session.exec(
                 select(AnalysisProviderAuthStateTable).where(AnalysisProviderAuthStateTable.expires_at < now)
@@ -422,6 +428,7 @@ class WatchlistNewsAlertRepo:
         market: Optional[str] = None,
         limit: int = 50,
     ) -> List[WatchlistNewsAlertTable]:
+        # Build filters incrementally so callers can combine status/symbol/market constraints.
         statement = select(WatchlistNewsAlertTable).order_by(WatchlistNewsAlertTable.id.desc()).limit(limit)
         if status and status != "ALL":
             statement = statement.where(WatchlistNewsAlertTable.status == status)

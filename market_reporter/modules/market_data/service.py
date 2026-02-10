@@ -43,6 +43,7 @@ class MarketDataService:
         try:
             return self.registry.resolve(self.MODULE_NAME, target)
         except Exception:
+            # Provider fallback guarantees read APIs remain available with degraded data quality.
             return self.registry.resolve(self.MODULE_NAME, "composite")
 
     async def get_quote(self, symbol: str, market: str, provider_id: Optional[str] = None) -> Quote:
@@ -53,9 +54,11 @@ class MarketDataService:
             quote = await provider.get_quote(symbol=normalized_symbol, market=resolved_market)
             return quote
         except Exception:
+            # On provider failure, first attempt to synthesize quote from cached market data.
             cached = self._quote_from_cache(symbol=normalized_symbol, market=resolved_market)
             if cached is not None:
                 return cached
+            # Last-resort placeholder keeps API response schema stable.
             now = datetime.now(timezone.utc).isoformat(timespec="seconds")
             return Quote(
                 symbol=normalized_symbol,
@@ -88,9 +91,11 @@ class MarketDataService:
             )
             with session_scope(self.config.database.url) as session:
                 repo = MarketDataRepo(session)
+                # Write-through cache for downstream chart/quote fallback paths.
                 repo.upsert_kline(rows)
             return rows
         except Exception:
+            # Degrade to historical cache when upstream provider is unavailable.
             with session_scope(self.config.database.url) as session:
                 repo = MarketDataRepo(session)
                 cached = repo.list_kline(normalized_symbol, market.upper(), interval, limit=limit)
@@ -123,6 +128,7 @@ class MarketDataService:
             rows = await provider.get_curve(symbol=normalized_symbol, market=market.upper(), window=window)
             with session_scope(self.config.database.url) as session:
                 repo = MarketDataRepo(session)
+                # Persist latest intraday points for listener/report fallback.
                 repo.save_curve_points(rows)
             return rows
         except Exception:
@@ -147,6 +153,7 @@ class MarketDataService:
     def _quote_from_cache(self, symbol: str, market: str) -> Optional[Quote]:
         with session_scope(self.config.database.url) as session:
             repo = MarketDataRepo(session)
+            # Prefer curve points because they usually represent the freshest price.
             points = repo.list_curve_points(symbol=symbol, market=market, limit=2)
             if points:
                 latest = points[-1]
@@ -168,6 +175,7 @@ class MarketDataService:
                     source=f"cache:{latest.source}",
                 )
 
+            # Fallback to available kline intervals ordered by expected freshness.
             for interval in ("1m", "5m", "1d"):
                 bars = repo.list_kline(symbol=symbol, market=market, interval=interval, limit=2)
                 if not bars:

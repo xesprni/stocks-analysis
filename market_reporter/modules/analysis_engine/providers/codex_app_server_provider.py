@@ -32,6 +32,7 @@ class CodexAppServerProvider:
         redirect_to: Optional[str] = None,
     ) -> Dict[str, object]:
         del state, callback_url, redirect_to
+        # Codex app-server handles login in its own local session flow.
         result = await asyncio.to_thread(self._start_login_sync)
         auth_url = self._pick_string(
             result, ["authUrl", "auth_url", "url", "loginUrl", "login_url"]
@@ -52,6 +53,7 @@ class CodexAppServerProvider:
         query_params: Optional[Dict[str, str]] = None,
     ) -> Dict[str, object]:
         del code, state, callback_url, query_params
+        # Completion checks local connection state instead of exchanging OAuth code here.
         status = await self.get_auth_status()
         if not status.get("connected"):
             raise ValueError("Codex account is not connected yet.")
@@ -83,6 +85,7 @@ class CodexAppServerProvider:
     async def list_models(self, access_token: Optional[str] = None) -> List[str]:
         del access_token
         try:
+            # Support both legacy and current RPC method names.
             payload = await asyncio.to_thread(
                 self._request_with_fallback_sync,
                 [
@@ -115,6 +118,7 @@ class CodexAppServerProvider:
             model,
             get_system_prompt(payload),
         )
+        # Provider output should be JSON; fallback path keeps output schema stable.
         structured = self._parse_json(content)
         if structured is None:
             structured = {
@@ -205,6 +209,7 @@ class CodexAppServerProvider:
                     "personality": "pragmatic",
                 },
             )
+            # Thread id is required for subsequent turn/start call.
             thread_payload = self._wait_for_response(
                 process=process, request_id=2, deadline=deadline
             )
@@ -232,6 +237,7 @@ class CodexAppServerProvider:
             chunks: List[str] = []
             messages: List[str] = []
 
+            # Consume streaming deltas until terminal turn/completed event arrives.
             while time.time() < deadline:
                 message = self._read_message(process=process, deadline=deadline)
                 if message is None:
@@ -309,6 +315,7 @@ class CodexAppServerProvider:
         timeout: float,
     ) -> Dict[str, object]:
         errors: List[str] = []
+        # Try equivalent RPC methods to handle app-server version differences.
         for method, params in calls:
             try:
                 return self._request_once_sync(
@@ -327,6 +334,7 @@ class CodexAppServerProvider:
         process = self._spawn_process()
         deadline = time.time() + timeout
         try:
+            # Every request starts with JSON-RPC initialize handshake.
             self._send_request(
                 process=process,
                 request_id=1,
@@ -392,6 +400,7 @@ class CodexAppServerProvider:
             try:
                 message = json.loads(line)
             except json.JSONDecodeError:
+                # Ignore non-JSON log lines emitted by child process.
                 continue
             if isinstance(message, dict):
                 return message
@@ -452,6 +461,7 @@ class CodexAppServerProvider:
             "/opt/homebrew/bin/codex",
             "/usr/local/bin/codex",
         ]
+        # Probe explicit env var first, then common PATH/homebrew install locations.
         for candidate in candidates:
             if not candidate:
                 continue
@@ -517,6 +527,7 @@ class CodexAppServerProvider:
         try:
             return json.loads(content)
         except json.JSONDecodeError:
+            # Recover embedded JSON from mixed text responses.
             start = content.find("{")
             end = content.rfind("}")
             if start >= 0 and end > start:

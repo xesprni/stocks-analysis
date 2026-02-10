@@ -11,6 +11,7 @@ class AkshareSearchProvider:
     provider_id = "akshare"
 
     async def search(self, query: str, market: str, limit: int) -> List[StockSearchResult]:
+        # akshare APIs are sync; offload scanning to thread worker.
         return await asyncio.to_thread(self._search_sync, query, market, limit)
 
     def _search_sync(self, query: str, market: str, limit: int) -> List[StockSearchResult]:
@@ -39,6 +40,7 @@ class AkshareSearchProvider:
                         )
                     )
             except Exception:
+                # Keep partial results from other markets/providers.
                 pass
 
         if target_market in {"ALL", "HK"} and len(results) < limit:

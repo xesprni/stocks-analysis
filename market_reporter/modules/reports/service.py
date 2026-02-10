@@ -47,6 +47,7 @@ class ReportService:
         )
         async with self._task_lock:
             self._tasks[task_id] = task_view
+        # Detached background task keeps HTTP request latency low.
         task = asyncio.create_task(
             self._run_background_task(task_id=task_id, overrides=overrides)
         )
@@ -107,6 +108,7 @@ class ReportService:
             task = self._tasks.get(task_id)
             if task is None:
                 return
+            # Copy-update keeps Pydantic model immutable semantics explicit.
             update_payload = {
                 "status": status,
                 "error_message": error_message
@@ -133,6 +135,7 @@ class ReportService:
             user_agent=config.user_agent,
         ) as client:
             registry = ProviderRegistry()
+            # Build module services within one client lifecycle for consistent networking settings.
             news_service = NewsService(config=config, client=client, registry=registry)
             fund_flow_service = FundFlowService(
                 config=config, client=client, registry=registry
@@ -165,6 +168,7 @@ class ReportService:
                     flow_series=flow_series,
                 )
             except Exception as exc:
+                # Report generation should still succeed with a local fallback analysis block.
                 warnings.append(
                     f"Analysis provider failed, fallback to local summary: {exc}"
                 )
@@ -210,6 +214,7 @@ class ReportService:
             },
             "warnings": warnings,
         }
+        # Persist raw inputs/outputs for reproducibility and debugging.
         raw_path.write_text(
             json.dumps(raw_payload, ensure_ascii=False, indent=2), encoding="utf-8"
         )
@@ -288,6 +293,7 @@ class ReportService:
         target = (root / run_id).resolve()
         if not target.exists() or not target.is_dir():
             return False
+        # Safety check prevents accidental deletion outside report root.
         if target == root or root not in target.parents:
             raise ValueError("Invalid report path.")
         shutil.rmtree(target)
@@ -315,6 +321,7 @@ class ReportService:
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         run_dir = output_root / stamp
         cursor = 1
+        # Ensure unique run directory when multiple jobs finish in same second.
         while run_dir.exists():
             run_dir = output_root / f"{stamp}_{cursor}"
             cursor += 1

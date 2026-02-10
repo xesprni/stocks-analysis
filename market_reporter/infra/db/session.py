@@ -12,6 +12,7 @@ from market_reporter.config import NewsSource
 
 @lru_cache(maxsize=8)
 def get_engine(database_url: str):
+    # Reuse engine instances per URL so workers do not rebuild connection pools.
     connect_args = (
         {"check_same_thread": False} if database_url.startswith("sqlite") else {}
     )
@@ -19,11 +20,13 @@ def get_engine(database_url: str):
 
 
 def init_db(database_url: str) -> None:
+    # Import models for side effects so SQLModel metadata includes all tables.
     from market_reporter.infra.db import models  # noqa: F401
 
     engine = get_engine(database_url)
     SQLModel.metadata.create_all(engine)
     if database_url.startswith("sqlite"):
+        # SQLite lacks robust migration tooling in this project; patch missing columns defensively.
         _ensure_sqlite_columns(engine)
 
 
@@ -39,7 +42,7 @@ def seed_news_sources(database_url: str, sources: List[NewsSource]) -> None:
         existing = session.exec(select(NewsSourceTable).limit(1)).first()
         if existing is not None:
             return
-        now = datetime.utcnow()
+        now = datetime.utcnow
         for source in sources:
             row = NewsSourceTable(
                 source_id=source.source_id or "",
@@ -60,8 +63,10 @@ def session_scope(database_url: str) -> Iterator[Session]:
     session = Session(engine)
     try:
         yield session
+        # Commit once per unit of work; callers can compose multiple repo writes atomically.
         session.commit()
     except Exception:
+        # Any failure in the scope rolls back all staged changes.
         session.rollback()
         raise
     finally:
@@ -70,6 +75,7 @@ def session_scope(database_url: str) -> Iterator[Session]:
 
 def _ensure_sqlite_columns(engine) -> None:
     with engine.begin() as connection:
+        # Lightweight schema compatibility check for local SQLite deployments.
         columns = {
             row[1]
             for row in connection.exec_driver_sql(

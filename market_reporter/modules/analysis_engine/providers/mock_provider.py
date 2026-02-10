@@ -9,6 +9,7 @@ class MockAnalysisProvider:
     provider_id = "mock"
 
     async def analyze(self, payload: AnalysisInput, model: str, api_key: Optional[str] = None) -> AnalysisOutput:
+        # Deterministic placeholder used for local development and smoke tests.
         quote_text = "暂无报价"
         if payload.quote is not None:
             quote_text = f"最新价 {payload.quote.price:.2f}"

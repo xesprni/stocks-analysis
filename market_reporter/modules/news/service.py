@@ -25,6 +25,7 @@ class NewsService:
         self.client = client
         self.registry = registry
         self._news_sources = news_sources
+        # Provider instances are resolved lazily from registry factories.
         self.registry.register(self.MODULE_NAME, "rss", self._build_rss_provider)
 
     def _build_rss_provider(self):
@@ -47,6 +48,7 @@ class NewsService:
             warnings.extend(provider_warnings)
             return data, warnings
         except Exception as exc:
+            # News ingestion failures should not crash upstream report/listener flows.
             warnings.append(f"News provider failed [{provider_id}]: {exc}")
             return [], warnings
 
@@ -60,6 +62,7 @@ class NewsService:
         normalized_source_id = source_id.strip()
         if not normalized_source_id:
             normalized_source_id = "ALL"
+        # "ALL" means no per-source filter, preserving existing API behavior.
         source_filter = (
             None if normalized_source_id.upper() == "ALL" else normalized_source_id
         )
@@ -103,12 +106,14 @@ class NewsService:
         limit: int,
         source_id: str | None,
     ) -> Tuple[List[NewsItem], List[str]]:
+        # Prefer the richer provider contract when available.
         if hasattr(provider, "collect_filtered"):
             data, warnings = await provider.collect_filtered(
                 limit=limit, source_id=source_id
             )
             return list(data), list(warnings)
 
+        # Backward-compatible path for providers that only expose collect().
         data = await provider.collect(limit=limit)
         if source_id:
             data = [item for item in data if item.source_id == source_id]

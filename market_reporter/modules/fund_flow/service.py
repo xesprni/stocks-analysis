@@ -29,6 +29,7 @@ class FundFlowService:
     async def collect(self, periods: int) -> Tuple[Dict[str, List[FlowPoint]], List[str]]:
         merged: Dict[str, List[FlowPoint]] = {}
         warnings: List[str] = []
+        # Collect configured providers sequentially and tolerate partial failures.
         for provider_id in self.config.modules.fund_flow.providers:
             try:
                 provider = self.registry.resolve(self.MODULE_NAME, provider_id)

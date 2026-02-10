@@ -16,6 +16,7 @@ class ReportRenderer:
         provider_id: str,
         model: str,
     ) -> str:
+        # Build markdown incrementally to keep section ordering deterministic.
         lines: List[str] = []
         lines.append("# 市场分析报告")
         lines.append("")
@@ -73,6 +74,7 @@ class ReportRenderer:
 
         lines.append("## 四、资金流样本")
         lines.append("")
+        # Keep only tail samples to avoid oversized reports.
         for key, rows in flow_series.items():
             lines.append(f"### {key}")
             lines.append("")

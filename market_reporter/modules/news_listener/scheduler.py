@@ -20,6 +20,7 @@ class NewsListenerScheduler:
             return
         if self.scheduler is not None:
             return
+        # Use timezone-aware scheduler to align cycle timing with app config.
         scheduler = AsyncIOScheduler(timezone=self.config.timezone)
         scheduler.add_job(
             self._safe_run,
@@ -28,6 +29,7 @@ class NewsListenerScheduler:
             id=self.JOB_ID,
             replace_existing=True,
             max_instances=1,
+            # Coalesce + max_instances avoids run pile-up during temporary slowdowns.
             coalesce=True,
             misfire_grace_time=120,
         )
@@ -41,6 +43,7 @@ class NewsListenerScheduler:
         try:
             await self.run_func()
         except Exception:
+            # Background scheduler should stay alive even when one run fails.
             return
 
     def shutdown(self) -> None:

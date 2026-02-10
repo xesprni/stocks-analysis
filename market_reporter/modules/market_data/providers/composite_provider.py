@@ -12,6 +12,7 @@ class CompositeMarketDataProvider:
         self.providers = providers
 
     async def get_quote(self, symbol: str, market: str) -> Quote:
+        # First successful provider wins; errors are intentionally swallowed for failover.
         for provider in self._ordered(market=market):
             try:
                 return await provider.get_quote(symbol=symbol, market=market)
@@ -42,5 +43,7 @@ class CompositeMarketDataProvider:
     def _ordered(self, market: str):
         market = market.upper()
         if market in {"CN", "HK"}:
+            # Prefer akshare for CN/HK where local endpoints are usually richer.
             return [self.providers["akshare"], self.providers["yfinance"]]
+        # Prefer yfinance for US markets.
         return [self.providers["yfinance"], self.providers["akshare"]]

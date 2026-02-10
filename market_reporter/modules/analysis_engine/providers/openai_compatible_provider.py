@@ -41,8 +41,10 @@ class OpenAICompatibleProvider:
         )
 
         content = (response.choices[0].message.content or "").strip()
+        # Prefer strict JSON; fallback parser extracts first JSON object when wrapped.
         structured = self._parse_json(content)
         if structured is None:
+            # Graceful degradation keeps API contract valid even on free-form model replies.
             structured = {
                 "summary": content[:300] if content else "模型未返回结构化内容",
                 "sentiment": "neutral",
@@ -74,6 +76,7 @@ class OpenAICompatibleProvider:
         try:
             return json.loads(content)
         except json.JSONDecodeError:
+            # Recover from responses that include prose before/after JSON.
             start = content.find("{")
             end = content.rfind("}")
             if start >= 0 and end > start:

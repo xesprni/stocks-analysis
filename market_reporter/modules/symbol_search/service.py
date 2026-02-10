@@ -63,6 +63,7 @@ class SymbolSearchService:
             or self.config.symbol_search.default_provider
             or self.config.modules.symbol_search.default_provider
         )
+        # Prefer requested/default provider first, then degrade to composite if it fails.
         provider = self._resolve_provider_with_fallback(chosen_provider=chosen_provider)
         try:
             rows = await provider.search(
@@ -84,6 +85,7 @@ class SymbolSearchService:
             else:
                 rows = []
         dedup: Dict[Tuple[str, str], StockSearchResult] = {}
+        # Merge same symbol-market hits by highest score across providers.
         for item in rows:
             key = (item.symbol, item.market)
             current = dedup.get(key)
@@ -92,6 +94,7 @@ class SymbolSearchService:
         merged = sorted(dedup.values(), key=lambda item: item.score, reverse=True)
         if merged:
             return merged[:resolved_limit]
+        # If all providers return empty, still provide predictable manual candidates.
         return self._heuristic_results(
             query=normalized_query, market=market.upper(), limit=resolved_limit
         )
@@ -173,6 +176,7 @@ class CompositeSymbolSearchProvider:
         self, query: str, market: str, limit: int
     ) -> List[StockSearchResult]:
         merged: List[StockSearchResult] = []
+        # Try multiple providers in priority order and keep partial results.
         for provider in self._ordered(market=market):
             try:
                 rows = await provider.search(query=query, market=market, limit=limit)

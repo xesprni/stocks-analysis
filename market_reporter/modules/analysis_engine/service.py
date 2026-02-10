@@ -65,6 +65,7 @@ class AnalysisService:
         self.fund_flow_service = fund_flow_service
         self.keychain_store = keychain_store or KeychainStore()
 
+        # Register provider factories by type; actual instances are created per invocation.
         self.registry.register(self.MODULE_NAME, "mock", self._build_mock)
         self.registry.register(
             self.MODULE_NAME, "openai_compatible", self._build_openai_compatible
@@ -87,6 +88,7 @@ class AnalysisService:
         with session_scope(self.config.database.url) as session:
             secret_repo = AnalysisProviderSecretRepo(session)
             account_repo = AnalysisProviderAccountRepo(session)
+            # Readiness state is derived from config + secret presence + OAuth connection.
             for provider in self.config.analysis.providers:
                 auth_mode = self._resolve_auth_mode(provider)
                 has_secret = secret_repo.get(provider.provider_id) is not None
@@ -143,6 +145,7 @@ class AnalysisService:
             )
 
         master_key = self.keychain_store.get_or_create_master_key()
+        # Persist encrypted API key material only; plaintext never touches DB.
         ciphertext, nonce = encrypt_text(api_key, master_key)
         with session_scope(self.config.database.url) as session:
             repo = AnalysisProviderSecretRepo(session)
@@ -165,11 +168,12 @@ class AnalysisService:
             raise ValueError(f"Provider does not support OAuth login: {provider_id}")
 
         state = uuid4().hex
-        now = datetime.utcnow()
+        now = datetime.utcnow
         expires_at = now + timedelta(seconds=provider_cfg.login_timeout_seconds)
         with session_scope(self.config.database.url) as session:
             state_repo = AnalysisProviderAuthStateRepo(session)
             state_repo.delete_expired(now)
+            # Store one-time state to validate callback origin and expiry.
             state_repo.create(
                 state=state,
                 provider_id=provider_cfg.provider_id,
@@ -211,7 +215,7 @@ class AnalysisService:
         auth_mode = self._resolve_auth_mode(provider_cfg)
         if auth_mode != "chatgpt_oauth":
             raise ValueError(f"Provider does not support OAuth login: {provider_id}")
-        now = datetime.utcnow()
+        now = datetime.utcnow
         with session_scope(self.config.database.url) as session:
             state_repo = AnalysisProviderAuthStateRepo(session)
             auth_state = state_repo.get_valid(
@@ -221,6 +225,7 @@ class AnalysisService:
             )
             if auth_state is None:
                 raise ValueError("Login callback state is invalid or expired.")
+            # State is single-use to prevent callback replay.
             state_repo.mark_used(auth_state)
 
         provider = self.registry.resolve(
@@ -253,6 +258,7 @@ class AnalysisService:
             or "Bearer",
         }
         master_key = self.keychain_store.get_or_create_master_key()
+        # OAuth credential payload is encrypted before persistence.
         ciphertext, nonce = encrypt_text(
             json.dumps(credential_payload, ensure_ascii=False), master_key
         )
@@ -290,6 +296,7 @@ class AnalysisService:
                 status_payload = await provider.get_auth_status()
                 connected = bool(status_payload.get("connected"))
                 message = str(status_payload.get("message") or "")
+                # Mirror external connection state into local marker row for UI consistency.
                 self._sync_oauth_connection_marker(
                     provider_id=provider_id,
                     connected=connected,
@@ -416,6 +423,7 @@ class AnalysisService:
         if not ready:
             raise ValueError(status_message)
         is_dynamic_model_provider = self._resolve_auth_mode(provider) == "chatgpt_oauth"
+        # Static providers enforce model whitelist; OAuth providers may expose dynamic models.
         if (
             model
             and provider.models
@@ -464,6 +472,7 @@ class AnalysisService:
             periods=min(self.config.flow_periods, 20)
         )
 
+        # Execute independent IO calls concurrently to minimize end-to-end latency.
         quote, kline, curve, news_result, flow_result = await asyncio.gather(
             quote_task,
             kline_task,
@@ -552,6 +561,7 @@ class AnalysisService:
             fund_flow={},
             watch_meta={
                 "mode": "watchlist_news_listener",
+                # Contract hints help keep provider output parseable and stable.
                 "candidates": candidates,
                 "required_output": {
                     "alerts": [
@@ -609,6 +619,7 @@ class AnalysisService:
             provider_config=provider_cfg,
         )
         auth_mode = self._resolve_auth_mode(provider_cfg)
+        # Dispatch credentials based on provider auth mode.
         if provider_cfg.type == "codex_app_server":
             return await provider.analyze(
                 payload=payload,
@@ -637,6 +648,7 @@ class AnalysisService:
             nonce = secret.nonce
 
         master_key = self.keychain_store.get_or_create_master_key()
+        # Decrypt only at call time to keep key exposure window short.
         return decrypt_text(key_ciphertext, nonce, master_key)
 
     def _resolve_access_token(
@@ -650,6 +662,7 @@ class AnalysisService:
         if not self._is_account_connected(account):
             return None
         master_key = self.keychain_store.get_or_create_master_key()
+        # Stored credentials are JSON blob encrypted with local master key.
         raw = decrypt_text(account.credential_ciphertext, account.nonce, master_key)
         try:
             payload = json.loads(raw)
@@ -742,6 +755,7 @@ class AnalysisService:
             if provider_id:
                 provider_cfg = provider_cfg.model_copy(update={"enabled": True})
             else:
+                # Auto-fallback to first enabled provider for default path.
                 fallback_enabled = next(
                     (item for item in provider_map.values() if item.enabled), None
                 )
@@ -899,6 +913,7 @@ class AnalysisService:
         if parsed:
             if len(parsed) >= size:
                 return parsed[:size]
+            # Pad short outputs so caller can index alerts by original candidate order.
             while len(parsed) < size:
                 parsed.append(parsed[-1])
             return parsed

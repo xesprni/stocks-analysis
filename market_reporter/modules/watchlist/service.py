@@ -36,12 +36,14 @@ class WatchlistService:
         keywords: Optional[List[str]] = None,
     ) -> WatchlistItem:
         market = market.strip().upper()
+        # Guardrail: only allow markets configured by deployment policy.
         if market not in self.config.watchlist.default_market_scope:
             raise ValidationError(f"Market not allowed by config: {market}")
         normalized = normalize_symbol(symbol=symbol, market=market)
         keywords_json = self._serialize_keywords(keywords)
         with session_scope(self.config.database.url) as session:
             repo = WatchlistRepo(session)
+            # Pre-check to return deterministic validation message before DB constraint errors.
             existing = repo.get_by_symbol_market(symbol=normalized, market=market)
             if existing is not None:
                 raise ValidationError(
@@ -105,6 +107,7 @@ class WatchlistService:
     def _serialize_keywords(keywords: Optional[List[str]]) -> Optional[str]:
         if keywords is None:
             return None
+        # Persist compact JSON while dropping empty user inputs.
         cleaned = [entry.strip() for entry in keywords if entry and entry.strip()]
         return json.dumps(cleaned, ensure_ascii=False)
 
@@ -115,6 +118,7 @@ class WatchlistService:
         try:
             payload = json.loads(raw)
         except Exception:
+            # Be tolerant of legacy/broken rows to keep list APIs stable.
             return []
         if not isinstance(payload, list):
             return []

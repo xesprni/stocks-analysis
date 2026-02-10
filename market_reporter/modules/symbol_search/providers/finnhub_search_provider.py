@@ -44,6 +44,7 @@ class FinnhubSearchProvider:
                 response.raise_for_status()
                 payload = response.json()
         except Exception:
+            # Search provider is best-effort; callers will handle fallback providers.
             return []
 
         results_list = payload.get("result")
