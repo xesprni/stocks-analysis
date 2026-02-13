@@ -1,12 +1,22 @@
 # Market Reporter Pro
 
-面向股票研究与资讯跟踪的本地化系统，支持：
+面向股票研究与资讯跟踪的本地化系统，提供行情、新闻、监听告警、LLM 分析与报告工作流。
 
-1. 新闻源管理、新闻聚合与监听告警
-2. A/H/US 资金流与个股行情（搜索、报价、K 线、分时曲线）
-3. Watchlist 管理（支持关键词）
-4. 多 Provider / 多 Model 分析引擎（Mock / OpenAI 兼容 / Codex App）
-5. 报告生成（同步/异步）与历史查看
+## 当前状态（2026-02-13）
+
+1. Agent 指标计算改为 `ta-lib -> pandas-ta -> builtin` 自动回退，不因环境缺少 TA 库中断。
+2. Agent 新闻检索升级为扩展词匹配，且支持无命中时返回近期财经新闻兜底。
+3. Stock Terminal 任务状态与结果独立到 `Stock Results` 页面，结果使用 Markdown 报告展示（非 JSON 直出）。
+4. Config 页面改为分区保存（基础配置 / 模块默认配置 / Dashboard 配置），不再顶部“一键全局保存”。
+5. Dashboard 监控总览拆分为异步并发加载（指标与 watchlist 分离渲染）。
+
+## 核心能力
+
+1. 新闻源管理、新闻聚合、监听告警与告警中心。
+2. A/H/US 行情能力：搜索、单股报价、批量报价、K 线、分时曲线。
+3. Watchlist 管理（含 alias / display_name / keywords）。
+4. 多 Provider / 多 Model 分析引擎（mock / openai_compatible / codex_app_server）。
+5. 报告生成与历史回看（市场报告 + 个股分析，均支持异步任务）。
 
 ## 架构
 
@@ -21,7 +31,8 @@ market_reporter/
     market_data/             # 行情模块（akshare/yfinance/composite）
     fund_flow/               # 资金流模块
     watchlist/               # watchlist 服务
-    analysis_engine/         # 模型分析引擎
+    analysis_engine/         # 报告/个股分析引擎
+    agent/                   # agent 工具链（价格/新闻/指标/宏观/filings）
     reports/                 # 报告生成与任务管理
   infra/
     db/                      # SQLModel + repository
@@ -31,8 +42,8 @@ market_reporter/
   cli.py                     # Typer CLI
 
 frontend/
-  src/pages/                 # Dashboard / NewsFeed / AlertCenter / Watchlist / StockTerminal / Providers / Reports
-  src/components/charts/     # CandlestickChart / TradeCurveChart
+  src/pages/                 # Dashboard / Run Reports / Config / NewsFeed / Watchlist / StockTerminal / StockResults / AlertCenter / Reports
+  src/components/charts/     # CandlestickChart / TradeCurveChart / Report charts
 ```
 
 ## 快速开始
@@ -42,6 +53,12 @@ frontend/
 ```bash
 UV_CACHE_DIR=.uv-cache uv sync
 ```
+
+### TA-Lib（可选）
+
+1. 项目支持 TA-Lib，但它是可选依赖。
+2. 若未安装 TA-Lib（或 `pandas-ta`），指标链路会自动回退到内置算法，不影响主流程。
+3. 若希望优先使用 TA-Lib，请先安装系统级 TA-Lib，再安装 Python 包。
 
 ### 2) 初始化配置与数据库
 
@@ -66,13 +83,24 @@ npm install
 npm run dev
 ```
 
-## 数据库使用（当前实现）
+前端默认地址：`http://127.0.0.1:5173`，开发代理到 `http://127.0.0.1:8000/api`。
+
+### 5) 构建前端并由后端托管（可选）
+
+```bash
+cd frontend
+npm run build
+```
+
+构建产物默认在 `frontend/dist`，后端会自动挂载静态文件。
+
+## 数据库（当前实现）
 
 ### 存储位置与配置
 
-- 默认数据库：`SQLite`
-- 默认文件：`data/market_reporter.db`
-- 配置项：`config/settings.yaml` -> `database.url`
+1. 默认数据库：`SQLite`
+2. 默认文件：`data/market_reporter.db`
+3. 配置项：`config/settings.yaml -> database.url`
 
 示例：
 
@@ -83,37 +111,137 @@ database:
 
 ### 初始化与建表策略
 
-- 执行 `UV_CACHE_DIR=.uv-cache uv run market-reporter db init` 会初始化数据库。
-- 后端启动时也会自动执行建表检查。
-- 当前不使用 Alembic；采用 `SQLModel.metadata.create_all(...)` 自动建表。
-- 对 SQLite，启动时会自动补齐 `watchlist_items.display_name` 和 `watchlist_items.keywords_json` 两个兼容字段。
+1. `UV_CACHE_DIR=.uv-cache uv run market-reporter db init` 初始化数据库。
+2. 后端启动时也会执行建表检查。
+3. 当前不使用 Alembic，采用 `SQLModel.metadata.create_all(...)`。
+4. SQLite 启动时会补齐 `watchlist_items.display_name` 与 `watchlist_items.keywords_json` 兼容字段。
 
 ### 首次启动数据
 
-- 首次启动会自动初始化新闻源数据：
-  - 若旧配置里存在 `news_sources`，会迁移到数据库。
-  - 否则写入系统默认新闻源。
+1. 若旧 YAML 中存在 `news_sources`，会迁移到数据库。
+2. 若不存在，则写入系统默认新闻源。
 
 ### 常见操作
 
-1) 查看表：
-
 ```bash
+# 查看表
 sqlite3 data/market_reporter.db ".tables"
-```
 
-2) 备份数据库：
-
-```bash
+# 备份数据库
 cp data/market_reporter.db data/market_reporter_$(date +%Y%m%d_%H%M%S).db
-```
 
-3) 重建数据库（会丢失数据）：
-
-```bash
+# 重建数据库（会丢失数据）
 rm -f data/market_reporter.db
 UV_CACHE_DIR=.uv-cache uv run market-reporter db init
 ```
+
+## 前端页面（当前）
+
+1. `Dashboard`：监控总览，指数和 watchlist 异步并发加载。
+2. `Run Reports`：运行市场/个股报告任务。
+3. `Config`：基础配置、模块默认配置、Dashboard 配置、新闻源与 Provider 管理。
+4. `News Feed`：新闻聚合浏览。
+5. `Watchlist`：股票列表维护与检索。
+6. `Stock Terminal`：盘中图表 + 异步发起个股分析。
+7. `Stock Results`：查看个股分析任务状态与 Markdown 报告。
+8. `Alert Center`：监听运行记录、告警处理。
+9. `Reports`：市场报告任务状态、历史与详情。
+
+## Agent 行为说明（当前）
+
+### 技术指标后端自动回退
+
+1. 后端优先级固定：`ta-lib -> pandas-ta -> builtin`。
+2. `IndicatorsResult.source` 可能为：
+   - `ta-lib/computed`
+   - `pandas-ta/computed`
+   - `builtin/computed`
+3. 无论 TA 三方库是否安装，都会保留内置算法兜底，产出结构化指标字段。
+
+### 新闻检索策略
+
+1. Stock 模式会组合检索词：`query + ticker + 去后缀 ticker + 公司别名(shortName/longName/displayName)`。
+2. ticker 采用单词边界匹配，名称采用大小写不敏感包含匹配。
+3. 匹配文本范围：`title + source + category + content`。
+4. 若严格匹配为空，会返回日期范围内最新财经新闻（最多 limit），并追加 warning：
+   - `no_news_matched`
+   - `news_fallback_recent_headlines`
+
+## API 概览（当前实现）
+
+### 健康 / 配置 / Dashboard
+
+1. `GET /api/health`
+2. `GET /api/options/ui`
+3. `GET /api/config`
+4. `PUT /api/config`
+5. `GET /api/dashboard/snapshot`
+6. `GET /api/dashboard/indices`
+7. `GET /api/dashboard/watchlist`
+8. `PUT /api/dashboard/auto-refresh`
+
+### 报告（market / stock report）
+
+1. `POST /api/reports/run`
+2. `POST /api/reports/run/async`
+3. `GET /api/reports/tasks`
+4. `GET /api/reports/tasks/{task_id}`
+5. `GET /api/reports`
+6. `GET /api/reports/{run_id}`
+7. `GET /api/reports/{run_id}/markdown`
+8. `DELETE /api/reports/{run_id}`
+
+### 个股分析（Stock Terminal / Stock Results）
+
+1. `POST /api/analysis/stocks/{symbol}/run`
+2. `POST /api/analysis/stocks/{symbol}/run/async`
+3. `GET /api/analysis/stocks/tasks`
+4. `GET /api/analysis/stocks/tasks/{task_id}`
+5. `GET /api/analysis/stocks/runs`
+6. `GET /api/analysis/stocks/runs/{run_id}`
+7. `GET /api/analysis/stocks/{symbol}/history`
+
+### 行情与搜索
+
+1. `GET /api/stocks/search`
+2. `GET /api/stocks/{symbol}/quote`
+3. `POST /api/stocks/quotes`
+4. `GET /api/stocks/{symbol}/kline`
+5. `GET /api/stocks/{symbol}/curve`
+
+### 新闻与监听
+
+1. `GET /api/news-sources`
+2. `POST /api/news-sources`
+3. `PATCH /api/news-sources/{source_id}`
+4. `DELETE /api/news-sources/{source_id}`
+5. `GET /api/news-feed/options`
+6. `GET /api/news-feed`
+7. `POST /api/news-listener/run`
+8. `GET /api/news-listener/runs`
+9. `GET /api/news-alerts`
+10. `PATCH /api/news-alerts/{alert_id}`
+11. `POST /api/news-alerts/mark-all-read`
+
+### Watchlist
+
+1. `GET /api/watchlist`
+2. `POST /api/watchlist`
+3. `PATCH /api/watchlist/{item_id}`
+4. `DELETE /api/watchlist/{item_id}`
+
+### Analysis Provider
+
+1. `GET /api/providers/analysis`
+2. `PUT /api/providers/analysis/default`
+3. `PUT /api/providers/analysis/{provider_id}/secret`
+4. `DELETE /api/providers/analysis/{provider_id}/secret`
+5. `POST /api/providers/analysis/{provider_id}/auth/start`
+6. `GET /api/providers/analysis/{provider_id}/auth/status`
+7. `GET /api/providers/analysis/{provider_id}/auth/callback`
+8. `POST /api/providers/analysis/{provider_id}/auth/logout`
+9. `GET /api/providers/analysis/{provider_id}/models`
+10. `DELETE /api/providers/analysis/{provider_id}`
 
 ## CLI 常用命令
 
@@ -126,7 +254,7 @@ UV_CACHE_DIR=.uv-cache uv run market-reporter watchlist list
 UV_CACHE_DIR=.uv-cache uv run market-reporter watchlist add --symbol AAPL --market US
 UV_CACHE_DIR=.uv-cache uv run market-reporter watchlist remove --item-id 1
 
-# 分析 provider
+# provider
 UV_CACHE_DIR=.uv-cache uv run market-reporter providers list
 UV_CACHE_DIR=.uv-cache uv run market-reporter providers set-default --provider mock --model market-default
 
@@ -134,94 +262,62 @@ UV_CACHE_DIR=.uv-cache uv run market-reporter providers set-default --provider m
 UV_CACHE_DIR=.uv-cache uv run market-reporter analyze stock --symbol AAPL --market US
 ```
 
-## API 概览
+## 测试建议
 
-- 健康与配置：
-  - `GET /api/health`
-  - `GET /api/options/ui`
-  - `GET /api/config`
-  - `PUT /api/config`
-- 报告：
-  - `POST /api/reports/run`
-  - `POST /api/reports/run/async`
-  - `GET /api/reports/tasks`
-  - `GET /api/reports/tasks/{task_id}`
-  - `GET /api/reports`
-  - `GET /api/reports/{run_id}`
-  - `GET /api/reports/{run_id}/markdown`
-  - `DELETE /api/reports/{run_id}`
-- 新闻：
-  - `GET /api/news-sources`
-  - `POST /api/news-sources`
-  - `PATCH /api/news-sources/{source_id}`
-  - `DELETE /api/news-sources/{source_id}`
-  - `GET /api/news-feed/options`
-  - `GET /api/news-feed`
-  - `POST /api/news-listener/run`
-  - `GET /api/news-listener/runs`
-  - `GET /api/news-alerts`
-  - `PATCH /api/news-alerts/{alert_id}`
-  - `POST /api/news-alerts/mark-all-read`
-- 行情与分析：
-  - `GET /api/stocks/search`
-  - `GET /api/stocks/{symbol}/quote`
-  - `GET /api/stocks/{symbol}/kline`
-  - `GET /api/stocks/{symbol}/curve`
-  - `POST /api/analysis/stocks/{symbol}/run`
-  - `POST /api/analysis/stocks/{symbol}/run/async`
-  - `GET /api/analysis/stocks/tasks/{task_id}`
-  - `GET /api/analysis/stocks/{symbol}/history`
-- Watchlist 与 Provider：
-  - `GET /api/watchlist`
-  - `POST /api/watchlist`
-  - `PATCH /api/watchlist/{item_id}`
-  - `DELETE /api/watchlist/{item_id}`
-  - `GET /api/providers/analysis`
-  - `PUT /api/providers/analysis/default`
-  - `PUT /api/providers/analysis/{provider_id}/secret`
-  - `DELETE /api/providers/analysis/{provider_id}/secret`
-  - `POST /api/providers/analysis/{provider_id}/auth/login`
-  - `POST /api/providers/analysis/{provider_id}/auth/logout`
-  - `GET /api/providers/analysis/{provider_id}/auth/url`
-  - `GET /api/providers/analysis/{provider_id}/auth/status`
-  - `DELETE /api/providers/analysis/{provider_id}`
+```bash
+# 最近改动的关键回归
+UV_CACHE_DIR=.uv-cache uv run pytest -q \
+  tests/test_compute_tools_backend_selection.py \
+  tests/test_news_tools_search_matching.py \
+  tests/test_agent_orchestrator_* \
+  tests/test_stock_analysis_results_api.py \
+  tests/test_dashboard_api_snapshot.py
+
+# 更完整回归（与 agent/news/compute 相关）
+UV_CACHE_DIR=.uv-cache uv run pytest -q tests/test_compute_tools_* tests/test_agent_orchestrator_* tests/test_news_*
+```
 
 ## 安全
 
-- Provider API Key 不写入 YAML。
-- API Key 加密后保存到 SQLite。
-- 主密钥默认保存在 macOS Keychain：
-  - service: `market-reporter`
-  - account: `master-key`
+1. Provider API Key 不写入 YAML。
+2. API Key 加密后保存到 SQLite。
+3. 主密钥默认保存在 macOS Keychain：
+   - service: `market-reporter`
+   - account: `master-key`
 
 ## 注意
 
 1. 免费行情源可能存在延迟或限频。
 2. 在无外网环境下，网络型 provider 会失败并返回告警。
+3. `market` 参数校验为 `CN|HK|US`：
+   - `GET /api/analysis/stocks/runs` 若不筛选市场，请省略 `market` 参数，不要传空字符串。
+   - `GET /api/analysis/stocks/{symbol}/history` 的 `market` 为必填且必须是上述三值之一。
 
-## vscode
-```
+## VSCode / 本地开发
+
+```bash
 python3 -m venv .venv
-source .venv/bin/activate && pip install -e .
 source .venv/bin/activate
-# 1. 同步依赖（首次设置或更新 pyproject.toml 后）
+pip install -e .
+
+# 1) 同步依赖
 uv sync
 
-# 2. 运行项目命令
+# 2) 启动服务
 uv run market-reporter serve --reload
 
-# 3. 添加新依赖
+# 3) 添加依赖
 uv add fastapi httpx
 
-# 4. 移除依赖
+# 4) 移除依赖
 uv remove package-name
 
-# 5. 安装开发依赖
+# 5) 安装开发依赖
 uv sync --dev
 
-# 6. 直接运行 Python 脚本
+# 6) 运行脚本
 uv run python script.py
 
-# 7. 执行 pytest
+# 7) 执行测试
 uv run pytest
 ```

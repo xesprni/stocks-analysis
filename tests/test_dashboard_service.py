@@ -94,6 +94,29 @@ class DashboardServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(page2.watchlist), 3)
         self.assertEqual(len(overflow.watchlist), 0)
 
+    async def test_split_index_and_watchlist_snapshots(self):
+        config = self._build_config()
+        items = [self._build_item(idx=i + 1) for i in range(5)]
+        service = DashboardService(
+            config=config,
+            registry=ProviderRegistry(),
+            market_data_service=_FakeMarketDataService(),
+            watchlist_service=_FakeWatchlistService(items=items),
+        )
+
+        index_snapshot = await service.get_index_snapshot(enabled_only=True)
+        watchlist_snapshot = await service.get_watchlist_snapshot(
+            page=2,
+            page_size=2,
+            enabled_only=True,
+        )
+
+        self.assertGreaterEqual(len(index_snapshot.indices), 1)
+        self.assertEqual(index_snapshot.auto_refresh_enabled, config.dashboard.auto_refresh_enabled)
+        self.assertEqual(watchlist_snapshot.pagination.total, 5)
+        self.assertEqual(watchlist_snapshot.pagination.total_pages, 3)
+        self.assertEqual(len(watchlist_snapshot.watchlist), 2)
+
     async def test_enabled_only_filters_watchlist(self):
         config = self._build_config()
         service = DashboardService(

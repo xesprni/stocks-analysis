@@ -51,6 +51,21 @@ class DashboardSnapshotView(BaseModel):
     pagination: PaginationView
 
 
+class DashboardIndicesSnapshotView(BaseModel):
+    generated_at: datetime
+    auto_refresh_enabled: bool
+    auto_refresh_seconds: int
+    indices: list[DashboardIndexMetricView]
+
+
+class DashboardWatchlistSnapshotView(BaseModel):
+    generated_at: datetime
+    auto_refresh_enabled: bool
+    auto_refresh_seconds: int
+    watchlist: list[DashboardWatchlistMetricView]
+    pagination: PaginationView
+
+
 class DashboardAutoRefreshUpdateRequest(BaseModel):
     auto_refresh_enabled: bool
 

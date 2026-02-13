@@ -248,6 +248,21 @@ export const dashboardSnapshotSchema = z.object({
   pagination: paginationSchema,
 });
 
+export const dashboardIndicesSnapshotSchema = z.object({
+  generated_at: z.string(),
+  auto_refresh_enabled: z.boolean(),
+  auto_refresh_seconds: z.number(),
+  indices: z.array(dashboardIndexMetricSchema),
+});
+
+export const dashboardWatchlistSnapshotSchema = z.object({
+  generated_at: z.string(),
+  auto_refresh_enabled: z.boolean(),
+  auto_refresh_seconds: z.number(),
+  watchlist: z.array(dashboardWatchlistMetricSchema),
+  pagination: paginationSchema,
+});
+
 export const dashboardAutoRefreshSchema = z.object({
   auto_refresh_enabled: z.boolean(),
   auto_refresh_seconds: z.number(),
@@ -389,6 +404,8 @@ export type Pagination = z.infer<typeof paginationSchema>;
 export type DashboardIndexMetric = z.infer<typeof dashboardIndexMetricSchema>;
 export type DashboardWatchlistMetric = z.infer<typeof dashboardWatchlistMetricSchema>;
 export type DashboardSnapshot = z.infer<typeof dashboardSnapshotSchema>;
+export type DashboardIndicesSnapshot = z.infer<typeof dashboardIndicesSnapshotSchema>;
+export type DashboardWatchlistSnapshot = z.infer<typeof dashboardWatchlistSnapshotSchema>;
 export type DashboardAutoRefresh = z.infer<typeof dashboardAutoRefreshSchema>;
 export type AnalysisProviderView = z.infer<typeof analysisProviderViewSchema>;
 export type ReportSummary = z.infer<typeof reportSummarySchema>;

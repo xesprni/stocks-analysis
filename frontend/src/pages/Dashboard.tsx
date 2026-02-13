@@ -1,14 +1,18 @@
 import { memo, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Activity, BarChart3, Gauge, Globe2, RefreshCw, TrendingDown, TrendingUp } from "lucide-react";
+import { Activity, BarChart3, Gauge, Globe2, Loader2, RefreshCw, TrendingDown, TrendingUp } from "lucide-react";
 
 import { api } from "@/api/client";
-import type { DashboardIndexMetric, DashboardSnapshot } from "@/api/client";
+import type {
+  DashboardIndexMetric,
+  DashboardIndicesSnapshot,
+  DashboardWatchlistSnapshot,
+} from "@/api/client";
+import { WatchlistIntradayCards } from "@/components/dashboard/WatchlistIntradayCards";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useNotifier } from "@/components/ui/notifier";
-import { WatchlistIntradayCards } from "@/components/dashboard/WatchlistIntradayCards";
 
 function pctText(value: number | null | undefined): string {
   if (value == null) return "--";
@@ -49,20 +53,38 @@ function toErrorText(error: unknown): string {
   return String(error ?? "Unknown error");
 }
 
-function snapshotFallback(): DashboardSnapshot {
+function indicesFallback(): DashboardIndicesSnapshot {
   return {
     generated_at: "",
     auto_refresh_enabled: true,
     auto_refresh_seconds: 15,
     indices: [],
+  };
+}
+
+function watchlistFallback(page: number, pageSize: number): DashboardWatchlistSnapshot {
+  return {
+    generated_at: "",
+    auto_refresh_enabled: true,
+    auto_refresh_seconds: 15,
     watchlist: [],
     pagination: {
-      page: 1,
-      page_size: 10,
+      page,
+      page_size: pageSize,
       total: 0,
       total_pages: 0,
     },
   };
+}
+
+function latestGeneratedAt(a: string, b: string): string {
+  if (!a) return b;
+  if (!b) return a;
+  const aMs = new Date(a).getTime();
+  const bMs = new Date(b).getTime();
+  if (!Number.isFinite(aMs)) return b;
+  if (!Number.isFinite(bMs)) return a;
+  return aMs >= bMs ? a : b;
 }
 
 function toneByPct(pct: number | null | undefined): {
@@ -181,9 +203,9 @@ export function DashboardPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
-  const snapshotQuery = useQuery({
-    queryKey: ["dashboard-snapshot", page, pageSize, true],
-    queryFn: () => api.getDashboardSnapshot(page, pageSize, true),
+  const indicesQuery = useQuery({
+    queryKey: ["dashboard-indices", true],
+    queryFn: () => api.getDashboardIndicesSnapshot(true),
     retry: false,
     refetchInterval: (query) => {
       const data = query.state.data;
@@ -194,18 +216,47 @@ export function DashboardPage() {
     },
   });
 
-  const snapshot = snapshotQuery.data ?? snapshotFallback();
-  const indices = snapshot.indices;
-  const watchlistRows = snapshot.watchlist;
-  const pagination = snapshot.pagination;
-  const errorText = snapshotQuery.error ? toErrorText(snapshotQuery.error) : "";
+  const watchlistQuery = useQuery({
+    queryKey: ["dashboard-watchlist", page, pageSize, true],
+    queryFn: () => api.getDashboardWatchlistSnapshot(page, pageSize, true),
+    retry: false,
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      if (!data?.auto_refresh_enabled) {
+        return false;
+      }
+      return Math.max(3000, data.auto_refresh_seconds * 1000);
+    },
+  });
+
+  const indicesSnapshot = indicesQuery.data ?? indicesFallback();
+  const watchlistSnapshot = watchlistQuery.data ?? watchlistFallback(page, pageSize);
+
+  const indices = indicesSnapshot.indices;
+  const watchlistRows = watchlistSnapshot.watchlist;
+  const pagination = watchlistSnapshot.pagination;
+  const autoRefreshEnabled =
+    indicesQuery.data?.auto_refresh_enabled ??
+    watchlistQuery.data?.auto_refresh_enabled ??
+    true;
+  const autoRefreshSeconds =
+    indicesQuery.data?.auto_refresh_seconds ??
+    watchlistQuery.data?.auto_refresh_seconds ??
+    15;
+
+  const indicesErrorText = indicesQuery.error ? toErrorText(indicesQuery.error) : "";
+  const watchlistErrorText = watchlistQuery.error ? toErrorText(watchlistQuery.error) : "";
 
   const updatedAtText = useMemo(() => {
-    if (!snapshot.generated_at) {
+    const latest = latestGeneratedAt(
+      indicesSnapshot.generated_at,
+      watchlistSnapshot.generated_at,
+    );
+    if (!latest) {
       return "--";
     }
-    return new Date(snapshot.generated_at).toLocaleString();
-  }, [snapshot.generated_at]);
+    return new Date(latest).toLocaleString();
+  }, [indicesSnapshot.generated_at, watchlistSnapshot.generated_at]);
 
   const upCount = useMemo(
     () => indices.filter((item) => (item.change_percent ?? 0) > 0).length,
@@ -240,6 +291,8 @@ export function DashboardPage() {
     mutationFn: async (enabled: boolean) => api.updateDashboardAutoRefresh(enabled),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["config"] });
+      await queryClient.invalidateQueries({ queryKey: ["dashboard-indices"] });
+      await queryClient.invalidateQueries({ queryKey: ["dashboard-watchlist"] });
       await queryClient.invalidateQueries({ queryKey: ["dashboard-snapshot"] });
     },
     onError: (error) => {
@@ -248,12 +301,13 @@ export function DashboardPage() {
   });
 
   const onToggleAutoRefresh = () => {
-    void toggleAutoRefreshMutation.mutateAsync(!snapshot.auto_refresh_enabled);
+    void toggleAutoRefreshMutation.mutateAsync(!autoRefreshEnabled);
   };
+
+  const refreshing = indicesQuery.isFetching || watchlistQuery.isFetching;
 
   return (
     <div className="space-y-6">
-      {/* Hero header */}
       <section className="relative overflow-hidden rounded-3xl border border-sky-300/50 bg-gradient-to-br from-sky-500/15 via-emerald-500/10 to-amber-400/15 p-6">
         <div className="pointer-events-none absolute -left-12 -top-14 h-44 w-44 rounded-full bg-sky-400/20 blur-3xl" />
         <div className="pointer-events-none absolute right-0 top-10 h-32 w-32 rounded-full bg-emerald-400/20 blur-2xl" />
@@ -266,7 +320,7 @@ export function DashboardPage() {
               Dashboard 监控总览
             </h2>
             <p className="mt-2 text-sm text-muted-foreground">
-              更新时间 {updatedAtText} | 自动刷新 {snapshot.auto_refresh_enabled ? `开启(${snapshot.auto_refresh_seconds}s)` : "关闭"}
+              更新时间 {updatedAtText} | 自动刷新 {autoRefreshEnabled ? `开启(${autoRefreshSeconds}s)` : "关闭"}
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -275,33 +329,38 @@ export function DashboardPage() {
               <button
                 type="button"
                 role="switch"
-                aria-checked={snapshot.auto_refresh_enabled}
+                aria-checked={autoRefreshEnabled}
                 aria-label="切换自动刷新"
                 onClick={onToggleAutoRefresh}
                 disabled={toggleAutoRefreshMutation.isPending}
                 className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                  snapshot.auto_refresh_enabled ? "bg-emerald-500" : "bg-slate-400"
+                  autoRefreshEnabled ? "bg-emerald-500" : "bg-slate-400"
                 } ${toggleAutoRefreshMutation.isPending ? "cursor-not-allowed opacity-60" : ""}`}
               >
                 <span
                   className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
-                    snapshot.auto_refresh_enabled ? "translate-x-5" : "translate-x-0.5"
+                    autoRefreshEnabled ? "translate-x-5" : "translate-x-0.5"
                   }`}
                 />
               </button>
               <span className="tabular-nums text-muted-foreground">
-                {snapshot.auto_refresh_enabled ? `${snapshot.auto_refresh_seconds}s` : "已关闭"}
+                {autoRefreshEnabled ? `${autoRefreshSeconds}s` : "已关闭"}
               </span>
             </div>
-            <Button variant="outline" onClick={() => void snapshotQuery.refetch()} disabled={snapshotQuery.isFetching}>
-              <RefreshCw className={`mr-2 h-4 w-4 ${snapshotQuery.isFetching ? "animate-spin" : ""}`} />
+            <Button
+              variant="outline"
+              onClick={() => {
+                void Promise.all([indicesQuery.refetch(), watchlistQuery.refetch()]);
+              }}
+              disabled={refreshing}
+            >
+              <RefreshCw className={`mr-2 h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
               刷新数据
             </Button>
           </div>
         </div>
       </section>
 
-      {/* Summary stat cards */}
       <div className="grid gap-4 md:grid-cols-4">
         <Card className="border-sky-300/60 bg-gradient-to-br from-sky-100/80 to-cyan-100/60 dark:from-sky-950/40 dark:to-cyan-950/20">
           <CardHeader className="pb-2">
@@ -338,7 +397,21 @@ export function DashboardPage() {
         </Card>
       </div>
 
-      {/* Market index panels grouped by market */}
+      {indicesErrorText ? (
+        <Card className="border-destructive/40 bg-destructive/10">
+          <CardContent className="py-3 text-sm text-destructive">指数指标加载失败：{indicesErrorText}</CardContent>
+        </Card>
+      ) : null}
+
+      {indicesQuery.isFetching && !indices.length ? (
+        <Card>
+          <CardContent className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            指标卡片异步加载中...
+          </CardContent>
+        </Card>
+      ) : null}
+
       {MARKET_META.map((meta) => {
         const items = indicesByMarket[meta.key];
         if (!items?.length) return null;
@@ -365,7 +438,6 @@ export function DashboardPage() {
         );
       })}
 
-      {/* Fallback for indices with unknown market */}
       {Object.entries(indicesByMarket)
         .filter(([key]) => !MARKET_META.some((m) => m.key === key))
         .map(([key, items]) => (
@@ -386,7 +458,7 @@ export function DashboardPage() {
           </Card>
         ))}
 
-      {!indices.length ? (
+      {!indices.length && !indicesQuery.isFetching && !indicesErrorText ? (
         <Card>
           <CardContent className="py-8 text-center text-sm text-muted-foreground">
             暂无指数配置，请前往 Config 页面配置 `dashboard.indices`。
@@ -394,7 +466,6 @@ export function DashboardPage() {
         </Card>
       ) : null}
 
-      {/* Watchlist intraday */}
       <WatchlistIntradayCards
         rows={watchlistRows}
         pagination={pagination}
@@ -402,8 +473,8 @@ export function DashboardPage() {
         pageSize={pageSize}
         setPage={setPage}
         setPageSize={setPageSize}
-        isFetching={snapshotQuery.isFetching}
-        errorText={errorText}
+        isFetching={watchlistQuery.isFetching}
+        errorText={watchlistErrorText}
       />
     </div>
   );

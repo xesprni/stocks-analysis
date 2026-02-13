@@ -9,8 +9,10 @@ from market_reporter.core.registry import ProviderRegistry
 from market_reporter.core.types import Quote
 from market_reporter.modules.dashboard.schemas import (
     DashboardIndexMetricView,
+    DashboardIndicesSnapshotView,
     DashboardSnapshotView,
     DashboardWatchlistMetricView,
+    DashboardWatchlistSnapshotView,
     PaginationView,
 )
 from market_reporter.modules.market_data.service import MarketDataService
@@ -35,17 +37,56 @@ class DashboardService:
     async def get_snapshot(
         self, page: int = 1, page_size: int = 10, enabled_only: bool = True
     ) -> DashboardSnapshotView:
+        index_snapshot, watchlist_snapshot = await asyncio.gather(
+            self.get_index_snapshot(enabled_only=enabled_only),
+            self.get_watchlist_snapshot(
+                page=page,
+                page_size=page_size,
+                enabled_only=enabled_only,
+            ),
+        )
+
+        return DashboardSnapshotView(
+            generated_at=datetime.now(timezone.utc),
+            auto_refresh_enabled=self.config.dashboard.auto_refresh_enabled,
+            auto_refresh_seconds=self.config.dashboard.auto_refresh_seconds,
+            indices=index_snapshot.indices,
+            watchlist=watchlist_snapshot.watchlist,
+            pagination=watchlist_snapshot.pagination,
+        )
+
+    async def get_index_snapshot(
+        self, enabled_only: bool = True
+    ) -> DashboardIndicesSnapshotView:
         index_rows = self.config.dashboard.indices or []
-        enabled_rows = [item for item in index_rows if getattr(item, "enabled", True)]
+        selected_rows = (
+            [item for item in index_rows if getattr(item, "enabled", True)]
+            if enabled_only
+            else list(index_rows)
+        )
         index_metrics = await asyncio.gather(
             *[
                 self._build_index_metric(
-                    symbol=item.symbol, market=item.market, alias=item.alias
+                    symbol=item.symbol,
+                    market=item.market,
+                    alias=item.alias,
                 )
-                for item in enabled_rows
+                for item in selected_rows
             ]
         )
+        return DashboardIndicesSnapshotView(
+            generated_at=datetime.now(timezone.utc),
+            auto_refresh_enabled=self.config.dashboard.auto_refresh_enabled,
+            auto_refresh_seconds=self.config.dashboard.auto_refresh_seconds,
+            indices=index_metrics,
+        )
 
+    async def get_watchlist_snapshot(
+        self,
+        page: int = 1,
+        page_size: int = 10,
+        enabled_only: bool = True,
+    ) -> DashboardWatchlistSnapshotView:
         watchlist_items = (
             self.watchlist_service.list_enabled_items()
             if enabled_only
@@ -56,16 +97,13 @@ class DashboardService:
         start = (page - 1) * page_size
         end = start + page_size
         page_items = watchlist_items[start:end]
-
         watchlist_metrics = await asyncio.gather(
             *[self._build_watchlist_metric(item) for item in page_items]
         )
-
-        return DashboardSnapshotView(
+        return DashboardWatchlistSnapshotView(
             generated_at=datetime.now(timezone.utc),
             auto_refresh_enabled=self.config.dashboard.auto_refresh_enabled,
             auto_refresh_seconds=self.config.dashboard.auto_refresh_seconds,
-            indices=index_metrics,
             watchlist=watchlist_metrics,
             pagination=PaginationView(
                 page=page,

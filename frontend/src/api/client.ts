@@ -4,7 +4,9 @@ import {
   appConfigSchema,
   analysisProviderViewSchema,
   dashboardAutoRefreshSchema,
+  dashboardIndicesSnapshotSchema,
   dashboardSnapshotSchema,
+  dashboardWatchlistSnapshotSchema,
   klineSchema,
   curvePointSchema,
   newsAlertSchema,
@@ -71,6 +73,16 @@ export const api = {
     request(
       `/dashboard/snapshot?page=${page}&page_size=${pageSize}&enabled_only=${enabledOnly ? "true" : "false"}`,
       dashboardSnapshotSchema
+    ),
+  getDashboardIndicesSnapshot: (enabledOnly = true) =>
+    request(
+      `/dashboard/indices?enabled_only=${enabledOnly ? "true" : "false"}`,
+      dashboardIndicesSnapshotSchema
+    ),
+  getDashboardWatchlistSnapshot: (page = 1, pageSize = 10, enabledOnly = true) =>
+    request(
+      `/dashboard/watchlist?page=${page}&page_size=${pageSize}&enabled_only=${enabledOnly ? "true" : "false"}`,
+      dashboardWatchlistSnapshotSchema
     ),
   updateDashboardAutoRefresh: (enabled: boolean) =>
     request("/dashboard/auto-refresh", dashboardAutoRefreshSchema, {

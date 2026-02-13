@@ -10,7 +10,9 @@ from market_reporter.infra.db.session import init_db
 from market_reporter.modules.dashboard.schemas import (
     DashboardAutoRefreshUpdateRequest,
     DashboardAutoRefreshView,
+    DashboardIndicesSnapshotView,
     DashboardSnapshotView,
+    DashboardWatchlistSnapshotView,
 )
 from market_reporter.modules.dashboard.service import DashboardService
 from market_reporter.services.config_store import ConfigStore
@@ -29,6 +31,34 @@ async def dashboard_snapshot(
     init_db(config.database.url)
     service = DashboardService(config=config, registry=ProviderRegistry())
     return await service.get_snapshot(
+        page=page,
+        page_size=page_size,
+        enabled_only=enabled_only,
+    )
+
+
+@router.get("/dashboard/indices", response_model=DashboardIndicesSnapshotView)
+async def dashboard_indices_snapshot(
+    enabled_only: bool = Query(True),
+    config_store: ConfigStore = Depends(get_config_store),
+) -> DashboardIndicesSnapshotView:
+    config = config_store.load()
+    init_db(config.database.url)
+    service = DashboardService(config=config, registry=ProviderRegistry())
+    return await service.get_index_snapshot(enabled_only=enabled_only)
+
+
+@router.get("/dashboard/watchlist", response_model=DashboardWatchlistSnapshotView)
+async def dashboard_watchlist_snapshot(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=5, le=50),
+    enabled_only: bool = Query(True),
+    config_store: ConfigStore = Depends(get_config_store),
+) -> DashboardWatchlistSnapshotView:
+    config = config_store.load()
+    init_db(config.database.url)
+    service = DashboardService(config=config, registry=ProviderRegistry())
+    return await service.get_watchlist_snapshot(
         page=page,
         page_size=page_size,
         enabled_only=enabled_only,

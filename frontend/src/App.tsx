@@ -107,6 +107,8 @@ function TabFallback() {
   );
 }
 
+type ConfigSaveSection = "basic" | "module_defaults" | "dashboard";
+
 export default function App() {
   const queryClient = useQueryClient();
   const notifier = useNotifier();
@@ -115,6 +117,7 @@ export default function App() {
   const [configDraft, setConfigDraft] = useState<AppConfig>(emptyConfig);
   const [selectedRunId, setSelectedRunId] = useState<string>("");
   const [selectedStockRunId, setSelectedStockRunId] = useState<string>("");
+  const [savingConfigSection, setSavingConfigSection] = useState<ConfigSaveSection | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
   const [warningMessage, setWarningMessage] = useState("");
   const [alertStatus, setAlertStatus] = useState("UNREAD");
@@ -165,7 +168,7 @@ export default function App() {
     activeTab,
   );
 
-  const { saveConfigMutation, runReportMutation } = useAppMutations(
+  const { runReportMutation } = useAppMutations(
     configDraft,
     setConfigDraft,
     setSelectedRunId,
@@ -174,6 +177,100 @@ export default function App() {
   );
 
   const { loadAnalysisModels, connectProviderAuth, disconnectProviderAuth } = useProviderActions();
+
+  const applySectionFromDraft = (target: AppConfig, source: AppConfig, section: ConfigSaveSection): AppConfig => {
+    if (section === "basic") {
+      return {
+        ...target,
+        output_root: source.output_root,
+        timezone: source.timezone,
+        news_limit: source.news_limit,
+        flow_periods: source.flow_periods,
+        request_timeout_seconds: source.request_timeout_seconds,
+        database: source.database,
+      };
+    }
+    if (section === "module_defaults") {
+      return {
+        ...target,
+        modules: {
+          ...target.modules,
+          news: {
+            ...target.modules.news,
+            default_provider: source.modules.news.default_provider,
+          },
+          market_data: {
+            ...target.modules.market_data,
+            default_provider: source.modules.market_data.default_provider,
+          },
+          symbol_search: {
+            ...target.modules.symbol_search,
+            default_provider: source.modules.symbol_search.default_provider,
+          },
+        },
+        symbol_search: source.symbol_search,
+        news_listener: {
+          ...target.news_listener,
+          interval_minutes: source.news_listener.interval_minutes,
+          move_threshold_percent: source.news_listener.move_threshold_percent,
+        },
+      };
+    }
+    return {
+      ...target,
+      dashboard: source.dashboard,
+    };
+  };
+
+  const preserveUnsavedSections = (
+    savedConfig: AppConfig,
+    draftBeforeSave: AppConfig,
+    savedSection: ConfigSaveSection,
+  ): AppConfig => {
+    let next = savedConfig;
+    if (savedSection !== "basic") {
+      next = applySectionFromDraft(next, draftBeforeSave, "basic");
+    }
+    if (savedSection !== "module_defaults") {
+      next = applySectionFromDraft(next, draftBeforeSave, "module_defaults");
+    }
+    if (savedSection !== "dashboard") {
+      next = applySectionFromDraft(next, draftBeforeSave, "dashboard");
+    }
+    return next;
+  };
+
+  const saveConfigSection = async (section: ConfigSaveSection): Promise<void> => {
+    if (savingConfigSection !== null) {
+      return;
+    }
+    const draftBeforeSave = configDraft;
+    const baseConfig = configQuery.data ?? configDraft;
+    const payload = applySectionFromDraft(baseConfig, configDraft, section);
+    try {
+      setSavingConfigSection(section);
+      const saved = await api.updateConfig(payload);
+      const merged = preserveUnsavedSections(saved, draftBeforeSave, section);
+      setConfigDraft(merged);
+      await queryClient.invalidateQueries({ queryKey: ["config"] });
+      await queryClient.invalidateQueries({ queryKey: ["dashboard-snapshot"] });
+      await queryClient.invalidateQueries({ queryKey: ["ui-options"] });
+      setErrorMessage("");
+      if (section === "basic") {
+        notifier.success("基础配置已保存");
+      } else if (section === "module_defaults") {
+        notifier.success("模块默认配置已保存");
+      } else {
+        notifier.success("Dashboard 配置已保存");
+      }
+    } catch (error) {
+      const message = toErrorMessage(error);
+      setErrorMessage(message);
+      notifier.error("保存配置失败", message);
+    } finally {
+      setSavingConfigSection(null);
+    }
+  };
 
   const navItems = [
     { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -385,13 +482,21 @@ export default function App() {
               }
             }}
             setConfig={setConfigDraft}
-            onSave={() => saveConfigMutation.mutate()}
+            onSaveBasic={() => {
+              void saveConfigSection("basic");
+            }}
+            onSaveModuleDefaults={() => {
+              void saveConfigSection("module_defaults");
+            }}
+            onSaveDashboard={() => {
+              void saveConfigSection("dashboard");
+            }}
             onReload={() => {
               void configQuery.refetch();
               void newsSourcesQuery.refetch();
               setErrorMessage("");
             }}
-            saving={saveConfigMutation.isPending}
+            savingSection={savingConfigSection}
           />
           </Suspense>
         </TabsContent>

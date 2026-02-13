@@ -41,9 +41,11 @@ type Props = {
     }>
   ) => Promise<void>;
   setConfig: (value: AppConfig) => void;
-  onSave: () => void;
+  onSaveBasic: () => void;
+  onSaveModuleDefaults: () => void;
+  onSaveDashboard: () => void;
   onReload: () => void;
-  saving: boolean;
+  savingSection: "basic" | "module_defaults" | "dashboard" | null;
 };
 
 type SourceRow = {
@@ -73,9 +75,11 @@ export function ConfigPage({
   onDeleteProvider,
   onSaveProviderConfig,
   setConfig,
-  onSave,
+  onSaveBasic,
+  onSaveModuleDefaults,
+  onSaveDashboard,
   onReload,
-  saving,
+  savingSection,
 }: Props) {
   const [sourceRows, setSourceRows] = useState<SourceRow[]>([]);
   const [creatingSource, setCreatingSource] = useState(false);
@@ -144,10 +148,6 @@ export function ConfigPage({
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button onClick={onSave} disabled={saving}>
-              <Save className="mr-2 h-4 w-4" />
-              {saving ? "保存中..." : "保存配置"}
-            </Button>
             <Button variant="outline" onClick={onReload}>
               <RefreshCw className="mr-2 h-4 w-4" />
               重载
@@ -158,9 +158,15 @@ export function ConfigPage({
 
       {/* Basic settings */}
       <Card className="border-sky-200/60 bg-gradient-to-br from-white to-sky-50/40 dark:from-slate-900 dark:to-sky-950/20">
-        <CardHeader>
-          <CardTitle className="text-base">基础配置</CardTitle>
-          <CardDescription>输出目录、时区、超时、数据库等全局参数。</CardDescription>
+        <CardHeader className="flex flex-row items-start justify-between gap-3">
+          <div>
+            <CardTitle className="text-base">基础配置</CardTitle>
+            <CardDescription>输出目录、时区、超时、数据库等全局参数。</CardDescription>
+          </div>
+          <Button onClick={onSaveBasic} disabled={savingSection !== null && savingSection !== "basic"}>
+            <Save className="mr-2 h-4 w-4" />
+            {savingSection === "basic" ? "保存中..." : "保存基础配置"}
+          </Button>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 md:grid-cols-3">
@@ -241,9 +247,15 @@ export function ConfigPage({
 
       {/* Provider defaults */}
       <Card className="border-emerald-200/60 bg-gradient-to-br from-white to-emerald-50/40 dark:from-slate-900 dark:to-emerald-950/20">
-        <CardHeader>
-          <CardTitle className="text-base">模块默认 Provider</CardTitle>
-          <CardDescription>新闻、行情、搜索、监听等模块的默认服务提供方。</CardDescription>
+        <CardHeader className="flex flex-row items-start justify-between gap-3">
+          <div>
+            <CardTitle className="text-base">模块默认 Provider</CardTitle>
+            <CardDescription>新闻、行情、搜索、监听等模块的默认服务提供方。</CardDescription>
+          </div>
+          <Button onClick={onSaveModuleDefaults} disabled={savingSection !== null && savingSection !== "module_defaults"}>
+            <Save className="mr-2 h-4 w-4" />
+            {savingSection === "module_defaults" ? "保存中..." : "保存模块默认配置"}
+          </Button>
         </CardHeader>
         <CardContent>
           <div className="grid gap-4 md:grid-cols-3">
@@ -415,9 +427,15 @@ export function ConfigPage({
 
       {/* Dashboard index settings */}
       <Card className="border-amber-200/60 bg-gradient-to-br from-white to-amber-50/40 dark:from-slate-900 dark:to-amber-950/20">
-        <CardHeader>
-          <CardTitle className="text-base">Dashboard 指数配置</CardTitle>
-          <CardDescription>配置监控页面的指数列表与自动刷新间隔（开关在 Dashboard 页面）。</CardDescription>
+        <CardHeader className="flex flex-row items-start justify-between gap-3">
+          <div>
+            <CardTitle className="text-base">Dashboard 指数配置</CardTitle>
+            <CardDescription>配置监控页面的指数列表与自动刷新间隔（开关在 Dashboard 页面）。</CardDescription>
+          </div>
+          <Button onClick={onSaveDashboard} disabled={savingSection !== null && savingSection !== "dashboard"}>
+            <Save className="mr-2 h-4 w-4" />
+            {savingSection === "dashboard" ? "保存中..." : "保存 Dashboard 配置"}
+          </Button>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-3 md:grid-cols-2">
