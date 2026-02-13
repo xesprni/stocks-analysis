@@ -82,7 +82,7 @@ async def create_news_source(
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
         source_id = _next_source_id(session, payload.name)
-        now = datetime.utcnow
+        now = datetime.utcnow()
         row = NewsSourceTable(
             source_id=source_id,
             name=payload.name.strip(),
@@ -129,7 +129,7 @@ async def update_news_source(
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-        row.updated_at = datetime.utcnow
+        row.updated_at = datetime.utcnow()
         session.add(row)
         session.commit()
         session.refresh(row)

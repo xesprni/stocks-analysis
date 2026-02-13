@@ -8,6 +8,7 @@ import {
   ListChecks,
   Moon,
   Newspaper,
+  Rocket,
   Settings2,
   Sun,
 } from "lucide-react";
@@ -22,9 +23,10 @@ import { toErrorMessage, useAppQueries } from "@/hooks/useAppQueries";
 import { useAppMutations } from "@/hooks/useAppMutations";
 import { useProviderActions } from "@/hooks/useProviderActions";
 import { AlertCenterPage } from "@/pages/AlertCenter";
+import { ConfigPage } from "@/pages/Config";
 import { DashboardPage } from "@/pages/Dashboard";
 import { NewsFeedPage } from "@/pages/NewsFeed";
-import { ProvidersPage } from "@/pages/Providers";
+import { ReportRunnerPage } from "@/pages/ReportRunner";
 import { ReportsPage } from "@/pages/Reports";
 import { StockTerminalPage } from "@/pages/StockTerminal";
 import { WatchlistPage } from "@/pages/Watchlist";
@@ -65,6 +67,31 @@ const emptyConfig: AppConfig = {
     default_provider: "composite",
     max_results: 20,
   },
+  dashboard: {
+    indices: [
+      { symbol: "000001", market: "CN", alias: "\u4E0A\u8BC1\u6307\u6570" },
+      { symbol: "399001", market: "CN", alias: "\u6DF1\u8BC1\u6210\u6307" },
+      { symbol: "399006", market: "CN", alias: "\u521B\u4E1A\u677F\u6307" },
+      { symbol: "000300", market: "CN", alias: "\u6CAA\u6DF1300" },
+      { symbol: "^HSI", market: "HK", alias: "\u6052\u751F\u6307\u6570" },
+      { symbol: "^HSCE", market: "HK", alias: "\u56FD\u4F01\u6307\u6570" },
+      { symbol: "^HSTECH", market: "HK", alias: "\u6052\u751F\u79D1\u6280" },
+      { symbol: "^GSPC", market: "US", alias: "S&P 500" },
+      { symbol: "^IXIC", market: "US", alias: "NASDAQ" },
+      { symbol: "^DJI", market: "US", alias: "Dow Jones" },
+    ],
+    auto_refresh_enabled: true,
+    auto_refresh_seconds: 15,
+  },
+  agent: {
+    enabled: true,
+    max_steps: 8,
+    max_tool_calls: 12,
+    consistency_tolerance: 0.05,
+    default_news_window_days: 30,
+    default_filing_window_days: 365,
+    default_price_window_days: 365,
+  },
   database: { url: "sqlite:///data/market_reporter.db" },
 };
 
@@ -72,7 +99,6 @@ export default function App() {
   const queryClient = useQueryClient();
   const notifier = useNotifier();
 
-  // ---- UI state ----
   const [configDraft, setConfigDraft] = useState<AppConfig>(emptyConfig);
   const [selectedRunId, setSelectedRunId] = useState<string>("");
   const [errorMessage, setErrorMessage] = useState("");
@@ -95,7 +121,6 @@ export default function App() {
     localStorage.setItem("theme", dark ? "dark" : "light");
   }, [dark]);
 
-  // ---- hooks ----
   const {
     configQuery,
     reportsQuery,
@@ -129,14 +154,14 @@ export default function App() {
 
   const { loadAnalysisModels, connectProviderAuth, disconnectProviderAuth } = useProviderActions();
 
-  // ---- nav items ----
   const navItems = [
     { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+    { key: "report-runner", label: "Run Reports", icon: Rocket },
+    { key: "config", label: "Config", icon: Settings2 },
     { key: "news-feed", label: "News Feed", icon: Newspaper },
     { key: "watchlist", label: "Watchlist", icon: ListChecks },
     { key: "terminal", label: "Stock Terminal", icon: ChartCandlestick },
     { key: "alerts", label: "Alert Center", icon: BellRing },
-    { key: "providers", label: "Providers", icon: Settings2 },
     { key: "reports", label: "Reports", icon: ClipboardList },
   ];
 
@@ -190,12 +215,20 @@ export default function App() {
         </TabsList>
 
         <TabsContent value="dashboard" className="mt-0">
-          <DashboardPage
+          <DashboardPage />
+        </TabsContent>
+
+        <TabsContent value="report-runner" className="mt-0">
+          <ReportRunnerPage onRunReport={(payload) => runReportMutation.mutate(payload)} running={runReportMutation.isPending} />
+        </TabsContent>
+
+        <TabsContent value="config" className="mt-0">
+          <ConfigPage
             config={configDraft}
             options={options}
             analysisProviders={providersQuery.data ?? []}
+            providerConfigs={configDraft.analysis.providers}
             newsSources={newsSourcesQuery.data ?? []}
-            onLoadProviderModels={loadAnalysisModels}
             onCreateNewsSource={async (payload) => {
               try {
                 await api.createNewsSource(payload);
@@ -232,124 +265,6 @@ export default function App() {
                 notifier.error("删除新闻来源失败", message);
               }
             }}
-            setConfig={setConfigDraft}
-            onSave={() => saveConfigMutation.mutate()}
-            onReload={() => {
-              void configQuery.refetch();
-              void newsSourcesQuery.refetch();
-              setErrorMessage("");
-            }}
-            onRunReport={() => runReportMutation.mutate()}
-            saving={saveConfigMutation.isPending}
-            running={runReportMutation.isPending}
-          />
-        </TabsContent>
-
-        <TabsContent value="news-feed" className="mt-0">
-          <NewsFeedPage />
-        </TabsContent>
-
-        <TabsContent value="watchlist" className="mt-0">
-          <WatchlistPage
-            items={watchlistQuery.data ?? []}
-            markets={options.markets}
-            onSearch={(query, market) => api.searchStocks(query, market, configDraft.symbol_search.max_results)}
-            onAdd={async (payload) => {
-              try {
-                await api.createWatchlistItem(payload);
-                await queryClient.invalidateQueries({ queryKey: ["watchlist"] });
-                notifier.success("Watchlist 已添加", `${payload.symbol} (${payload.market})`);
-              } catch (error) {
-                const message = toErrorMessage(error);
-                setErrorMessage(message);
-                notifier.error("添加 Watchlist 失败", message);
-              }
-            }}
-            onDelete={async (id) => {
-              try {
-                await api.deleteWatchlistItem(id);
-                await queryClient.invalidateQueries({ queryKey: ["watchlist"] });
-                notifier.success("Watchlist 已删除");
-              } catch (error) {
-                const message = toErrorMessage(error);
-                setErrorMessage(message);
-                notifier.error("删除 Watchlist 失败", message);
-              }
-            }}
-          />
-        </TabsContent>
-
-        <TabsContent value="terminal" className="mt-0">
-          <StockTerminalPage
-            defaultProvider={configDraft.analysis.default_provider}
-            defaultModel={configDraft.analysis.default_model}
-            intervals={options.intervals}
-            watchlistItems={watchlistQuery.data ?? []}
-          />
-        </TabsContent>
-
-        <TabsContent value="alerts" className="mt-0">
-          <AlertCenterPage
-            alerts={alertsQuery.data ?? []}
-            runs={listenerRunsQuery.data ?? []}
-            status={alertStatus}
-            setStatus={setAlertStatus}
-            market={alertMarket}
-            setMarket={setAlertMarket}
-            symbol={alertSymbol}
-            setSymbol={setAlertSymbol}
-            onRunNow={async () => {
-              try {
-                await api.runNewsListener();
-                await queryClient.invalidateQueries({ queryKey: ["news-alerts"] });
-                await queryClient.invalidateQueries({ queryKey: ["news-listener-runs"] });
-                notifier.success("监听任务已执行");
-              } catch (error) {
-                const message = toErrorMessage(error);
-                setErrorMessage(message);
-                notifier.error("执行新闻监听失败", message);
-              }
-            }}
-            onMarkAllRead={async () => {
-              try {
-                await api.markAllNewsAlertsRead();
-                await queryClient.invalidateQueries({ queryKey: ["news-alerts"] });
-                notifier.success("已全部标记为已读");
-              } catch (error) {
-                const message = toErrorMessage(error);
-                setErrorMessage(message);
-                notifier.error("批量已读失败", message);
-              }
-            }}
-            onMarkAlert={async (id, status) => {
-              try {
-                await api.updateNewsAlert(id, status);
-                await queryClient.invalidateQueries({ queryKey: ["news-alerts"] });
-              } catch (error) {
-                const message = toErrorMessage(error);
-                setErrorMessage(message);
-                notifier.error("更新告警状态失败", message);
-              }
-            }}
-            onRefresh={async () => {
-              try {
-                await alertsQuery.refetch();
-                await listenerRunsQuery.refetch();
-              } catch (error) {
-                const message = toErrorMessage(error);
-                setErrorMessage(message);
-                notifier.error("刷新告警失败", message);
-              }
-            }}
-          />
-        </TabsContent>
-
-        <TabsContent value="providers" className="mt-0">
-          <ProvidersPage
-            providers={providersQuery.data ?? []}
-            providerConfigs={configDraft.analysis.providers}
-            defaultProvider={configDraft.analysis.default_provider}
-            defaultModel={configDraft.analysis.default_model}
             onSetDefault={async (providerId, model) => {
               try {
                 const next = await api.updateDefaultAnalysis({ provider_id: providerId, model });
@@ -438,6 +353,115 @@ export default function App() {
                 const message = toErrorMessage(error);
                 setErrorMessage(message);
                 notifier.error("保存 Provider 配置失败", message);
+              }
+            }}
+            setConfig={setConfigDraft}
+            onSave={() => saveConfigMutation.mutate()}
+            onReload={() => {
+              void configQuery.refetch();
+              void newsSourcesQuery.refetch();
+              setErrorMessage("");
+            }}
+            saving={saveConfigMutation.isPending}
+          />
+        </TabsContent>
+
+        <TabsContent value="news-feed" className="mt-0">
+          <NewsFeedPage />
+        </TabsContent>
+
+        <TabsContent value="watchlist" className="mt-0">
+          <WatchlistPage
+            items={watchlistQuery.data ?? []}
+            markets={options.markets}
+            onSearch={(query, market) => api.searchStocks(query, market, configDraft.symbol_search.max_results)}
+            onAdd={async (payload) => {
+              try {
+                await api.createWatchlistItem(payload);
+                await queryClient.invalidateQueries({ queryKey: ["watchlist"] });
+                await queryClient.invalidateQueries({ queryKey: ["dashboard-snapshot"] });
+                notifier.success("Watchlist 已添加", `${payload.symbol} (${payload.market})`);
+              } catch (error) {
+                const message = toErrorMessage(error);
+                setErrorMessage(message);
+                notifier.error("添加 Watchlist 失败", message);
+              }
+            }}
+            onDelete={async (id) => {
+              try {
+                await api.deleteWatchlistItem(id);
+                await queryClient.invalidateQueries({ queryKey: ["watchlist"] });
+                await queryClient.invalidateQueries({ queryKey: ["dashboard-snapshot"] });
+                notifier.success("Watchlist 已删除");
+              } catch (error) {
+                const message = toErrorMessage(error);
+                setErrorMessage(message);
+                notifier.error("删除 Watchlist 失败", message);
+              }
+            }}
+          />
+        </TabsContent>
+
+        <TabsContent value="terminal" className="mt-0">
+          <StockTerminalPage
+            defaultProvider={configDraft.analysis.default_provider}
+            defaultModel={configDraft.analysis.default_model}
+            intervals={options.intervals}
+            watchlistItems={watchlistQuery.data ?? []}
+          />
+        </TabsContent>
+
+        <TabsContent value="alerts" className="mt-0">
+          <AlertCenterPage
+            alerts={alertsQuery.data ?? []}
+            runs={listenerRunsQuery.data ?? []}
+            status={alertStatus}
+            setStatus={setAlertStatus}
+            market={alertMarket}
+            setMarket={setAlertMarket}
+            symbol={alertSymbol}
+            setSymbol={setAlertSymbol}
+            onRunNow={async () => {
+              try {
+                await api.runNewsListener();
+                await queryClient.invalidateQueries({ queryKey: ["news-alerts"] });
+                await queryClient.invalidateQueries({ queryKey: ["news-listener-runs"] });
+                notifier.success("监听任务已执行");
+              } catch (error) {
+                const message = toErrorMessage(error);
+                setErrorMessage(message);
+                notifier.error("执行新闻监听失败", message);
+              }
+            }}
+            onMarkAllRead={async () => {
+              try {
+                await api.markAllNewsAlertsRead();
+                await queryClient.invalidateQueries({ queryKey: ["news-alerts"] });
+                notifier.success("已全部标记为已读");
+              } catch (error) {
+                const message = toErrorMessage(error);
+                setErrorMessage(message);
+                notifier.error("批量已读失败", message);
+              }
+            }}
+            onMarkAlert={async (id, status) => {
+              try {
+                await api.updateNewsAlert(id, status);
+                await queryClient.invalidateQueries({ queryKey: ["news-alerts"] });
+              } catch (error) {
+                const message = toErrorMessage(error);
+                setErrorMessage(message);
+                notifier.error("更新告警状态失败", message);
+              }
+            }}
+            onRefresh={async () => {
+              try {
+                await alertsQuery.refetch();
+                await listenerRunsQuery.refetch();
+              } catch (error) {
+                const message = toErrorMessage(error);
+                setErrorMessage(message);
+                notifier.error("刷新告警失败", message);
               }
             }}
           />

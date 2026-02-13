@@ -3,6 +3,8 @@ import { z } from "zod";
 import {
   appConfigSchema,
   analysisProviderViewSchema,
+  dashboardAutoRefreshSchema,
+  dashboardSnapshotSchema,
   klineSchema,
   curvePointSchema,
   newsAlertSchema,
@@ -64,6 +66,17 @@ export const api = {
       body: JSON.stringify(payload),
     }),
   getUiOptions: () => request("/options/ui", uiOptionsSchema),
+  getDashboardSnapshot: (page = 1, pageSize = 10, enabledOnly = true) =>
+    request(
+      `/dashboard/snapshot?page=${page}&page_size=${pageSize}&enabled_only=${enabledOnly ? "true" : "false"}`,
+      dashboardSnapshotSchema
+    ),
+  updateDashboardAutoRefresh: (enabled: boolean) =>
+    request("/dashboard/auto-refresh", dashboardAutoRefreshSchema, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ auto_refresh_enabled: enabled }),
+    }),
 
   // ---- reports ----
   listReports: () => request("/reports", z.array(reportSummarySchema)),
@@ -111,6 +124,12 @@ export const api = {
   // ---- stocks ----
   getQuote: (symbol: string, market: string) =>
     request(`/stocks/${encodeURIComponent(symbol)}/quote?market=${market}`, quoteSchema),
+  getQuotesBatch: (items: Array<{ symbol: string; market: "CN" | "HK" | "US" }>) =>
+    request("/stocks/quotes", z.array(quoteSchema), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ items }),
+    }),
   getKline: (symbol: string, market: string, interval: string, limit = 300) =>
     request(
       `/stocks/${encodeURIComponent(symbol)}/kline?market=${market}&interval=${interval}&limit=${limit}`,

@@ -1,228 +1,154 @@
-import { Fragment } from "react";
+import ReactMarkdown, { type Components } from "react-markdown";
+import rehypeRaw from "rehype-raw";
+import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
+import remarkGfm from "remark-gfm";
 
 type MarkdownViewerProps = {
   markdown: string;
 };
 
-type MarkdownBlock =
-  | { type: "heading"; level: number; text: string }
-  | { type: "paragraph"; text: string }
-  | { type: "code"; language: string; code: string }
-  | { type: "blockquote"; lines: string[] }
-  | { type: "ul"; items: string[] }
-  | { type: "ol"; items: string[] };
+const allowedTagNames = [
+  "a",
+  "blockquote",
+  "code",
+  "details",
+  "div",
+  "em",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+  "hr",
+  "img",
+  "li",
+  "ol",
+  "p",
+  "pre",
+  "span",
+  "strong",
+  "summary",
+  "table",
+  "tbody",
+  "td",
+  "th",
+  "thead",
+  "tr",
+  "ul",
+];
 
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
+const sanitizeSchema = {
+  ...defaultSchema,
+  tagNames: Array.from(new Set([...(defaultSchema.tagNames ?? []), ...allowedTagNames])),
+  attributes: {
+    ...(defaultSchema.attributes ?? {}),
+    a: ["href", "title", "target", "rel"],
+    img: ["src", "alt", "title", "width", "height"],
+    table: ["className"],
+    th: ["align", "colspan", "rowspan"],
+    td: ["align", "colspan", "rowspan"],
+    details: ["open"],
+    div: ["className"],
+    span: ["className"],
+    code: ["className"],
+    pre: ["className"],
+  },
+  protocols: {
+    ...(defaultSchema.protocols ?? {}),
+    href: ["http", "https"],
+    src: ["http", "https"],
+  },
+};
 
-function inlineMarkdownToHtml(text: string): string {
-  let html = escapeHtml(text);
-  html = html.replace(
-    /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
-    '<a href="$2" target="_blank" rel="noreferrer" class="underline decoration-zinc-400 underline-offset-4 hover:decoration-zinc-900">$1</a>'
-  );
-  html = html.replace(/`([^`]+)`/g, '<code class="rounded bg-muted px-1.5 py-0.5 text-[0.88em]">$1</code>');
-  html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
-  html = html.replace(/\*([^*]+)\*/g, "<em>$1</em>");
-  return html;
-}
-
-function parseMarkdown(markdown: string): MarkdownBlock[] {
-  const lines = markdown.replace(/\r\n/g, "\n").split("\n");
-  const blocks: MarkdownBlock[] = [];
-  let index = 0;
-
-  while (index < lines.length) {
-    const line = lines[index];
-    const trimmed = line.trim();
-
-    if (!trimmed) {
-      index += 1;
-      continue;
+const markdownComponents: Components = {
+  a: ({ node: _node, href, children, ...props }) => {
+    const safeHref = href && /^https?:\/\//i.test(href) ? href : undefined;
+    return (
+      <a
+        {...props}
+        href={safeHref}
+        target="_blank"
+        rel="noreferrer noopener"
+        className="underline decoration-zinc-400 underline-offset-4 hover:decoration-zinc-900"
+      >
+        {children}
+      </a>
+    );
+  },
+  img: ({ node: _node, alt, src, title, width, height, ...props }) => {
+    const safeSrc = src && /^https?:\/\//i.test(src) ? src : undefined;
+    if (!safeSrc) {
+      return null;
     }
-
-    if (trimmed.startsWith("```")) {
-      const language = trimmed.slice(3).trim();
-      const codeLines: string[] = [];
-      index += 1;
-      while (index < lines.length && !lines[index].trim().startsWith("```")) {
-        codeLines.push(lines[index]);
-        index += 1;
-      }
-      if (index < lines.length) {
-        index += 1;
-      }
-      blocks.push({
-        type: "code",
-        language,
-        code: codeLines.join("\n"),
-      });
-      continue;
+    return (
+      <img
+        {...props}
+        src={safeSrc}
+        alt={alt ?? ""}
+        title={title}
+        width={width as number | string | undefined}
+        height={height as number | string | undefined}
+        loading="lazy"
+        className="my-3 max-h-[420px] rounded-lg border border-border/60"
+      />
+    );
+  },
+  table: ({ node: _node, children, ...props }) => (
+    <div className="my-4 w-full overflow-x-auto rounded-lg border border-border/60">
+      <table {...props} className="min-w-full border-collapse text-sm">
+        {children}
+      </table>
+    </div>
+  ),
+  thead: ({ node: _node, ...props }) => <thead {...props} className="bg-muted/70" />,
+  th: ({ node: _node, ...props }) => (
+    <th {...props} className="whitespace-nowrap border-b border-border/70 px-3 py-2 text-left font-semibold" />
+  ),
+  td: ({ node: _node, ...props }) => <td {...props} className="border-b border-border/50 px-3 py-2 align-top" />,
+  tr: ({ node: _node, ...props }) => <tr {...props} className="odd:bg-background even:bg-muted/20" />,
+  code: ({ node: _node, className, children, ...props }) => {
+    const text = String(children ?? "");
+    const isInline = !className && !text.includes("\n");
+    if (isInline) {
+      return (
+        <code {...props} className="rounded bg-muted px-1.5 py-0.5 text-[0.88em]">
+          {children}
+        </code>
+      );
     }
-
-    const headingMatch = trimmed.match(/^(#{1,6})\s+(.*)$/);
-    if (headingMatch) {
-      blocks.push({
-        type: "heading",
-        level: headingMatch[1].length,
-        text: headingMatch[2],
-      });
-      index += 1;
-      continue;
-    }
-
-    if (trimmed.startsWith(">")) {
-      const quoteLines: string[] = [];
-      while (index < lines.length && lines[index].trim().startsWith(">")) {
-        quoteLines.push(lines[index].trim().replace(/^>\s?/, ""));
-        index += 1;
-      }
-      blocks.push({ type: "blockquote", lines: quoteLines });
-      continue;
-    }
-
-    if (/^[-*]\s+/.test(trimmed)) {
-      const items: string[] = [];
-      while (index < lines.length && /^[-*]\s+/.test(lines[index].trim())) {
-        items.push(lines[index].trim().replace(/^[-*]\s+/, ""));
-        index += 1;
-      }
-      blocks.push({ type: "ul", items });
-      continue;
-    }
-
-    if (/^\d+\.\s+/.test(trimmed)) {
-      const items: string[] = [];
-      while (index < lines.length && /^\d+\.\s+/.test(lines[index].trim())) {
-        items.push(lines[index].trim().replace(/^\d+\.\s+/, ""));
-        index += 1;
-      }
-      blocks.push({ type: "ol", items });
-      continue;
-    }
-
-    const paragraphLines: string[] = [];
-    while (index < lines.length) {
-      const current = lines[index].trim();
-      if (!current) {
-        break;
-      }
-      if (
-        current.startsWith("```") ||
-        /^#{1,6}\s+/.test(current) ||
-        current.startsWith(">") ||
-        /^[-*]\s+/.test(current) ||
-        /^\d+\.\s+/.test(current)
-      ) {
-        break;
-      }
-      paragraphLines.push(lines[index].trim());
-      index += 1;
-    }
-    if (paragraphLines.length) {
-      blocks.push({ type: "paragraph", text: paragraphLines.join(" ") });
-      continue;
-    }
-
-    index += 1;
-  }
-
-  return blocks;
-}
+    return (
+      <code {...props} className={className}>
+        {children}
+      </code>
+    );
+  },
+  pre: ({ node: _node, ...props }) => (
+    <pre
+      {...props}
+      className="mb-4 overflow-auto rounded-xl border border-border bg-muted p-4 text-xs text-foreground shadow-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+    />
+  ),
+  details: ({ node: _node, ...props }) => (
+    <details {...props} className="my-4 rounded-lg border border-border/70 bg-muted/20 px-3 py-2" />
+  ),
+  summary: ({ node: _node, ...props }) => <summary {...props} className="cursor-pointer font-medium" />,
+};
 
 export function MarkdownViewer({ markdown }: MarkdownViewerProps) {
-  const blocks = parseMarkdown(markdown);
-
-  if (!blocks.length) {
+  if (!markdown.trim()) {
     return <div className="text-sm text-muted-foreground">暂无内容</div>;
   }
 
   return (
-    <article className="prose prose-zinc dark:prose-invert max-w-none rounded-xl border border-border/70 bg-card p-5">
-      {blocks.map((block, blockIndex) => {
-        switch (block.type) {
-          case "heading": {
-            const classNameByLevel: Record<number, string> = {
-              1: "mb-3 mt-6 text-2xl font-semibold tracking-tight",
-              2: "mb-2 mt-5 text-xl font-semibold tracking-tight",
-              3: "mb-2 mt-4 text-lg font-semibold",
-              4: "mb-2 mt-4 text-base font-semibold",
-              5: "mb-1 mt-3 text-sm font-semibold uppercase tracking-wide",
-              6: "mb-1 mt-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground",
-            };
-            const cls = classNameByLevel[block.level] ?? classNameByLevel[3];
-            const Tag = `h${Math.min(6, Math.max(1, block.level))}` as keyof JSX.IntrinsicElements;
-            return (
-              <Tag
-                key={`heading-${blockIndex}`}
-                className={cls}
-                dangerouslySetInnerHTML={{ __html: inlineMarkdownToHtml(block.text) }}
-              />
-            );
-          }
-          case "paragraph":
-            return (
-              <p
-                key={`paragraph-${blockIndex}`}
-                className="mb-3 text-[15px] leading-7 text-foreground/85"
-                dangerouslySetInnerHTML={{ __html: inlineMarkdownToHtml(block.text) }}
-              />
-            );
-          case "blockquote":
-            return (
-              <blockquote key={`quote-${blockIndex}`} className="my-4 border-l-4 border-border pl-4 text-muted-foreground">
-                {block.lines.map((line, lineIndex) => (
-                  <p
-                    key={`quote-line-${blockIndex}-${lineIndex}`}
-                    className="mb-1"
-                    dangerouslySetInnerHTML={{ __html: inlineMarkdownToHtml(line) }}
-                  />
-                ))}
-              </blockquote>
-            );
-          case "ul":
-            return (
-              <ul key={`ul-${blockIndex}`} className="mb-4 list-disc space-y-1 pl-6 text-foreground/85">
-                {block.items.map((item, itemIndex) => (
-                  <li
-                    key={`ul-item-${blockIndex}-${itemIndex}`}
-                    dangerouslySetInnerHTML={{ __html: inlineMarkdownToHtml(item) }}
-                  />
-                ))}
-              </ul>
-            );
-          case "ol":
-            return (
-              <ol key={`ol-${blockIndex}`} className="mb-4 list-decimal space-y-1 pl-6 text-foreground/85">
-                {block.items.map((item, itemIndex) => (
-                  <li
-                    key={`ol-item-${blockIndex}-${itemIndex}`}
-                    dangerouslySetInnerHTML={{ __html: inlineMarkdownToHtml(item) }}
-                  />
-                ))}
-              </ol>
-            );
-          case "code":
-            return (
-              <Fragment key={`code-${blockIndex}`}>
-                {block.language ? (
-                  <div className="mb-1 mt-4 text-xs uppercase tracking-wide text-muted-foreground">{block.language}</div>
-                ) : null}
-                <pre className="mb-4 overflow-auto rounded-xl border border-border bg-muted p-4 text-xs text-foreground shadow-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100">
-                  <code>{block.code}</code>
-                </pre>
-              </Fragment>
-            );
-          default:
-            return null;
-        }
-      })}
+    <article className="max-w-none rounded-xl border border-border/70 bg-card p-5 text-[15px] leading-7 text-foreground/85 [&_blockquote]:my-4 [&_blockquote]:border-l-4 [&_blockquote]:border-border [&_blockquote]:pl-4 [&_blockquote]:text-muted-foreground [&_h1]:mb-3 [&_h1]:mt-6 [&_h1]:text-2xl [&_h1]:font-semibold [&_h2]:mb-2 [&_h2]:mt-5 [&_h2]:text-xl [&_h2]:font-semibold [&_h3]:mb-2 [&_h3]:mt-4 [&_h3]:text-lg [&_h3]:font-semibold [&_li]:my-1 [&_ol]:mb-4 [&_ol]:list-decimal [&_ol]:pl-6 [&_p]:mb-3 [&_ul]:mb-4 [&_ul]:list-disc [&_ul]:pl-6">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        rehypePlugins={[rehypeRaw, [rehypeSanitize, sanitizeSchema]]}
+        components={markdownComponents}
+      >
+        {markdown}
+      </ReactMarkdown>
     </article>
   );
 }

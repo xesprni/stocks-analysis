@@ -31,9 +31,13 @@ class ConfigStore:
         if not isinstance(raw, dict):
             raise ValueError(f"Invalid config file content: {self.config_path}")
         config = AppConfig.model_validate(raw).normalized()
-        config = self._normalize_analysis_providers(config)
+        config = self._normalize_analysis_providers(config, raw_config=raw)
         config.ensure_data_root()
-        if self._should_rewrite_analysis(raw, config):
+        if (
+            self._should_rewrite_analysis(raw, config)
+            or self._should_rewrite_agent(raw)
+            or self._should_rewrite_dashboard(raw)
+        ):
             self.save(config)
         return config
 
@@ -58,7 +62,9 @@ class ConfigStore:
         return self.save(merged)
 
     @staticmethod
-    def _normalize_analysis_providers(config: AppConfig) -> AppConfig:
+    def _normalize_analysis_providers(
+        config: AppConfig, raw_config: Dict[str, Any]
+    ) -> AppConfig:
         providers = []
         seen: set[str] = set()
         for provider in config.analysis.providers:
@@ -84,11 +90,23 @@ class ConfigStore:
                 )
             )
 
-        for provider in default_analysis_providers():
-            if provider.provider_id in seen:
-                continue
-            providers.append(provider)
-            seen.add(provider.provider_id)
+        raw_analysis = raw_config.get("analysis")
+        raw_providers = (
+            raw_analysis.get("providers") if isinstance(raw_analysis, dict) else None
+        )
+        should_backfill_defaults = not isinstance(raw_providers, list)
+        if should_backfill_defaults:
+            for provider in default_analysis_providers():
+                if provider.provider_id in seen:
+                    continue
+                providers.append(provider)
+                seen.add(provider.provider_id)
+
+        if not providers:
+            # Keep app usable when provider list is empty/invalid.
+            defaults = default_analysis_providers()
+            if defaults:
+                providers = [defaults[0]]
 
         if providers and not any(provider.enabled for provider in providers):
             providers[0] = providers[0].model_copy(update={"enabled": True})
@@ -166,3 +184,31 @@ class ConfigStore:
         ):
             return True
         return False
+
+    @staticmethod
+    def _should_rewrite_agent(raw_config: Dict[str, Any]) -> bool:
+        raw_agent = raw_config.get("agent")
+        if not isinstance(raw_agent, dict):
+            return True
+        required_keys = {
+            "enabled",
+            "max_steps",
+            "max_tool_calls",
+            "consistency_tolerance",
+            "default_news_window_days",
+            "default_filing_window_days",
+            "default_price_window_days",
+        }
+        return not required_keys.issubset(set(raw_agent.keys()))
+
+    @staticmethod
+    def _should_rewrite_dashboard(raw_config: Dict[str, Any]) -> bool:
+        raw_dashboard = raw_config.get("dashboard")
+        if not isinstance(raw_dashboard, dict):
+            return True
+        required_keys = {
+            "indices",
+            "auto_refresh_enabled",
+            "auto_refresh_seconds",
+        }
+        return not required_keys.issubset(set(raw_dashboard.keys()))

@@ -1,587 +1,410 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, RefreshCw, Rocket, Save, Trash2 } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Activity, BarChart3, Gauge, Globe2, RefreshCw, TrendingDown, TrendingUp } from "lucide-react";
 
-import type { AnalysisProviderView, AppConfig, NewsSource, UIOptions } from "@/api/client";
+import { api } from "@/api/client";
+import type { DashboardIndexMetric, DashboardSnapshot } from "@/api/client";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { useNotifier } from "@/components/ui/notifier";
+import { WatchlistIntradayCards } from "@/components/dashboard/WatchlistIntradayCards";
 
-type Props = {
-  config: AppConfig;
-  options: UIOptions;
-  analysisProviders: AnalysisProviderView[];
-  newsSources: NewsSource[];
-  onLoadProviderModels: (providerId: string) => Promise<string[]>;
-  onCreateNewsSource: (payload: { name: string; category: string; url: string; enabled: boolean }) => Promise<void>;
-  onUpdateNewsSource: (
-    sourceId: string,
-    payload: Partial<{ name: string; category: string; url: string; enabled: boolean }>
-  ) => Promise<void>;
-  onDeleteNewsSource: (sourceId: string) => Promise<void>;
-  setConfig: (value: AppConfig) => void;
-  onSave: () => void;
-  onReload: () => void;
-  onRunReport: () => void;
-  saving: boolean;
-  running: boolean;
-};
+function pctText(value: number | null | undefined): string {
+  if (value == null) return "--";
+  return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
+}
 
-type SourceRow = {
-  source_id: string;
-  name: string;
-  category: string;
-  url: string;
-  enabled: boolean;
-};
+function priceText(price: number, source: string): string {
+  if (source === "unavailable" && price === 0) {
+    return "--";
+  }
+  return price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
 
-export function DashboardPage({
-  config,
-  options,
-  analysisProviders,
-  newsSources,
-  onLoadProviderModels,
-  onCreateNewsSource,
-  onUpdateNewsSource,
-  onDeleteNewsSource,
-  setConfig,
-  onSave,
-  onReload,
-  onRunReport,
-  saving,
-  running,
-}: Props) {
-  const [analysisModelOptions, setAnalysisModelOptions] = useState<string[]>([]);
-  const [sourceRows, setSourceRows] = useState<SourceRow[]>([]);
-  const [creatingSource, setCreatingSource] = useState(false);
-  const [newSourceName, setNewSourceName] = useState("");
-  const [newSourceCategory, setNewSourceCategory] = useState("finance");
-  const [newSourceUrl, setNewSourceUrl] = useState("");
-  const [newSourceEnabled, setNewSourceEnabled] = useState(true);
+function changeText(change: number | null | undefined): string {
+  if (change == null || !Number.isFinite(change)) return "--";
+  return `${change >= 0 ? "+" : ""}${change.toFixed(2)}`;
+}
 
-  const selectedProviderId = config.analysis.default_provider;
-  const selectedProvider = useMemo(
-    () => analysisProviders.find((item) => item.provider_id === selectedProviderId) ?? null,
-    [analysisProviders, selectedProviderId]
-  );
-  const selectedProviderAuthMode = selectedProvider?.auth_mode ?? "";
-  const isDynamicModelProvider = selectedProviderAuthMode === "chatgpt_oauth";
-  const selectedProviderModelsKey = selectedProvider?.models.join("|") ?? "";
+function volumeText(volume: number | null | undefined): string {
+  if (volume == null || !Number.isFinite(volume)) return "--";
+  if (volume >= 1e8) return `${(volume / 1e8).toFixed(2)} 亿`;
+  if (volume >= 1e4) return `${(volume / 1e4).toFixed(1)} 万`;
+  return volume.toLocaleString();
+}
 
-  useEffect(() => {
-    let cancelled = false;
-    const providerId = selectedProvider?.provider_id ?? "";
-    if (!providerId) {
-      setAnalysisModelOptions([]);
-      return () => {
-        cancelled = true;
-      };
-    }
+function barWidthByPct(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) {
+    return "0%";
+  }
+  const width = Math.min(100, Math.max(3, Math.abs(value) * 8));
+  return `${width}%`;
+}
 
-    const fallback = selectedProvider?.models ?? [];
-    setAnalysisModelOptions(fallback);
-    void onLoadProviderModels(providerId)
-      .then((models) => {
-        if (cancelled) {
-          return;
-        }
-        if (models.length) {
-          setAnalysisModelOptions(models);
-          return;
-        }
-        setAnalysisModelOptions(fallback);
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setAnalysisModelOptions(fallback);
-        }
-      });
+function toErrorText(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return String(error ?? "Unknown error");
+}
 
-    return () => {
-      cancelled = true;
+function snapshotFallback(): DashboardSnapshot {
+  return {
+    generated_at: "",
+    auto_refresh_enabled: true,
+    auto_refresh_seconds: 15,
+    indices: [],
+    watchlist: [],
+    pagination: {
+      page: 1,
+      page_size: 10,
+      total: 0,
+      total_pages: 0,
+    },
+  };
+}
+
+function toneByPct(pct: number | null | undefined): {
+  cardClass: string;
+  textClass: string;
+  barClass: string;
+  icon: "up" | "down" | "flat";
+} {
+  if (pct == null) {
+    return {
+      cardClass: "border-slate-300/60 bg-gradient-to-br from-slate-100/80 to-slate-200/50 dark:from-slate-900 dark:to-slate-800",
+      textClass: "text-slate-600 dark:text-slate-300",
+      barClass: "bg-slate-500",
+      icon: "flat",
     };
-  }, [onLoadProviderModels, selectedProviderId, selectedProviderModelsKey]);
+  }
+  if (pct >= 0) {
+    return {
+      cardClass: "border-emerald-300/60 bg-gradient-to-br from-emerald-100/80 via-cyan-100/60 to-sky-100/50 dark:from-emerald-950/40 dark:to-sky-950/30",
+      textClass: "text-emerald-700 dark:text-emerald-300",
+      barClass: "bg-gradient-to-r from-emerald-500 to-cyan-500",
+      icon: "up",
+    };
+  }
+  return {
+    cardClass: "border-rose-300/60 bg-gradient-to-br from-rose-100/80 via-orange-100/60 to-amber-100/50 dark:from-rose-950/40 dark:to-amber-950/30",
+    textClass: "text-rose-700 dark:text-rose-300",
+    barClass: "bg-gradient-to-r from-rose-500 to-orange-500",
+    icon: "down",
+  };
+}
+
+type MarketMeta = {
+  key: string;
+  label: string;
+  labelEn: string;
+  icon: typeof Globe2;
+  sectionClass: string;
+};
+
+const MARKET_META: MarketMeta[] = [
+  {
+    key: "CN",
+    label: "A股市场",
+    labelEn: "China A-Shares",
+    icon: BarChart3,
+    sectionClass: "border-rose-200/60 bg-gradient-to-br from-white to-rose-50/40 dark:from-slate-900 dark:to-rose-950/20",
+  },
+  {
+    key: "HK",
+    label: "港股市场",
+    labelEn: "Hong Kong",
+    icon: Globe2,
+    sectionClass: "border-amber-200/60 bg-gradient-to-br from-white to-amber-50/40 dark:from-slate-900 dark:to-amber-950/20",
+  },
+  {
+    key: "US",
+    label: "美股市场",
+    labelEn: "US Market",
+    icon: TrendingUp,
+    sectionClass: "border-sky-200/60 bg-gradient-to-br from-white to-sky-50/40 dark:from-slate-900 dark:to-sky-950/20",
+  },
+];
+
+function IndexCard({ item }: { item: DashboardIndexMetric }) {
+  const tone = toneByPct(item.change_percent);
+  return (
+    <Card className={`${tone.cardClass} transition-all duration-200 hover:scale-[1.02] hover:shadow-lg`}>
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base">{item.alias || item.symbol}</CardTitle>
+          <Badge variant="outline" className="h-5 px-2 text-[10px]">
+            {item.source}
+          </Badge>
+        </div>
+        <CardDescription className="text-xs">
+          {item.symbol} / {item.market}
+          {item.currency ? ` / ${item.currency}` : ""}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-2 text-sm">
+        <div className="flex items-end justify-between">
+          <div className="text-2xl font-bold tabular-nums">{priceText(item.price, item.source)}</div>
+          <div className="text-right">
+            <div className={`text-base font-semibold tabular-nums ${tone.textClass}`}>
+              {pctText(item.change_percent)}
+            </div>
+            <div className={`text-xs tabular-nums ${tone.textClass}`}>
+              {changeText(item.change)}
+            </div>
+          </div>
+        </div>
+        <div className="h-2 rounded-full bg-muted/70">
+          <div
+            className={`h-2 rounded-full transition-all duration-500 ${tone.barClass}`}
+            style={{ width: barWidthByPct(item.change_percent) }}
+          />
+        </div>
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <span>vol {volumeText(item.volume)}</span>
+          <div className="flex items-center gap-1">
+            {tone.icon === "up" ? <TrendingUp className="h-3 w-3 text-emerald-500" /> : null}
+            {tone.icon === "down" ? <TrendingDown className="h-3 w-3 text-rose-500" /> : null}
+            {tone.icon === "flat" ? <Activity className="h-3 w-3" /> : null}
+            <span>{tone.icon === "flat" ? "暂无方向" : tone.icon === "up" ? "偏强" : "偏弱"}</span>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+export function DashboardPage() {
+  const queryClient = useQueryClient();
+  const notifier = useNotifier();
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  const snapshotQuery = useQuery({
+    queryKey: ["dashboard-snapshot", page, pageSize, true],
+    queryFn: () => api.getDashboardSnapshot(page, pageSize, true),
+    retry: false,
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      if (!data?.auto_refresh_enabled) {
+        return false;
+      }
+      return Math.max(3000, data.auto_refresh_seconds * 1000);
+    },
+  });
+
+  const snapshot = snapshotQuery.data ?? snapshotFallback();
+  const indices = snapshot.indices;
+  const watchlistRows = snapshot.watchlist;
+  const pagination = snapshot.pagination;
+  const errorText = snapshotQuery.error ? toErrorText(snapshotQuery.error) : "";
+
+  const updatedAtText = useMemo(() => {
+    if (!snapshot.generated_at) {
+      return "--";
+    }
+    return new Date(snapshot.generated_at).toLocaleString();
+  }, [snapshot.generated_at]);
+
+  const upCount = useMemo(
+    () => indices.filter((item) => (item.change_percent ?? 0) > 0).length,
+    [indices]
+  );
+  const downCount = useMemo(
+    () => indices.filter((item) => (item.change_percent ?? 0) < 0).length,
+    [indices]
+  );
+
+  const indicesByMarket = useMemo(() => {
+    const grouped: Record<string, DashboardIndexMetric[]> = {};
+    for (const item of indices) {
+      const market = item.market || "OTHER";
+      if (!grouped[market]) grouped[market] = [];
+      grouped[market].push(item);
+    }
+    return grouped;
+  }, [indices]);
 
   useEffect(() => {
-    if (!analysisModelOptions.length || isDynamicModelProvider) {
+    if (pagination.total_pages === 0 && page !== 1) {
+      setPage(1);
       return;
     }
-    if (!analysisModelOptions.includes(config.analysis.default_model)) {
-      setConfig({
-        ...config,
-        analysis: {
-          ...config.analysis,
-          default_model: analysisModelOptions[0],
-        },
-      });
+    if (pagination.total_pages > 0 && page > pagination.total_pages) {
+      setPage(pagination.total_pages);
     }
-  }, [analysisModelOptions, config, isDynamicModelProvider, setConfig]);
+  }, [page, pagination.total_pages]);
 
-  const resolvedAnalysisModelOptions = useMemo(() => {
-    const currentModel = config.analysis.default_model;
-    if (!currentModel || analysisModelOptions.includes(currentModel)) {
-      return analysisModelOptions;
-    }
-    return [currentModel, ...analysisModelOptions];
-  }, [analysisModelOptions, config.analysis.default_model]);
+  const toggleAutoRefreshMutation = useMutation({
+    mutationFn: async (enabled: boolean) => api.updateDashboardAutoRefresh(enabled),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["config"] });
+      await queryClient.invalidateQueries({ queryKey: ["dashboard-snapshot"] });
+    },
+    onError: (error) => {
+      notifier.error("更新自动刷新失败", toErrorText(error));
+    },
+  });
 
-  useEffect(() => {
-    setSourceRows(
-      [...newsSources]
-        .sort((a, b) => a.source_id.localeCompare(b.source_id))
-        .map((item) => ({
-          source_id: item.source_id,
-          name: item.name,
-          category: item.category,
-          url: item.url,
-          enabled: item.enabled,
-        }))
-    );
-  }, [newsSources]);
-
-  const analysisProviderOptions = useMemo(() => analysisProviders, [analysisProviders]);
+  const onToggleAutoRefresh = () => {
+    void toggleAutoRefreshMutation.mutateAsync(!snapshot.auto_refresh_enabled);
+  };
 
   return (
     <div className="space-y-6">
-      <div className="grid gap-6 lg:grid-cols-5">
-        <Card className="lg:col-span-3">
-          <CardHeader>
-            <CardTitle>系统配置</CardTitle>
-            <CardDescription>模块默认 provider 与采集参数。</CardDescription>
+      {/* Hero header */}
+      <section className="relative overflow-hidden rounded-3xl border border-sky-300/50 bg-gradient-to-br from-sky-500/15 via-emerald-500/10 to-amber-400/15 p-6">
+        <div className="pointer-events-none absolute -left-12 -top-14 h-44 w-44 rounded-full bg-sky-400/20 blur-3xl" />
+        <div className="pointer-events-none absolute right-0 top-10 h-32 w-32 rounded-full bg-emerald-400/20 blur-2xl" />
+        <div className="pointer-events-none absolute -bottom-12 right-10 h-44 w-44 rounded-full bg-amber-400/20 blur-3xl" />
+
+        <div className="relative flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
+              <Activity className="h-5 w-5 text-sky-600" />
+              Dashboard 监控总览
+            </h2>
+            <p className="mt-2 text-sm text-muted-foreground">
+              更新时间 {updatedAtText} | 自动刷新 {snapshot.auto_refresh_enabled ? `开启(${snapshot.auto_refresh_seconds}s)` : "关闭"}
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 rounded-full border border-slate-300/60 bg-white/70 px-3 py-1.5 text-xs dark:border-slate-700 dark:bg-slate-900/40">
+              <span className="text-muted-foreground">自动刷新</span>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={snapshot.auto_refresh_enabled}
+                aria-label="切换自动刷新"
+                onClick={onToggleAutoRefresh}
+                disabled={toggleAutoRefreshMutation.isPending}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                  snapshot.auto_refresh_enabled ? "bg-emerald-500" : "bg-slate-400"
+                } ${toggleAutoRefreshMutation.isPending ? "cursor-not-allowed opacity-60" : ""}`}
+              >
+                <span
+                  className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
+                    snapshot.auto_refresh_enabled ? "translate-x-5" : "translate-x-0.5"
+                  }`}
+                />
+              </button>
+              <span className="tabular-nums text-muted-foreground">
+                {snapshot.auto_refresh_enabled ? `${snapshot.auto_refresh_seconds}s` : "已关闭"}
+              </span>
+            </div>
+            <Button variant="outline" onClick={() => void snapshotQuery.refetch()} disabled={snapshotQuery.isFetching}>
+              <RefreshCw className={`mr-2 h-4 w-4 ${snapshotQuery.isFetching ? "animate-spin" : ""}`} />
+              刷新数据
+            </Button>
+          </div>
+        </div>
+      </section>
+
+      {/* Summary stat cards */}
+      <div className="grid gap-4 md:grid-cols-4">
+        <Card className="border-sky-300/60 bg-gradient-to-br from-sky-100/80 to-cyan-100/60 dark:from-sky-950/40 dark:to-cyan-950/20">
+          <CardHeader className="pb-2">
+            <CardDescription>监控指数</CardDescription>
+            <CardTitle className="text-2xl">{indices.length}</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="output_root">输出目录</Label>
-                <Input
-                  id="output_root"
-                  value={config.output_root}
-                  onChange={(event) => setConfig({ ...config, output_root: event.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="timezone">时区</Label>
-                <Select value={config.timezone} onValueChange={(value: string) => setConfig({ ...config, timezone: value })}>
-                  <SelectTrigger id="timezone">
-                    <SelectValue placeholder="时区" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {options.timezones.map((entry) => (
-                      <SelectItem key={entry} value={entry}>
-                        {entry}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="news_limit">新闻条数</Label>
-                <Input
-                  id="news_limit"
-                  type="number"
-                  value={config.news_limit}
-                  onChange={(event) => setConfig({ ...config, news_limit: Number(event.target.value) })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="news_provider">新闻默认 Provider</Label>
-                <Select
-                  value={config.modules.news.default_provider}
-                  onValueChange={(value: string) =>
-                    setConfig({
-                      ...config,
-                      modules: {
-                        ...config.modules,
-                        news: {
-                          ...config.modules.news,
-                          default_provider: value,
-                        },
-                      },
-                    })
-                  }
-                >
-                  <SelectTrigger id="news_provider">
-                    <SelectValue placeholder="新闻 Provider" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {options.news_providers.map((entry) => (
-                      <SelectItem key={entry} value={entry}>
-                        {entry}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="flow_periods">资金流周期</Label>
-                <Input
-                  id="flow_periods"
-                  type="number"
-                  value={config.flow_periods}
-                  onChange={(event) => setConfig({ ...config, flow_periods: Number(event.target.value) })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="timeout">请求超时(秒)</Label>
-                <Input
-                  id="timeout"
-                  type="number"
-                  value={config.request_timeout_seconds}
-                  onChange={(event) =>
-                    setConfig({
-                      ...config,
-                      request_timeout_seconds: Number(event.target.value),
-                    })
-                  }
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="analysis_default_provider">分析默认 Provider</Label>
-                <Select
-                  value={config.analysis.default_provider}
-                  onValueChange={(value: string) => {
-                    const nextProviders = config.analysis.providers.map((provider) =>
-                      provider.provider_id === value ? { ...provider, enabled: true } : provider
-                    );
-                    setConfig({
-                      ...config,
-                      analysis: {
-                        ...config.analysis,
-                        default_provider: value,
-                        providers: nextProviders,
-                      },
-                    });
-                  }}
-                >
-                  <SelectTrigger id="analysis_default_provider">
-                    <SelectValue placeholder="分析 Provider" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {analysisProviderOptions.map((entry) => (
-                      <SelectItem key={entry.provider_id} value={entry.provider_id}>
-                        {entry.provider_id} {!entry.enabled ? "(disabled)" : ""}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="analysis_default_model">分析默认 Model（动态）</Label>
-                <Select
-                  value={config.analysis.default_model}
-                  onValueChange={(value: string) =>
-                    setConfig({
-                      ...config,
-                      analysis: {
-                        ...config.analysis,
-                        default_model: value,
-                      },
-                    })
-                  }
-                  disabled={!resolvedAnalysisModelOptions.length}
-                >
-                  <SelectTrigger id="analysis_default_model">
-                    <SelectValue placeholder="分析 Model" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {resolvedAnalysisModelOptions.map((entry) => (
-                      <SelectItem key={entry} value={entry}>
-                        {entry}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="default_provider">行情默认 Provider</Label>
-                <Select
-                  value={config.modules.market_data.default_provider}
-                  onValueChange={(value: string) =>
-                    setConfig({
-                      ...config,
-                      modules: {
-                        ...config.modules,
-                        market_data: {
-                          ...config.modules.market_data,
-                          default_provider: value,
-                        },
-                      },
-                    })
-                  }
-                >
-                  <SelectTrigger id="default_provider">
-                    <SelectValue placeholder="行情 Provider" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {options.market_data_providers.map((entry) => (
-                      <SelectItem key={entry} value={entry}>
-                        {entry}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="symbol_search_provider">搜索默认 Provider</Label>
-                <Select
-                  value={config.symbol_search.default_provider}
-                  onValueChange={(value: string) =>
-                    setConfig({
-                      ...config,
-                      symbol_search: {
-                        ...config.symbol_search,
-                        default_provider: value,
-                      },
-                      modules: {
-                        ...config.modules,
-                        symbol_search: {
-                          ...config.modules.symbol_search,
-                          default_provider: value,
-                        },
-                      },
-                    })
-                  }
-                >
-                  <SelectTrigger id="symbol_search_provider">
-                    <SelectValue placeholder="搜索 Provider" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {["composite", "finnhub", "yfinance", "akshare"].map((entry) => (
-                      <SelectItem key={entry} value={entry}>
-                        {entry}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="listener_interval">监听频率(分钟)</Label>
-                <Select
-                  value={String(config.news_listener.interval_minutes)}
-                  onValueChange={(value: string) =>
-                    setConfig({
-                      ...config,
-                      news_listener: {
-                        ...config.news_listener,
-                        interval_minutes: Number(value),
-                      },
-                    })
-                  }
-                >
-                  <SelectTrigger id="listener_interval">
-                    <SelectValue placeholder="监听频率" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {options.listener_intervals.map((entry) => (
-                      <SelectItem key={entry} value={String(entry)}>
-                        {entry}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="listener_threshold">异动阈值(%)</Label>
-                <Select
-                  value={String(config.news_listener.move_threshold_percent)}
-                  onValueChange={(value: string) =>
-                    setConfig({
-                      ...config,
-                      news_listener: {
-                        ...config.news_listener,
-                        move_threshold_percent: Number(value),
-                      },
-                    })
-                  }
-                >
-                  <SelectTrigger id="listener_threshold">
-                    <SelectValue placeholder="异动阈值" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {options.listener_threshold_presets.map((entry) => (
-                      <SelectItem key={entry} value={String(entry)}>
-                        {entry}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Button onClick={onSave} disabled={saving}>
-                <Save className="mr-2 h-4 w-4" />
-                {saving ? "保存中..." : "保存配置"}
-              </Button>
-              <Button variant="outline" onClick={onReload}>
-                <RefreshCw className="mr-2 h-4 w-4" />
-                重载
-              </Button>
-            </div>
+          <CardContent className="text-xs text-muted-foreground">
+            CN {indicesByMarket["CN"]?.length ?? 0} / HK {indicesByMarket["HK"]?.length ?? 0} / US {indicesByMarket["US"]?.length ?? 0}
           </CardContent>
         </Card>
-
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle>报告任务</CardTitle>
-            <CardDescription>触发全局新闻/资金流采集并生成模型分析报告。</CardDescription>
+        <Card className="border-emerald-300/60 bg-gradient-to-br from-emerald-100/80 to-emerald-200/60 dark:from-emerald-950/40 dark:to-emerald-900/20">
+          <CardHeader className="pb-2">
+            <CardDescription>上涨指数</CardDescription>
+            <CardTitle className="flex items-center gap-2 text-2xl">
+              {upCount}
+              <TrendingUp className="h-5 w-5 text-emerald-500" />
+            </CardTitle>
           </CardHeader>
-          <CardContent>
-            <Button size="lg" className="w-full" onClick={onRunReport} disabled={running}>
-              <Rocket className="mr-2 h-4 w-4" />
-              {running ? "执行中..." : "立即生成报告"}
-            </Button>
-          </CardContent>
+        </Card>
+        <Card className="border-rose-300/60 bg-gradient-to-br from-rose-100/80 to-amber-100/60 dark:from-rose-950/40 dark:to-amber-950/20">
+          <CardHeader className="pb-2">
+            <CardDescription>下跌指数</CardDescription>
+            <CardTitle className="flex items-center gap-2 text-2xl">
+              {downCount}
+              <TrendingDown className="h-5 w-5 text-rose-500" />
+            </CardTitle>
+          </CardHeader>
+        </Card>
+        <Card className="border-violet-300/60 bg-gradient-to-br from-violet-100/80 to-fuchsia-100/60 dark:from-violet-950/40 dark:to-fuchsia-950/20">
+          <CardHeader className="pb-2">
+            <CardDescription>Watchlist 总数</CardDescription>
+            <CardTitle className="text-2xl">{pagination.total}</CardTitle>
+          </CardHeader>
         </Card>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>新闻来源配置（单条管理）</CardTitle>
-          <CardDescription>每条来源可单独编辑、启用/禁用、删除；新增后立即生效。</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Source ID</TableHead>
-                <TableHead>Name</TableHead>
-                <TableHead>Category</TableHead>
-                <TableHead>URL</TableHead>
-                <TableHead>Enabled</TableHead>
-                <TableHead>操作</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {sourceRows.map((row) => (
-                <TableRow key={row.source_id}>
-                  <TableCell className="font-mono text-xs">{row.source_id}</TableCell>
-                  <TableCell>
-                    <Input
-                      value={row.name}
-                      onChange={(event) =>
-                        setSourceRows((prev) =>
-                          prev.map((item) =>
-                            item.source_id === row.source_id ? { ...item, name: event.target.value } : item
-                          )
-                        )
-                      }
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <Input
-                      value={row.category}
-                      onChange={(event) =>
-                        setSourceRows((prev) =>
-                          prev.map((item) =>
-                            item.source_id === row.source_id ? { ...item, category: event.target.value } : item
-                          )
-                        )
-                      }
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <Input
-                      value={row.url}
-                      onChange={(event) =>
-                        setSourceRows((prev) =>
-                          prev.map((item) =>
-                            item.source_id === row.source_id ? { ...item, url: event.target.value } : item
-                          )
-                        )
-                      }
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <Select
-                      value={row.enabled ? "true" : "false"}
-                      onValueChange={(value: string) =>
-                        setSourceRows((prev) =>
-                          prev.map((item) =>
-                            item.source_id === row.source_id ? { ...item, enabled: value === "true" } : item
-                          )
-                        )
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="启用状态" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="true">enabled</SelectItem>
-                        <SelectItem value="false">disabled</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </TableCell>
-                  <TableCell className="space-x-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() =>
-                        void onUpdateNewsSource(row.source_id, {
-                          name: row.name,
-                          category: row.category,
-                          url: row.url,
-                          enabled: row.enabled,
-                        })
-                      }
-                    >
-                      <Save className="mr-1 h-3.5 w-3.5" />
-                      保存
-                    </Button>
-                    <Button size="sm" variant="destructive" onClick={() => void onDeleteNewsSource(row.source_id)}>
-                      <Trash2 className="mr-1 h-3.5 w-3.5" />
-                      删除
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+      {/* Market index panels grouped by market */}
+      {MARKET_META.map((meta) => {
+        const items = indicesByMarket[meta.key];
+        if (!items?.length) return null;
+        const MarketIcon = meta.icon;
+        return (
+          <Card key={meta.key} className={meta.sectionClass}>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <MarketIcon className="h-4 w-4" />
+                {meta.label}
+                <Badge variant="outline" className="ml-1 text-[10px]">
+                  {meta.labelEn}
+                </Badge>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                {items.map((item) => (
+                  <IndexCard key={`${item.symbol}-${item.market}`} item={item} />
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        );
+      })}
 
-          <div className="grid gap-3 rounded-xl border border-border/80 bg-muted/20 p-4 md:grid-cols-[1fr_160px_2fr_120px_auto]">
-            <Input placeholder="来源名称" value={newSourceName} onChange={(event) => setNewSourceName(event.target.value)} />
-            <Input
-              placeholder="分类（finance/policy）"
-              value={newSourceCategory}
-              onChange={(event) => setNewSourceCategory(event.target.value)}
-            />
-            <Input placeholder="https://..." value={newSourceUrl} onChange={(event) => setNewSourceUrl(event.target.value)} />
-            <Select value={newSourceEnabled ? "true" : "false"} onValueChange={(value) => setNewSourceEnabled(value === "true")}>
-              <SelectTrigger>
-                <SelectValue placeholder="启用状态" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="true">enabled</SelectItem>
-                <SelectItem value="false">disabled</SelectItem>
-              </SelectContent>
-            </Select>
-            <Button
-              disabled={creatingSource || !newSourceName.trim() || !newSourceCategory.trim() || !newSourceUrl.trim()}
-              onClick={async () => {
-                setCreatingSource(true);
-                try {
-                  await onCreateNewsSource({
-                    name: newSourceName.trim(),
-                    category: newSourceCategory.trim(),
-                    url: newSourceUrl.trim(),
-                    enabled: newSourceEnabled,
-                  });
-                  setNewSourceName("");
-                  setNewSourceCategory("finance");
-                  setNewSourceUrl("");
-                  setNewSourceEnabled(true);
-                } finally {
-                  setCreatingSource(false);
-                }
-              }}
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              新增来源
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Fallback for indices with unknown market */}
+      {Object.entries(indicesByMarket)
+        .filter(([key]) => !MARKET_META.some((m) => m.key === key))
+        .map(([key, items]) => (
+          <Card key={key} className="border-slate-200/60 bg-gradient-to-br from-white to-slate-50/40 dark:from-slate-900 dark:to-slate-950/20">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Gauge className="h-4 w-4" />
+                {key} 市场
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                {items.map((item) => (
+                  <IndexCard key={`${item.symbol}-${item.market}`} item={item} />
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+
+      {!indices.length ? (
+        <Card>
+          <CardContent className="py-8 text-center text-sm text-muted-foreground">
+            暂无指数配置，请前往 Config 页面配置 `dashboard.indices`。
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {/* Watchlist intraday */}
+      <WatchlistIntradayCards
+        rows={watchlistRows}
+        pagination={pagination}
+        page={page}
+        pageSize={pageSize}
+        setPage={setPage}
+        setPageSize={setPageSize}
+        isFetching={snapshotQuery.isFetching}
+        errorText={errorText}
+      />
     </div>
   );
 }

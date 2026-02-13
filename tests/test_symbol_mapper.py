@@ -16,10 +16,13 @@ class SymbolMapperTest(unittest.TestCase):
 
     def test_normalize_hk_symbol(self):
         self.assertEqual(normalize_symbol("700", "HK"), "0700.HK")
+        self.assertEqual(normalize_symbol("^HSI", "HK"), "^HSI")
+        self.assertEqual(normalize_symbol("^HSI.HK", "HK"), "^HSI")
 
     def test_yfinance_mapping(self):
         self.assertEqual(to_yfinance_symbol("600519", "CN"), "600519.SS")
         self.assertEqual(to_yfinance_symbol("430047.BJ", "CN"), "430047.BJ")
+        self.assertEqual(to_yfinance_symbol("^HSI", "HK"), "^HSI")
         self.assertEqual(to_yfinance_symbol("AAPL", "US"), "AAPL")
 
     def test_strip_market_suffix(self):

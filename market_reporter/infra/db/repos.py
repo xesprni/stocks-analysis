@@ -83,7 +83,7 @@ class WatchlistRepo:
             item.display_name = display_name
         if keywords_json is not None:
             item.keywords_json = keywords_json
-        item.updated_at = datetime.utcnow
+        item.updated_at = datetime.utcnow()
         self.session.add(item)
         self.session.flush()
         self.session.refresh(item)
@@ -210,7 +210,7 @@ class AnalysisProviderSecretRepo:
         else:
             row.key_ciphertext = ciphertext
             row.nonce = nonce
-            row.updated_at = datetime.utcnow
+            row.updated_at = datetime.utcnow()
         self.session.add(row)
         self.session.flush()
         self.session.refresh(row)
@@ -258,7 +258,7 @@ class AnalysisProviderAccountRepo:
             row.credential_ciphertext = credential_ciphertext
             row.nonce = nonce
             row.expires_at = expires_at
-            row.updated_at = datetime.utcnow
+            row.updated_at = datetime.utcnow()
         self.session.add(row)
         self.session.flush()
         self.session.refresh(row)

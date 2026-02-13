@@ -91,6 +91,15 @@ class StockAnalysisTaskManager:
                 model=payload.model,
                 interval=payload.interval,
                 lookback_bars=payload.lookback_bars,
+                question=payload.question,
+                peer_list=payload.peer_list,
+                indicators=payload.indicators,
+                news_from=payload.news_from,
+                news_to=payload.news_to,
+                filing_from=payload.filing_from,
+                filing_to=payload.filing_to,
+                timeframes=payload.timeframes,
+                indicator_profile=payload.indicator_profile,
             )
 
     async def _run_task(

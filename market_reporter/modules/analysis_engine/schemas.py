@@ -68,6 +68,17 @@ class StockAnalysisRunRequest(BaseModel):
     model: Optional[str] = None
     interval: str = Field(default="5m", pattern="^(1m|5m|1d)$")
     lookback_bars: int = Field(default=120, ge=30, le=500)
+    question: Optional[str] = None
+    peer_list: Optional[List[str]] = None
+    indicators: Optional[List[str]] = None
+    news_from: Optional[str] = None
+    news_to: Optional[str] = None
+    filing_from: Optional[str] = None
+    filing_to: Optional[str] = None
+    timeframes: Optional[List[str]] = None
+    indicator_profile: Optional[str] = Field(
+        default=None, pattern="^(balanced|trend|momentum)$"
+    )
 
 
 class StockAnalysisRunView(BaseModel):

@@ -215,6 +215,7 @@ async def delete_analysis_provider(
     config_store: ConfigStore = Depends(get_config_store),
 ) -> AppConfig:
     config = config_store.load()
+    cleanup_service = _get_analysis_service(config)
     providers = config.analysis.providers
     if not any(item.provider_id == provider_id for item in providers):
         raise HTTPException(
@@ -257,7 +258,8 @@ async def delete_analysis_provider(
     )
     saved = config_store.save(next_config)
     init_db(saved.database.url)
-    service = AnalysisService(config=saved, registry=ProviderRegistry())
-    await service.logout_provider_auth(provider_id=provider_id)
-    service.delete_secret(provider_id=provider_id)
+    # Use pre-delete provider metadata for credential cleanup. After config save,
+    # the provider no longer exists in `saved.analysis.providers`.
+    await cleanup_service.logout_provider_auth(provider_id=provider_id)
+    cleanup_service.delete_secret(provider_id=provider_id)
     return saved

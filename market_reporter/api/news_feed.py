@@ -66,7 +66,7 @@ def _disable_failed_news_sources(config: AppConfig, warnings: List[str]) -> List
             ).first()
             if row is not None:
                 row.enabled = False
-                row.updated_at = datetime.utcnow
+                row.updated_at = datetime.utcnow()
                 session.add(row)
                 disabled_ids.append(sid)
         if disabled_ids:

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import json
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
@@ -40,6 +39,8 @@ from market_reporter.modules.analysis_engine.schemas import (
     StockAnalysisHistoryItem,
     StockAnalysisRunView,
 )
+from market_reporter.modules.agent.schemas import AgentRunRequest
+from market_reporter.modules.agent.service import AgentService
 from market_reporter.modules.fund_flow.service import FundFlowService
 from market_reporter.modules.market_data.service import MarketDataService
 from market_reporter.modules.market_data.symbol_mapper import normalize_symbol
@@ -168,7 +169,7 @@ class AnalysisService:
             raise ValueError(f"Provider does not support OAuth login: {provider_id}")
 
         state = uuid4().hex
-        now = datetime.utcnow
+        now = datetime.utcnow()
         expires_at = now + timedelta(seconds=provider_cfg.login_timeout_seconds)
         with session_scope(self.config.database.url) as session:
             state_repo = AnalysisProviderAuthStateRepo(session)
@@ -215,7 +216,7 @@ class AnalysisService:
         auth_mode = self._resolve_auth_mode(provider_cfg)
         if auth_mode != "chatgpt_oauth":
             raise ValueError(f"Provider does not support OAuth login: {provider_id}")
-        now = datetime.utcnow
+        now = datetime.utcnow()
         with session_scope(self.config.database.url) as session:
             state_repo = AnalysisProviderAuthStateRepo(session)
             auth_state = state_repo.get_valid(
@@ -441,65 +442,69 @@ class AnalysisService:
         model: Optional[str] = None,
         interval: str = "5m",
         lookback_bars: int = 120,
+        question: Optional[str] = None,
+        peer_list: Optional[List[str]] = None,
+        indicators: Optional[List[str]] = None,
+        news_from: Optional[str] = None,
+        news_to: Optional[str] = None,
+        filing_from: Optional[str] = None,
+        filing_to: Optional[str] = None,
+        timeframes: Optional[List[str]] = None,
+        indicator_profile: Optional[str] = None,
     ) -> StockAnalysisRunView:
         provider_cfg, selected_model = self._select_provider_and_model(
             provider_id=provider_id, model=model
         )
-        if (
-            self.market_data_service is None
-            or self.news_service is None
-            or self.fund_flow_service is None
-        ):
+        if self.news_service is None or self.fund_flow_service is None:
             raise ValueError(
                 "AnalysisService missing runtime dependencies for stock analysis"
             )
         normalized_symbol = normalize_symbol(symbol=symbol, market=market)
 
-        quote_task = self.market_data_service.get_quote(
-            symbol=normalized_symbol, market=market
+        auth_mode = self._resolve_auth_mode(provider_cfg)
+        api_key: Optional[str] = None
+        access_token: Optional[str] = None
+        if provider_cfg.type == "codex_app_server":
+            access_token = None
+        elif auth_mode == "chatgpt_oauth":
+            access_token = self._resolve_access_token(provider_cfg=provider_cfg)
+        elif auth_mode == "api_key":
+            api_key = self._resolve_api_key(provider_cfg=provider_cfg)
+
+        agent_service = AgentService(
+            config=self.config,
+            registry=self.registry,
+            news_service=self.news_service,
+            fund_flow_service=self.fund_flow_service,
         )
-        kline_task = self.market_data_service.get_kline(
+        agent_request = AgentRunRequest(
+            mode="stock",
             symbol=normalized_symbol,
-            market=market,
-            interval=interval,
-            limit=max(lookback_bars, 200),
+            market=market.upper(),
+            question=question or "",
+            peer_list=peer_list or [],
+            indicators=indicators or [],
+            news_from=news_from,
+            news_to=news_to,
+            filing_from=filing_from,
+            filing_to=filing_to,
+            timeframes=timeframes or [],
+            indicator_profile=indicator_profile or "balanced",
         )
-        curve_task = self.market_data_service.get_curve(
-            symbol=normalized_symbol, market=market, window="1d"
+        agent_run = await agent_service.run(
+            request=agent_request,
+            provider_cfg=provider_cfg,
+            model=selected_model,
+            api_key=api_key,
+            access_token=access_token,
         )
-        news_task = self.news_service.collect(limit=min(self.config.news_limit, 50))
-        flow_task = self.fund_flow_service.collect(
-            periods=min(self.config.flow_periods, 20)
-        )
-
-        # Execute independent IO calls concurrently to minimize end-to-end latency.
-        quote, kline, curve, news_result, flow_result = await asyncio.gather(
-            quote_task,
-            kline_task,
-            curve_task,
-            news_task,
-            flow_task,
-        )
-        news_items, _ = news_result
-        flow_series, _ = flow_result
-
-        payload = AnalysisInput(
-            symbol=normalized_symbol,
-            market=market,
-            quote=quote,
-            kline=kline,
-            curve=curve,
-            news=news_items,
-            fund_flow=flow_series,
-            watch_meta={"interval": interval, "lookback_bars": lookback_bars},
-        )
-
-        output = await self._invoke_provider(
-            provider_cfg=provider_cfg, model=selected_model, payload=payload
+        payload, output = agent_service.to_analysis_payload(
+            request=agent_request,
+            run_result=agent_run,
         )
         run_id, created_at = self._save_run(
             symbol=normalized_symbol,
-            market=market,
+            market=market.upper(),
             provider_id=provider_cfg.provider_id,
             model=selected_model,
             status="SUCCESS",
@@ -510,7 +515,7 @@ class AnalysisService:
         return StockAnalysisRunView(
             id=run_id,
             symbol=normalized_symbol,
-            market=market,
+            market=market.upper(),
             provider_id=provider_cfg.provider_id,
             model=selected_model,
             status="SUCCESS",

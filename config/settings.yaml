@@ -24,16 +24,6 @@ analysis:
   default_provider: codex_app_server
   default_model: gpt-5.2
   providers:
-  - provider_id: mock
-    type: mock
-    base_url: ''
-    models:
-    - market-default
-    timeout: 5
-    enabled: true
-    auth_mode: none
-    login_callback_url: null
-    login_timeout_seconds: 600
   - provider_id: openai_compatible
     type: openai_compatible
     base_url: https://api.openai.com/v1
@@ -71,5 +61,47 @@ news_listener:
 symbol_search:
   default_provider: composite
   max_results: 20
+dashboard:
+  indices:
+  - symbol: 000001.SH
+    market: CN
+    alias: 上证指数
+  - symbol: 399001.SZ
+    market: CN
+    alias: 深证成指
+  - symbol: 399006.SZ
+    market: CN
+    alias: 创业板指
+  - symbol: 000300.SH
+    market: CN
+    alias: 沪深300
+  - symbol: ^HSI
+    market: HK
+    alias: 恒生指数
+  - symbol: ^HSCE
+    market: HK
+    alias: 国企指数
+  - symbol: ^HSTECH
+    market: HK
+    alias: 恒生科技
+  - symbol: ^GSPC
+    market: US
+    alias: S&P 500
+  - symbol: ^IXIC
+    market: US
+    alias: NASDAQ
+  - symbol: ^DJI
+    market: US
+    alias: Dow Jones
+  auto_refresh_enabled: false
+  auto_refresh_seconds: 60
+agent:
+  enabled: true
+  max_steps: 8
+  max_tool_calls: 12
+  consistency_tolerance: 0.05
+  default_news_window_days: 30
+  default_filing_window_days: 365
+  default_price_window_days: 365
 database:
   url: sqlite:///data/market_reporter.db

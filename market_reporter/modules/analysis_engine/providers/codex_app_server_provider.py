@@ -146,6 +146,26 @@ class CodexAppServerProvider:
             }
         )
 
+    async def complete_text(
+        self,
+        prompt: str,
+        model: str,
+        system_prompt: str = "",
+        access_token: Optional[str] = None,
+    ) -> str:
+        del access_token
+        status = await self.get_auth_status()
+        if not status.get("connected"):
+            raise ValueError(
+                "Codex account is not connected. Please click Connect in Providers page."
+            )
+        return await asyncio.to_thread(
+            self._run_turn_sync,
+            prompt,
+            model,
+            system_prompt,
+        )
+
     def _start_login_sync(self) -> Dict[str, object]:
         return self._request_with_fallback_sync(
             calls=[

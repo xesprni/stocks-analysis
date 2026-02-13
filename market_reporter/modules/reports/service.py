@@ -5,19 +5,18 @@ import json
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 from market_reporter.config import AppConfig
 from market_reporter.core.registry import ProviderRegistry
-from market_reporter.core.types import AnalysisOutput, FlowPoint, NewsItem
 from market_reporter.infra.http.client import HttpClient
+from market_reporter.modules.agent.schemas import AgentRunRequest
+from market_reporter.modules.agent.service import AgentService
 from market_reporter.modules.analysis_engine.service import AnalysisService
 from market_reporter.modules.fund_flow.service import FundFlowService
-from market_reporter.modules.market_data.service import MarketDataService
 from market_reporter.modules.news.service import NewsService
-from market_reporter.modules.reports.renderer import ReportRenderer
 from market_reporter.schemas import (
     ReportRunDetail,
     ReportRunSummary,
@@ -130,70 +129,136 @@ class ReportService:
         generated_at = self._now_iso8601(config.timezone)
 
         warnings: List[str] = []
+        agent_mode = (overrides.mode if overrides else "market") or "market"
+        news_total = 0
+        provider_id = ""
+        model = ""
+        analysis_payload: Dict[str, object] = {}
+        markdown = ""
         async with HttpClient(
             timeout_seconds=config.request_timeout_seconds,
             user_agent=config.user_agent,
         ) as client:
             registry = ProviderRegistry()
-            # Build module services within one client lifecycle for consistent networking settings.
             news_service = NewsService(config=config, client=client, registry=registry)
             fund_flow_service = FundFlowService(
                 config=config, client=client, registry=registry
             )
-            market_data_service = MarketDataService(config=config, registry=registry)
             analysis_service = AnalysisService(
                 config=config,
                 registry=registry,
-                market_data_service=market_data_service,
                 news_service=news_service,
                 fund_flow_service=fund_flow_service,
             )
-
-            news_items, news_warnings = await news_service.collect(
-                limit=config.news_limit
-            )
-            flow_series, flow_warnings = await fund_flow_service.collect(
-                periods=config.flow_periods
-            )
-            warnings.extend(news_warnings)
-            warnings.extend(flow_warnings)
-
             try:
-                (
-                    analysis_output,
-                    provider_id,
-                    model,
-                ) = await analysis_service.analyze_market_overview(
-                    news_items=news_items,
-                    flow_series=flow_series,
+                provider_cfg, selected_model = (
+                    analysis_service._select_provider_and_model(
+                        provider_id=None,
+                        model=None,
+                    )
                 )
-            except Exception as exc:
-                # Report generation should still succeed with a local fallback analysis block.
-                warnings.append(
-                    f"Analysis provider failed, fallback to local summary: {exc}"
-                )
-                provider_id = "fallback-local"
-                model = "n/a"
-                analysis_output = AnalysisOutput(
-                    summary="模型分析不可用，已回退到本地占位总结。",
-                    sentiment="neutral",
-                    key_levels=[],
-                    risks=["分析引擎不可用"],
-                    action_items=["检查 provider 配置与 API Key"],
-                    confidence=0.3,
-                    markdown="- 模型分析暂不可用，请检查 Provider 配置。",
-                    raw={"error": str(exc)},
-                )
+                provider_id = provider_cfg.provider_id
+                model = selected_model
 
-        markdown = ReportRenderer().render_markdown(
-            generated_at=generated_at,
-            analysis_output=analysis_output,
-            news_items=news_items,
-            flow_series=flow_series,
-            warnings=warnings,
-            provider_id=provider_id,
-            model=model,
-        )
+                auth_mode = analysis_service._resolve_auth_mode(provider_cfg)
+                api_key: Optional[str] = None
+                access_token: Optional[str] = None
+                if provider_cfg.type == "codex_app_server":
+                    access_token = None
+                elif auth_mode == "chatgpt_oauth":
+                    access_token = analysis_service._resolve_access_token(
+                        provider_cfg=provider_cfg
+                    )
+                elif auth_mode == "api_key":
+                    api_key = analysis_service._resolve_api_key(
+                        provider_cfg=provider_cfg
+                    )
+
+                agent_service = AgentService(
+                    config=config,
+                    registry=registry,
+                    news_service=news_service,
+                    fund_flow_service=fund_flow_service,
+                )
+                symbol = overrides.symbol if overrides else None
+                market = overrides.market if overrides else None
+                if agent_mode == "stock" and (not symbol or not market):
+                    raise ValueError("Stock report mode requires symbol and market.")
+                agent_request = AgentRunRequest(
+                    mode="stock" if agent_mode == "stock" else "market",
+                    symbol=symbol,
+                    market=market,
+                    question=(
+                        overrides.question if overrides and overrides.question else ""
+                    ),
+                    peer_list=overrides.peer_list or [] if overrides else [],
+                )
+                agent_run = await agent_service.run(
+                    request=agent_request,
+                    provider_cfg=provider_cfg,
+                    model=selected_model,
+                    api_key=api_key,
+                    access_token=access_token,
+                )
+                _, analysis_output = agent_service.to_analysis_payload(
+                    request=agent_request,
+                    run_result=agent_run,
+                )
+                markdown = analysis_output.markdown
+                analysis_payload = analysis_output.model_dump(mode="json")
+
+                tool_results = agent_run.analysis_input.get("tool_results", {})
+                if isinstance(tool_results, dict):
+                    news_payload = tool_results.get("search_news")
+                    if isinstance(news_payload, dict):
+                        items = news_payload.get("items")
+                        if isinstance(items, list):
+                            news_total = len(items)
+                    for payload in tool_results.values():
+                        if not isinstance(payload, dict):
+                            continue
+                        row_warnings = payload.get("warnings")
+                        if not isinstance(row_warnings, list):
+                            continue
+                        for row in row_warnings:
+                            warnings.append(str(row))
+                for issue in agent_run.guardrail_issues:
+                    warnings.append(f"guardrail[{issue.code}]: {issue.message}")
+                analysis_payload["agent"] = {
+                    "final_report": agent_run.final_report.model_dump(mode="json"),
+                    "tool_calls": [
+                        item.model_dump(mode="json") for item in agent_run.tool_calls
+                    ],
+                    "evidence_map": [
+                        item.model_dump(mode="json") for item in agent_run.evidence_map
+                    ],
+                    "guardrail_issues": [
+                        item.model_dump(mode="json")
+                        for item in agent_run.guardrail_issues
+                    ],
+                    "analysis_input": agent_run.analysis_input,
+                    "runtime_draft": agent_run.runtime_draft.model_dump(mode="json"),
+                }
+            except Exception as exc:
+                provider_id = provider_id or "fallback-local"
+                model = model or "n/a"
+                warnings.append(f"agent_report_fallback: {exc}")
+                markdown = (
+                    "# Agent 分析报告\n\n"
+                    "- 模式: fallback\n"
+                    f"- 生成时间: {generated_at}\n\n"
+                    "模型执行失败，已生成降级占位报告。\n"
+                )
+                analysis_payload = {
+                    "summary": "模型执行失败，报告已降级。",
+                    "sentiment": "neutral",
+                    "key_levels": [],
+                    "risks": ["agent runtime unavailable"],
+                    "action_items": ["检查 provider 配置和鉴权状态"],
+                    "confidence": 0.2,
+                    "markdown": markdown,
+                    "raw": {"error": str(exc)},
+                }
 
         run_dir = self._build_run_dir(output_root=config.output_root)
         report_path = run_dir / "report.md"
@@ -204,16 +269,13 @@ class ReportService:
 
         raw_payload = {
             "generated_at": generated_at,
+            "mode": agent_mode,
             "provider_id": provider_id,
             "model": model,
-            "analysis": analysis_output.model_dump(mode="json"),
-            "news_items": [item.model_dump(mode="json") for item in news_items],
-            "flow_series": {
-                key: [row.model_dump(mode="json") for row in rows]
-                for key, rows in flow_series.items()
-            },
+            "analysis": analysis_payload,
             "warnings": warnings,
         }
+        summary_fields = self._extract_summary_fields(raw_payload)
         # Persist raw inputs/outputs for reproducibility and debugging.
         raw_path.write_text(
             json.dumps(raw_payload, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -225,9 +287,12 @@ class ReportService:
             report_path=report_path.resolve(),
             raw_data_path=raw_path.resolve(),
             warnings_count=len(warnings),
-            news_total=len(news_items),
+            news_total=news_total,
             provider_id=provider_id,
             model=model,
+            confidence=summary_fields["confidence"],
+            sentiment=summary_fields["sentiment"],
+            mode=summary_fields["mode"],
         )
         meta_path.write_text(
             json.dumps(
@@ -338,10 +403,27 @@ class ReportService:
 
     def _read_summary(self, run_dir: Path) -> Optional[ReportRunSummary]:
         meta_path = run_dir / "meta.json"
+        raw_payload = self._read_raw_payload(run_dir)
+        fallback_fields = self._extract_summary_fields(raw_payload)
         if meta_path.exists():
             payload = json.loads(meta_path.read_text(encoding="utf-8"))
             summary_data = payload.get("summary")
             if isinstance(summary_data, dict):
+                if (
+                    summary_data.get("confidence") is None
+                    and fallback_fields["confidence"] is not None
+                ):
+                    summary_data["confidence"] = fallback_fields["confidence"]
+                if (
+                    summary_data.get("sentiment") is None
+                    and fallback_fields["sentiment"] is not None
+                ):
+                    summary_data["sentiment"] = fallback_fields["sentiment"]
+                if (
+                    summary_data.get("mode") is None
+                    and fallback_fields["mode"] is not None
+                ):
+                    summary_data["mode"] = fallback_fields["mode"]
                 return ReportRunSummary.model_validate(summary_data)
 
         report_path = run_dir / "report.md"
@@ -358,7 +440,52 @@ class ReportService:
             news_total=0,
             provider_id="",
             model="",
+            confidence=fallback_fields["confidence"],
+            sentiment=fallback_fields["sentiment"],
+            mode=fallback_fields["mode"],
         )
+
+    @staticmethod
+    def _read_raw_payload(run_dir: Path) -> Dict[str, Any]:
+        raw_path = run_dir / "raw_data.json"
+        if not raw_path.exists():
+            return {}
+        try:
+            payload = json.loads(raw_path.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+        return payload if isinstance(payload, dict) else {}
+
+    @classmethod
+    def _extract_summary_fields(
+        cls, raw_payload: Dict[str, Any]
+    ) -> Dict[str, Optional[Any]]:
+        analysis = raw_payload.get("analysis")
+        analysis_dict = analysis if isinstance(analysis, dict) else {}
+        return {
+            "confidence": cls._coerce_float(analysis_dict.get("confidence")),
+            "sentiment": cls._coerce_text(analysis_dict.get("sentiment")),
+            "mode": cls._coerce_text(raw_payload.get("mode")),
+        }
+
+    @staticmethod
+    def _coerce_float(value: Any) -> Optional[float]:
+        if value is None:
+            return None
+        try:
+            result = float(value)
+        except (TypeError, ValueError):
+            return None
+        if result != result:  # NaN guard
+            return None
+        return result
+
+    @staticmethod
+    def _coerce_text(value: Any) -> Optional[str]:
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
 
     @staticmethod
     def _run_id_to_generated_at(run_id: str) -> str:

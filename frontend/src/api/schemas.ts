@@ -58,6 +58,26 @@ export const appConfigSchema = z.object({
     default_provider: z.string(),
     max_results: z.number(),
   }),
+  dashboard: z.object({
+    indices: z.array(
+      z.object({
+        symbol: z.string(),
+        market: z.string(),
+        alias: z.string().nullable().optional(),
+      })
+    ),
+    auto_refresh_enabled: z.boolean(),
+    auto_refresh_seconds: z.number(),
+  }),
+  agent: z.object({
+    enabled: z.boolean(),
+    max_steps: z.number(),
+    max_tool_calls: z.number(),
+    consistency_tolerance: z.number(),
+    default_news_window_days: z.number(),
+    default_filing_window_days: z.number(),
+    default_price_window_days: z.number(),
+  }),
   database: z.object({ url: z.string() }),
 });
 
@@ -182,6 +202,56 @@ export const curvePointSchema = z.object({
   source: z.string(),
 });
 
+export const paginationSchema = z.object({
+  page: z.number(),
+  page_size: z.number(),
+  total: z.number(),
+  total_pages: z.number(),
+});
+
+export const dashboardIndexMetricSchema = z.object({
+  symbol: z.string(),
+  market: z.string(),
+  alias: z.string().nullable().optional(),
+  ts: z.string(),
+  price: z.number(),
+  change: z.number().nullable().optional(),
+  change_percent: z.number().nullable().optional(),
+  volume: z.number().nullable().optional(),
+  currency: z.string(),
+  source: z.string(),
+});
+
+export const dashboardWatchlistMetricSchema = z.object({
+  id: z.number(),
+  symbol: z.string(),
+  market: z.string(),
+  alias: z.string().nullable().optional(),
+  display_name: z.string().nullable().optional(),
+  enabled: z.boolean(),
+  ts: z.string(),
+  price: z.number(),
+  change: z.number().nullable().optional(),
+  change_percent: z.number().nullable().optional(),
+  volume: z.number().nullable().optional(),
+  currency: z.string(),
+  source: z.string(),
+});
+
+export const dashboardSnapshotSchema = z.object({
+  generated_at: z.string(),
+  auto_refresh_enabled: z.boolean(),
+  auto_refresh_seconds: z.number(),
+  indices: z.array(dashboardIndexMetricSchema),
+  watchlist: z.array(dashboardWatchlistMetricSchema),
+  pagination: paginationSchema,
+});
+
+export const dashboardAutoRefreshSchema = z.object({
+  auto_refresh_enabled: z.boolean(),
+  auto_refresh_seconds: z.number(),
+});
+
 export const analysisProviderViewSchema = z.object({
   provider_id: z.string(),
   type: z.string(),
@@ -231,6 +301,9 @@ export const reportSummarySchema = z.object({
   news_total: z.number(),
   provider_id: z.string(),
   model: z.string(),
+  confidence: z.number().nullable().optional(),
+  sentiment: z.string().nullable().optional(),
+  mode: z.string().nullable().optional(),
 });
 
 export const reportDetailSchema = z.object({
@@ -299,6 +372,11 @@ export type WatchlistItem = z.infer<typeof watchlistItemSchema>;
 export type Quote = z.infer<typeof quoteSchema>;
 export type KLineBar = z.infer<typeof klineSchema>;
 export type CurvePoint = z.infer<typeof curvePointSchema>;
+export type Pagination = z.infer<typeof paginationSchema>;
+export type DashboardIndexMetric = z.infer<typeof dashboardIndexMetricSchema>;
+export type DashboardWatchlistMetric = z.infer<typeof dashboardWatchlistMetricSchema>;
+export type DashboardSnapshot = z.infer<typeof dashboardSnapshotSchema>;
+export type DashboardAutoRefresh = z.infer<typeof dashboardAutoRefreshSchema>;
 export type AnalysisProviderView = z.infer<typeof analysisProviderViewSchema>;
 export type ReportSummary = z.infer<typeof reportSummarySchema>;
 export type ReportDetail = z.infer<typeof reportDetailSchema>;

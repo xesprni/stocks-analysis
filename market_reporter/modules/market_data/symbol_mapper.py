@@ -8,11 +8,18 @@ def normalize_symbol(symbol: str, market: str) -> str:
         # US symbols are mostly consumed as-is.
         return raw
     if market == "HK":
-        # HK keeps 4-digit codes and .HK suffix.
+        # Keep Yahoo-style HK index tickers unchanged, for example "^HSI".
+        if raw.startswith("^"):
+            return raw[:-3] if raw.endswith(".HK") else raw
+        # HK equities keep 4-digit codes and .HK suffix.
         code = raw[:-3] if raw.endswith(".HK") else raw.split(".")[0]
-        code = code.zfill(4)
-        return f"{code}.HK"
+        if code.isdigit():
+            return f"{code.zfill(4)}.HK"
+        return raw
     if market == "CN":
+        # Keep Yahoo-style index tickers unchanged.
+        if raw.startswith("^"):
+            return raw
         # Normalize CN suffixes to .SH/.SZ/.BJ for internal consistency.
         if raw.endswith(".SS"):
             raw = raw[:-3] + ".SH"

@@ -5,9 +5,11 @@ from __future__ import annotations
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 
 from market_reporter.api.deps import get_config_store
 from market_reporter.core.registry import ProviderRegistry
+from market_reporter.core.types import Quote
 from market_reporter.infra.db.session import init_db
 from market_reporter.modules.market_data.service import MarketDataService
 from market_reporter.modules.symbol_search.schemas import StockSearchResult
@@ -15,6 +17,15 @@ from market_reporter.modules.symbol_search.service import SymbolSearchService
 from market_reporter.services.config_store import ConfigStore
 
 router = APIRouter(prefix="/api", tags=["stocks"])
+
+
+class QuoteBatchItemRequest(BaseModel):
+    symbol: str = Field(min_length=1)
+    market: str = Field(pattern="^(CN|HK|US)$")
+
+
+class QuoteBatchRequest(BaseModel):
+    items: List[QuoteBatchItemRequest] = Field(min_length=1, max_length=100)
 
 
 @router.get("/stocks/search", response_model=List[StockSearchResult])
@@ -46,6 +57,20 @@ async def stock_quote(
         return await service.get_quote(symbol=symbol, market=market)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/stocks/quotes", response_model=List[Quote])
+async def stock_quotes_batch(
+    payload: QuoteBatchRequest,
+    config_store: ConfigStore = Depends(get_config_store),
+) -> List[Quote]:
+    config = config_store.load()
+    init_db(config.database.url)
+    service = MarketDataService(config=config, registry=ProviderRegistry())
+    return [
+        await service.get_quote(symbol=item.symbol, market=item.market)
+        for item in payload.items
+    ]
 
 
 @router.get("/stocks/{symbol}/kline")

@@ -42,7 +42,7 @@ def seed_news_sources(database_url: str, sources: List[NewsSource]) -> None:
         existing = session.exec(select(NewsSourceTable).limit(1)).first()
         if existing is not None:
             return
-        now = datetime.utcnow
+        now = datetime.utcnow()
         for source in sources:
             row = NewsSourceTable(
                 source_id=source.source_id or "",

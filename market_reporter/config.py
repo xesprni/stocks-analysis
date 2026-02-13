@@ -93,6 +93,34 @@ class SymbolSearchConfig(BaseModel):
     max_results: int = Field(default=20, ge=5, le=100)
 
 
+class DashboardIndexConfig(BaseModel):
+    symbol: str
+    market: str = Field(default="US", pattern="^(CN|HK|US)$")
+    alias: Optional[str] = None
+
+
+class DashboardConfig(BaseModel):
+    indices: List[DashboardIndexConfig] = Field(
+        default_factory=lambda: [
+            DashboardIndexConfig(symbol="^GSPC", market="US", alias="S&P 500"),
+            DashboardIndexConfig(symbol="^IXIC", market="US", alias="NASDAQ"),
+            DashboardIndexConfig(symbol="^DJI", market="US", alias="Dow Jones"),
+        ]
+    )
+    auto_refresh_enabled: bool = True
+    auto_refresh_seconds: int = Field(default=15, ge=3, le=300)
+
+
+class AgentConfig(BaseModel):
+    enabled: bool = True
+    max_steps: int = Field(default=8, ge=1, le=30)
+    max_tool_calls: int = Field(default=12, ge=1, le=50)
+    consistency_tolerance: float = Field(default=0.05, ge=0.0, le=1.0)
+    default_news_window_days: int = Field(default=30, ge=1, le=3650)
+    default_filing_window_days: int = Field(default=365, ge=1, le=3650)
+    default_price_window_days: int = Field(default=365, ge=1, le=3650)
+
+
 class DatabaseConfig(BaseModel):
     url: str = "sqlite:///data/market_reporter.db"
 
@@ -212,6 +240,8 @@ class AppConfig(BaseModel):
     watchlist: WatchlistConfig = Field(default_factory=WatchlistConfig)
     news_listener: NewsListenerConfig = Field(default_factory=NewsListenerConfig)
     symbol_search: SymbolSearchConfig = Field(default_factory=SymbolSearchConfig)
+    dashboard: DashboardConfig = Field(default_factory=DashboardConfig)
+    agent: AgentConfig = Field(default_factory=AgentConfig)
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
 
     def ensure_output_root(self) -> Path:

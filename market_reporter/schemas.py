@@ -19,6 +19,9 @@ class ReportRunSummary(BaseModel):
     news_total: int = 0
     provider_id: str = ""
     model: str = ""
+    confidence: Optional[float] = None
+    sentiment: Optional[str] = None
+    mode: Optional[str] = None
 
 
 class ReportRunDetail(BaseModel):
@@ -33,6 +36,11 @@ class RunRequest(BaseModel):
     timezone: Optional[str] = None
     provider_id: Optional[str] = None
     model: Optional[str] = None
+    mode: str = Field(default="market", pattern="^(market|stock)$")
+    symbol: Optional[str] = None
+    market: Optional[str] = Field(default=None, pattern="^(CN|HK|US)$")
+    question: Optional[str] = None
+    peer_list: Optional[List[str]] = None
 
 
 class RunResult(BaseModel):
@@ -69,6 +77,8 @@ class ConfigUpdateRequest(BaseModel):
     watchlist: Dict[str, Any]
     news_listener: Optional[Dict[str, Any]] = None
     symbol_search: Optional[Dict[str, Any]] = None
+    dashboard: Optional[Dict[str, Any]] = None
+    agent: Optional[Dict[str, Any]] = None
     database: Dict[str, Any]
 
     def to_config(self, current: AppConfig) -> AppConfig:
@@ -89,6 +99,10 @@ class ConfigUpdateRequest(BaseModel):
             patch_data["news_listener"] = self.news_listener
         if self.symbol_search is not None:
             patch_data["symbol_search"] = self.symbol_search
+        if self.dashboard is not None:
+            patch_data["dashboard"] = self.dashboard
+        if self.agent is not None:
+            patch_data["agent"] = self.agent
         payload.update(patch_data)
         return AppConfig.model_validate(payload)
 

@@ -9,7 +9,7 @@ from market_reporter.services.config_store import ConfigStore
 
 
 class ConfigStoreAnalysisDefaultsTest(unittest.TestCase):
-    def test_load_backfills_missing_default_analysis_providers(self) -> None:
+    def test_load_keeps_explicit_provider_subset(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             config_path = root / "config" / "settings.yaml"
@@ -41,13 +41,36 @@ class ConfigStoreAnalysisDefaultsTest(unittest.TestCase):
 
             provider_ids = [item.provider_id for item in loaded.analysis.providers]
             self.assertIn("mock", provider_ids)
-            self.assertIn("openai_compatible", provider_ids)
-            self.assertIn("codex_app_server", provider_ids)
+            self.assertNotIn("openai_compatible", provider_ids)
+            self.assertNotIn("codex_app_server", provider_ids)
             self.assertTrue(all(item.auth_mode for item in loaded.analysis.providers))
 
             persisted = yaml.safe_load(config_path.read_text(encoding="utf-8"))
             persisted_ids = [item["provider_id"] for item in persisted["analysis"]["providers"]]
-            self.assertIn("codex_app_server", persisted_ids)
+            self.assertEqual(persisted_ids, ["mock"])
+
+    def test_load_backfills_defaults_when_analysis_providers_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            config_path = root / "config" / "settings.yaml"
+            config_path.parent.mkdir(parents=True, exist_ok=True)
+
+            payload = default_app_config().model_dump(mode="json")
+            payload["analysis"] = {
+                "default_provider": "mock",
+                "default_model": "market-default",
+            }
+            config_path.write_text(
+                yaml.safe_dump(payload, allow_unicode=True, sort_keys=False),
+                encoding="utf-8",
+            )
+
+            store = ConfigStore(config_path=config_path)
+            loaded = store.load()
+            provider_ids = [item.provider_id for item in loaded.analysis.providers]
+            self.assertIn("mock", provider_ids)
+            self.assertIn("openai_compatible", provider_ids)
+            self.assertIn("codex_app_server", provider_ids)
 
     def test_load_switches_default_provider_when_disabled(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

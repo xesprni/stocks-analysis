@@ -19,6 +19,7 @@ export function useAppMutations(
     onSuccess: async (nextConfig) => {
       setConfigDraft(nextConfig);
       await queryClient.invalidateQueries({ queryKey: ["config"] });
+      await queryClient.invalidateQueries({ queryKey: ["dashboard-snapshot"] });
       setErrorMessage("");
       notifier.success("配置已保存");
     },
@@ -30,13 +31,14 @@ export function useAppMutations(
   });
 
   const runReportMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (reportPayload: Record<string, unknown>) => {
       const task = await api.runReportAsync({
         news_limit: configDraft.news_limit,
         flow_periods: configDraft.flow_periods,
         timezone: configDraft.timezone,
         provider_id: configDraft.analysis.default_provider,
         model: configDraft.analysis.default_model,
+        ...reportPayload,
       });
 
       const deadline = Date.now() + 15 * 60 * 1000;

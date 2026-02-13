@@ -24,6 +24,7 @@ except ModuleNotFoundError:  # pragma: no cover - optional runtime dependency gu
 from market_reporter.api import (
     analysis,
     config,
+    dashboard,
     health,
     news_feed,
     news_listener,
@@ -100,6 +101,7 @@ def create_app() -> FastAPI:
     # ---------- routers ------------------------------------------------------
     app.include_router(health.router)
     app.include_router(config.router)
+    app.include_router(dashboard.router)
     app.include_router(news_sources.router)
     app.include_router(news_feed.router)
     app.include_router(reports.router)

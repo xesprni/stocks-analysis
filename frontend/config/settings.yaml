@@ -71,26 +71,26 @@ news_listener:
 symbol_search:
   default_provider: composite
   max_results: 20
+dashboard:
+  indices:
+  - symbol: ^GSPC
+    market: US
+    alias: S&P 500
+  - symbol: ^IXIC
+    market: US
+    alias: NASDAQ
+  - symbol: ^DJI
+    market: US
+    alias: Dow Jones
+  auto_refresh_enabled: true
+  auto_refresh_seconds: 15
+agent:
+  enabled: true
+  max_steps: 8
+  max_tool_calls: 12
+  consistency_tolerance: 0.05
+  default_news_window_days: 30
+  default_filing_window_days: 365
+  default_price_window_days: 365
 database:
   url: sqlite:///data/market_reporter.db
-news_sources:
-- source_id: yahoo-finance-top-stories
-  name: Yahoo Finance Top Stories
-  category: finance
-  url: https://finance.yahoo.com/news/rssindex
-  enabled: true
-- source_id: reuters-business
-  name: Reuters Business
-  category: finance
-  url: https://feeds.reuters.com/reuters/businessNews
-  enabled: false
-- source_id: federal-reserve-monetary-policy
-  name: Federal Reserve Monetary Policy
-  category: policy
-  url: https://www.federalreserve.gov/feeds/press_monetary.xml
-  enabled: true
-- source_id: us-treasury-press-release
-  name: US Treasury Press Release
-  category: policy
-  url: https://home.treasury.gov/news/press-releases/feed
-  enabled: false

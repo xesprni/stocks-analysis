@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { KeyRound, LogIn, LogOut, Save, Trash2 } from "lucide-react";
+import { KeyRound, Layers, LogIn, LogOut, Save, Settings2, Trash2 } from "lucide-react";
 
 import type { AnalysisProviderConfig, AnalysisProviderView } from "@/api/client";
 import { Badge } from "@/components/ui/badge";
@@ -183,9 +183,13 @@ export function ProvidersPage({
 
   return (
     <div className="grid gap-6 lg:grid-cols-5">
-      <Card className="lg:col-span-2">
+      {/* Default model + config */}
+      <Card className="border-indigo-200/60 bg-gradient-to-br from-white to-indigo-50/40 dark:from-slate-900 dark:to-indigo-950/20 lg:col-span-2">
         <CardHeader>
-          <CardTitle>默认分析模型</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <Settings2 className="h-4 w-4 text-indigo-600" />
+            默认分析模型
+          </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="space-y-2">
@@ -229,12 +233,16 @@ export function ProvidersPage({
               </SelectContent>
             </Select>
           </div>
-          <Button className="w-full" disabled={!canSetDefault} onClick={() => void onSetDefault(providerId, model)}>
+          <Button
+            className="w-full bg-gradient-to-r from-indigo-600 to-violet-600 text-white hover:from-indigo-700 hover:to-violet-700"
+            disabled={!canSetDefault}
+            onClick={() => void onSetDefault(providerId, model)}
+          >
             <Save className="mr-2 h-4 w-4" />
             更新默认 Provider/Model
           </Button>
           {selected ? (
-            <div className="rounded-md border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
+            <div className="rounded-lg border border-indigo-200/50 bg-indigo-50/30 p-3 text-xs text-muted-foreground dark:border-indigo-800/30 dark:bg-indigo-950/20">
               <div className="flex flex-wrap items-center gap-2">
                 <span>状态:</span>
                 <Badge variant={selectedStatusVariant}>{selected.status}</Badge>
@@ -307,8 +315,11 @@ export function ProvidersPage({
           </Button>
 
           {selectedProviderConfig ? (
-            <div className="space-y-3 rounded-md border border-border bg-muted/30 p-3">
-              <div className="text-sm font-medium">Provider 配置</div>
+            <div className="space-y-3 rounded-lg border border-indigo-200/50 bg-indigo-50/30 p-3 dark:border-indigo-800/30 dark:bg-indigo-950/20">
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <Settings2 className="h-3.5 w-3.5 text-indigo-500" />
+                Provider 配置
+              </div>
               <div className="grid gap-3 md:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="provider_enabled">启用状态</Label>
@@ -349,7 +360,7 @@ export function ProvidersPage({
                 </div>
               ) : null}
               {selectedProviderConfig?.type === "codex_app_server" ? (
-                <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                <div className="rounded-lg border border-indigo-200/40 bg-indigo-50/20 px-3 py-2 text-xs text-muted-foreground dark:border-indigo-800/30 dark:bg-indigo-950/10">
                   codex_app_server 使用本机官方 Codex app-server，无需配置 Base URL。
                 </div>
               ) : null}
@@ -438,51 +449,64 @@ export function ProvidersPage({
         </CardContent>
       </Card>
 
-      <Card className="lg:col-span-3">
+      {/* Provider list */}
+      <Card className="border-violet-200/60 bg-gradient-to-br from-white to-violet-50/40 dark:from-slate-900 dark:to-violet-950/20 lg:col-span-3">
         <CardHeader>
-          <CardTitle>Provider 列表</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <Layers className="h-4 w-4 text-violet-600" />
+            Provider 列表
+            <Badge variant="outline" className="ml-1 text-xs">
+              {orderedProviders.length} 个
+            </Badge>
+          </CardTitle>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Provider</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Models</TableHead>
-                <TableHead>Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {orderedProviders.map((provider) => (
-                <TableRow key={provider.provider_id}>
-                  <TableCell>{provider.provider_id}</TableCell>
-                  <TableCell>{provider.type}</TableCell>
-                  <TableCell>{provider.models.join(", ")}</TableCell>
-                  <TableCell className="space-x-1">
-                    <Badge variant={provider.enabled ? "default" : "outline"}>
-                      {provider.enabled ? "enabled" : "disabled"}
-                    </Badge>
-                    <Badge
-                      variant={provider.ready ? "secondary" : provider.status === "disabled" ? "outline" : "destructive"}
-                    >
-                      {provider.status}
-                    </Badge>
-                    <Badge variant={provider.secret_required ? (provider.has_secret ? "secondary" : "outline") : "outline"}>
-                      {provider.secret_required ? (provider.has_secret ? "secret-ready" : "missing-secret") : "not-required"}
-                    </Badge>
-                    {provider.auth_mode === "chatgpt_oauth" ? (
-                      <Badge variant={provider.connected ? "secondary" : "outline"}>
-                        {provider.connected ? "connected" : "disconnected"}
-                      </Badge>
-                    ) : null}
-                    {provider.is_default ? <Badge variant="default">default</Badge> : null}
-                  </TableCell>
+          <div className="overflow-x-auto rounded-lg border border-violet-200/40 dark:border-violet-800/30">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-violet-50/50 dark:bg-violet-950/20">
+                  <TableHead>Provider</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Models</TableHead>
+                  <TableHead>Status</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {orderedProviders.map((provider) => (
+                  <TableRow key={provider.provider_id} className="hover:bg-violet-50/30 dark:hover:bg-violet-950/10">
+                    <TableCell className="font-medium">{provider.provider_id}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline">{provider.type}</Badge>
+                    </TableCell>
+                    <TableCell className="max-w-[200px] truncate text-xs text-muted-foreground">
+                      {provider.models.join(", ")}
+                    </TableCell>
+                    <TableCell className="space-x-1">
+                      <Badge variant={provider.enabled ? "default" : "outline"}>
+                        {provider.enabled ? "enabled" : "disabled"}
+                      </Badge>
+                      <Badge
+                        variant={provider.ready ? "secondary" : provider.status === "disabled" ? "outline" : "destructive"}
+                      >
+                        {provider.status}
+                      </Badge>
+                      <Badge variant={provider.secret_required ? (provider.has_secret ? "secondary" : "outline") : "outline"}>
+                        {provider.secret_required ? (provider.has_secret ? "secret-ready" : "missing-secret") : "not-required"}
+                      </Badge>
+                      {provider.auth_mode === "chatgpt_oauth" ? (
+                        <Badge variant={provider.connected ? "secondary" : "outline"}>
+                          {provider.connected ? "connected" : "disconnected"}
+                        </Badge>
+                      ) : null}
+                      {provider.is_default ? <Badge variant="default">default</Badge> : null}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
           {selected ? (
-            <div className="mt-4 text-sm text-muted-foreground">
+            <div className="mt-4 rounded-lg border border-violet-200/40 bg-violet-50/20 px-3 py-2 text-sm text-muted-foreground dark:border-violet-800/30 dark:bg-violet-950/10">
               当前选中：{selected.provider_id} ({selected.type})
             </div>
           ) : null}

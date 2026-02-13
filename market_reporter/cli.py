@@ -71,15 +71,28 @@ def run(
     timezone: Optional[str] = typer.Option(None, help="Override timezone for this run."),
     provider_id: Optional[str] = typer.Option(None, help="Override analysis provider id."),
     model: Optional[str] = typer.Option(None, help="Override analysis model."),
+    mode: str = typer.Option("market", help="Report mode: market|stock."),
+    symbol: Optional[str] = typer.Option(None, help="Symbol for stock report mode."),
+    market: Optional[str] = typer.Option(None, help="Market for stock report mode (CN/HK/US)."),
+    question: Optional[str] = typer.Option(None, help="Optional custom analysis question."),
+    peer_list: Optional[str] = typer.Option(None, help="Optional peer list, comma separated."),
 ) -> None:
     store = _store()
     service = ReportService(config_store=store)
+    peers = None
+    if peer_list:
+        peers = [item.strip() for item in peer_list.split(",") if item.strip()]
     payload = RunRequest(
         news_limit=news_limit,
         flow_periods=flow_periods,
         timezone=timezone,
         provider_id=provider_id,
         model=model,
+        mode=mode,
+        symbol=symbol,
+        market=market,
+        question=question,
+        peer_list=peers,
     )
     result = asyncio.run(service.run_report(overrides=payload))
 

@@ -52,7 +52,7 @@ class NewsListenerService:
         async with self._run_lock:
             if self.news_service is None:
                 raise ValueError("News listener is missing news service dependency")
-            started_at = datetime.utcnow
+            started_at = datetime.utcnow()
             error_messages: List[str] = []
             status = "SUCCESS"
             scanned_news_count = 0
@@ -78,7 +78,7 @@ class NewsListenerService:
 
             # LLM analysis is best-effort; fallback summaries are generated when providers fail.
             analysis_results = await self._run_analysis(alerts=alerts, errors=error_messages)
-            finished_at = datetime.utcnow
+            finished_at = datetime.utcnow()
 
             with session_scope(self.config.database.url) as session:
                 run_repo = NewsListenerRunRepo(session)

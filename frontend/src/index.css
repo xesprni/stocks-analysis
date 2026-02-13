@@ -87,3 +87,337 @@ html.dark ::selection {
   background: rgba(255, 255, 255, 0.2);
   color: #fff;
 }
+
+@layer components {
+  .watchlist-panel {
+    position: relative;
+    border: 1px solid rgba(30, 64, 175, 0.24);
+    border-radius: 1.25rem;
+    padding: 1rem;
+    background:
+      radial-gradient(circle at 10% 10%, rgba(14, 165, 233, 0.12), transparent 35%),
+      radial-gradient(circle at 92% 8%, rgba(16, 185, 129, 0.1), transparent 30%),
+      linear-gradient(180deg, rgba(248, 252, 255, 0.92), rgba(240, 246, 255, 0.9));
+    box-shadow: 0 22px 40px -28px rgba(15, 23, 42, 0.5);
+  }
+
+  .dark .watchlist-panel {
+    border-color: rgba(56, 189, 248, 0.2);
+    background:
+      radial-gradient(circle at 8% 8%, rgba(6, 182, 212, 0.18), transparent 30%),
+      radial-gradient(circle at 92% 8%, rgba(45, 212, 191, 0.12), transparent 26%),
+      linear-gradient(180deg, rgba(10, 17, 32, 0.86), rgba(8, 12, 22, 0.92));
+    box-shadow:
+      inset 0 0 0 1px rgba(71, 85, 105, 0.25),
+      0 24px 48px -28px rgba(0, 0, 0, 0.9);
+  }
+
+  .watchlist-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+
+  .watchlist-panel-title {
+    font-size: 0.98rem;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+  }
+
+  .watchlist-error-card {
+    border-color: rgba(239, 68, 68, 0.45);
+    background: rgba(239, 68, 68, 0.08);
+  }
+
+  .dark .watchlist-error-card {
+    border-color: rgba(251, 113, 133, 0.45);
+    background: rgba(127, 29, 29, 0.4);
+  }
+
+  .watchlist-card {
+    border: 1px solid rgba(15, 23, 42, 0.12);
+    border-radius: 1rem;
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(247, 250, 255, 0.92)),
+      linear-gradient(130deg, rgba(34, 211, 238, 0.08), rgba(30, 64, 175, 0.06));
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.4),
+      0 20px 38px -28px rgba(30, 41, 59, 0.8);
+    transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+  }
+
+  .watchlist-card:hover {
+    transform: translateY(-1px);
+    border-color: rgba(6, 182, 212, 0.35);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.5),
+      0 26px 46px -30px rgba(14, 116, 144, 0.65);
+  }
+
+  .dark .watchlist-card {
+    border-color: rgba(30, 41, 59, 0.88);
+    background:
+      linear-gradient(180deg, rgba(10, 16, 30, 0.95), rgba(9, 15, 24, 0.96)),
+      linear-gradient(120deg, rgba(22, 78, 99, 0.32), rgba(30, 64, 175, 0.2));
+    box-shadow:
+      inset 0 0 0 1px rgba(51, 65, 85, 0.35),
+      0 24px 46px -28px rgba(0, 0, 0, 0.92);
+  }
+
+  .dark .watchlist-card:hover {
+    border-color: rgba(34, 211, 238, 0.4);
+    box-shadow:
+      inset 0 0 0 1px rgba(34, 211, 238, 0.18),
+      0 28px 54px -30px rgba(3, 105, 161, 0.85);
+  }
+
+  .watchlist-card-unavailable {
+    border-style: dashed;
+    opacity: 0.88;
+  }
+
+  .watchlist-card-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  .watchlist-symbol {
+    font-size: 1.05rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .watchlist-name {
+    color: hsl(var(--muted-foreground));
+    font-size: 0.92rem;
+    font-weight: 600;
+  }
+
+  .watchlist-price {
+    font-size: 1.72rem;
+    line-height: 1;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: rgb(6 182 212);
+  }
+
+  .dark .watchlist-price {
+    color: rgb(45 212 191);
+  }
+
+  .watchlist-move {
+    font-size: 0.9rem;
+    margin-top: 0.12rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .watchlist-move-up {
+    color: rgb(5 150 105);
+  }
+
+  .watchlist-move-down {
+    color: rgb(225 29 72);
+  }
+
+  .watchlist-move-flat {
+    color: rgb(71 85 105);
+  }
+
+  .watchlist-move-muted {
+    color: hsl(var(--muted-foreground));
+  }
+
+  .dark .watchlist-move-up {
+    color: rgb(110 231 183);
+  }
+
+  .dark .watchlist-move-down {
+    color: rgb(253 164 175);
+  }
+
+  .dark .watchlist-move-flat {
+    color: rgb(148 163 184);
+  }
+
+  .dark .watchlist-move-muted {
+    color: rgb(148 163 184);
+  }
+
+  .watchlist-tags-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+  }
+
+  .watchlist-chip {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    padding: 0.22rem 0.58rem;
+    border: 1px solid transparent;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    line-height: 1.2;
+  }
+
+  .watchlist-chip-positive {
+    background: rgba(16, 185, 129, 0.15);
+    border-color: rgba(16, 185, 129, 0.36);
+    color: rgb(4 120 87);
+  }
+
+  .watchlist-chip-negative {
+    background: rgba(244, 63, 94, 0.14);
+    border-color: rgba(244, 63, 94, 0.34);
+    color: rgb(159 18 57);
+  }
+
+  .watchlist-chip-neutral {
+    background: rgba(99, 102, 241, 0.14);
+    border-color: rgba(99, 102, 241, 0.32);
+    color: rgb(67 56 202);
+  }
+
+  .watchlist-chip-muted {
+    background: rgba(71, 85, 105, 0.13);
+    border-color: rgba(71, 85, 105, 0.3);
+    color: rgb(51 65 85);
+  }
+
+  .watchlist-chip-support {
+    background: rgba(6, 182, 212, 0.14);
+    border-color: rgba(6, 182, 212, 0.32);
+    color: rgb(14 116 144);
+  }
+
+  .watchlist-chip-pressure {
+    background: rgba(249, 115, 22, 0.14);
+    border-color: rgba(249, 115, 22, 0.34);
+    color: rgb(154 52 18);
+  }
+
+  .dark .watchlist-chip-positive {
+    background: rgba(16, 185, 129, 0.22);
+    border-color: rgba(45, 212, 191, 0.4);
+    color: rgb(110 231 183);
+  }
+
+  .dark .watchlist-chip-negative {
+    background: rgba(225, 29, 72, 0.26);
+    border-color: rgba(251, 113, 133, 0.42);
+    color: rgb(254 205 211);
+  }
+
+  .dark .watchlist-chip-neutral {
+    background: rgba(79, 70, 229, 0.26);
+    border-color: rgba(129, 140, 248, 0.4);
+    color: rgb(199 210 254);
+  }
+
+  .dark .watchlist-chip-muted {
+    background: rgba(71, 85, 105, 0.3);
+    border-color: rgba(148, 163, 184, 0.34);
+    color: rgb(226 232 240);
+  }
+
+  .dark .watchlist-chip-support {
+    background: rgba(8, 145, 178, 0.26);
+    border-color: rgba(34, 211, 238, 0.4);
+    color: rgb(165 243 252);
+  }
+
+  .dark .watchlist-chip-pressure {
+    background: rgba(194, 65, 12, 0.3);
+    border-color: rgba(251, 146, 60, 0.42);
+    color: rgb(254 215 170);
+  }
+
+  .watchlist-recommend-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6rem;
+  }
+
+  .watchlist-rec {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 0.5rem;
+    padding: 0.28rem 0.65rem;
+    font-size: 0.74rem;
+    font-weight: 700;
+    line-height: 1.1;
+    white-space: nowrap;
+  }
+
+  .watchlist-rec-hold {
+    background: rgba(16, 185, 129, 0.18);
+    color: rgb(4 120 87);
+  }
+
+  .watchlist-rec-reduce {
+    background: rgba(244, 63, 94, 0.18);
+    color: rgb(190 24 93);
+  }
+
+  .watchlist-rec-watch {
+    background: rgba(59, 130, 246, 0.18);
+    color: rgb(30 64 175);
+  }
+
+  .watchlist-rec-pending {
+    background: rgba(100, 116, 139, 0.2);
+    color: rgb(51 65 85);
+  }
+
+  .dark .watchlist-rec-hold {
+    background: rgba(16, 185, 129, 0.3);
+    color: rgb(167 243 208);
+  }
+
+  .dark .watchlist-rec-reduce {
+    background: rgba(244, 63, 94, 0.3);
+    color: rgb(254 205 211);
+  }
+
+  .dark .watchlist-rec-watch {
+    background: rgba(59, 130, 246, 0.3);
+    color: rgb(191 219 254);
+  }
+
+  .dark .watchlist-rec-pending {
+    background: rgba(100, 116, 139, 0.38);
+    color: rgb(226 232 240);
+  }
+
+  .watchlist-reason {
+    color: hsl(var(--muted-foreground));
+    font-size: 0.84rem;
+    line-height: 1.45;
+  }
+
+  .dark .watchlist-reason {
+    color: rgb(148 163 184);
+  }
+
+  @media (max-width: 768px) {
+    .watchlist-panel {
+      padding: 0.85rem;
+      border-radius: 1rem;
+    }
+
+    .watchlist-card-top {
+      flex-direction: column;
+      gap: 0.7rem;
+    }
+
+    .watchlist-price {
+      font-size: 1.45rem;
+    }
+  }
+}

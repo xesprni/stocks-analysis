@@ -36,62 +36,99 @@ class YahooFinanceMarketDataProvider:
     def _get_quote_sync(self, symbol: str, market: str) -> Quote:
         import yfinance as yf
 
-        yf_symbol = to_yfinance_symbol(symbol, market)
-        ticker = yf.Ticker(yf_symbol)
-        info = ticker.fast_info
-        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-        price = float(info.get("last_price") or info.get("regular_market_price") or 0.0)
-        prev = info.get("previous_close") or info.get("regular_market_previous_close")
-        change = None
-        pct = None
-        if prev:
-            change = price - float(prev)
-            if float(prev) != 0:
-                pct = change / float(prev) * 100
-        return Quote(
-            symbol=normalize_symbol(symbol, market),
-            market=market.upper(),
-            ts=now,
-            price=price,
-            change=change,
-            change_percent=pct,
-            volume=float(info.get("last_volume")) if info.get("last_volume") is not None else None,
-            currency=str(info.get("currency") or ""),
-            source=self.provider_id,
-        )
+        last_error: Exception | None = None
+        for yf_symbol in self._yfinance_symbol_candidates(symbol=symbol, market=market):
+            try:
+                ticker = yf.Ticker(yf_symbol)
+                info = ticker.fast_info
+                has_price = (
+                    info.get("last_price") is not None
+                    or info.get("regular_market_price") is not None
+                )
+                if not has_price:
+                    raise ValueError(f"No quote data for symbol: {yf_symbol}")
+                now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+                price = float(
+                    info.get("last_price") or info.get("regular_market_price") or 0.0
+                )
+                prev = info.get("previous_close") or info.get(
+                    "regular_market_previous_close"
+                )
+                change = None
+                pct = None
+                if prev:
+                    change = price - float(prev)
+                    if float(prev) != 0:
+                        pct = change / float(prev) * 100
+                return Quote(
+                    symbol=normalize_symbol(symbol, market),
+                    market=market.upper(),
+                    ts=now,
+                    price=price,
+                    change=change,
+                    change_percent=pct,
+                    volume=float(info.get("last_volume"))
+                    if info.get("last_volume") is not None
+                    else None,
+                    currency=str(info.get("currency") or ""),
+                    source=self.provider_id,
+                )
+            except Exception as exc:
+                last_error = exc
+                continue
+        if last_error is not None:
+            raise last_error
+        raise ValueError("Unable to resolve yfinance symbol for quote.")
 
     def _get_kline_sync(self, symbol: str, market: str, interval: str, limit: int) -> List[KLineBar]:
         import yfinance as yf
-
-        yf_symbol = to_yfinance_symbol(symbol, market)
-        ticker = yf.Ticker(yf_symbol)
 
         interval_map = {"1m": "1m", "5m": "5m", "1d": "1d"}
         period_map = {"1m": "5d", "5m": "1mo", "1d": "1y"}
         # Fetch a broader period and trim locally, improving compatibility across symbols.
         yf_interval = interval_map.get(interval, "1d")
         yf_period = period_map.get(interval, "1mo")
-
-        hist = ticker.history(period=yf_period, interval=yf_interval)
-        if hist is None or hist.empty:
-            return []
-
         normalized = normalize_symbol(symbol, market)
-        rows: List[KLineBar] = []
-        for idx, row in hist.tail(limit).iterrows():
-            ts = idx.to_pydatetime().isoformat(timespec="seconds")
-            rows.append(
-                KLineBar(
-                    symbol=normalized,
-                    market=market.upper(),
-                    interval=interval,
-                    ts=ts,
-                    open=float(row["Open"]),
-                    high=float(row["High"]),
-                    low=float(row["Low"]),
-                    close=float(row["Close"]),
-                    volume=float(row["Volume"]) if row.get("Volume") is not None else None,
-                    source=self.provider_id,
+        for yf_symbol in self._yfinance_symbol_candidates(symbol=symbol, market=market):
+            ticker = yf.Ticker(yf_symbol)
+            hist = ticker.history(period=yf_period, interval=yf_interval)
+            if hist is None or hist.empty:
+                continue
+
+            rows: List[KLineBar] = []
+            for idx, row in hist.tail(limit).iterrows():
+                ts = idx.to_pydatetime().isoformat(timespec="seconds")
+                rows.append(
+                    KLineBar(
+                        symbol=normalized,
+                        market=market.upper(),
+                        interval=interval,
+                        ts=ts,
+                        open=float(row["Open"]),
+                        high=float(row["High"]),
+                        low=float(row["Low"]),
+                        close=float(row["Close"]),
+                        volume=float(row["Volume"])
+                        if row.get("Volume") is not None
+                        else None,
+                        source=self.provider_id,
+                    )
                 )
-            )
-        return rows
+            if rows:
+                return rows
+        return []
+
+    @staticmethod
+    def _yfinance_symbol_candidates(symbol: str, market: str) -> List[str]:
+        primary = to_yfinance_symbol(symbol, market)
+        candidates: List[str] = [primary]
+        if market.upper() == "HK":
+            # Some HK indices are available without "^" and with ".HK" suffix.
+            base = primary.lstrip("^")
+            if base and base not in candidates:
+                candidates.append(base)
+            if base and not base.endswith(".HK"):
+                hk_variant = f"{base}.HK"
+                if hk_variant not in candidates:
+                    candidates.append(hk_variant)
+        return candidates

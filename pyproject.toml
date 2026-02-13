@@ -23,6 +23,8 @@ dependencies = [
   "cryptography>=43.0.0",
   "keyring>=25.3.0",
   "openai>=1.43.0",
+  "pandas>=2.2.0",
+  "pandas-ta>=0.3.14b0; python_version >= '3.12'",
   "akshare>=1.15.70",
   "yfinance>=0.2.44",
   "tenacity>=8.5.0",
