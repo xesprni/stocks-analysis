@@ -7,21 +7,78 @@ type Props = {
   data: CurvePoint[];
 };
 
-function parseEpochSeconds(rawTs: string): number | null {
+const MARKET_TZ_OFFSET: Record<string, string> = {
+  CN: "+08:00",
+  HK: "+08:00",
+};
+
+const ET_FORMATTER = new Intl.DateTimeFormat("en-US", {
+  timeZone: "America/New_York",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+});
+
+function hasExplicitTimezone(value: string): boolean {
+  return /(?:[zZ]|[+-]\d{2}:?\d{2})$/.test(value);
+}
+
+function formatMmDdHhMm(dt: Date): string {
+  const mm = String(dt.getMonth() + 1).padStart(2, "0");
+  const dd = String(dt.getDate()).padStart(2, "0");
+  const hh = String(dt.getHours()).padStart(2, "0");
+  const min = String(dt.getMinutes()).padStart(2, "0");
+  return `${mm}-${dd} ${hh}:${min}`;
+}
+
+function formatEtMmDdHhMm(dt: Date): string {
+  const parts = ET_FORMATTER.formatToParts(dt);
+  const partMap = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const mm = partMap.month ?? "00";
+  const dd = partMap.day ?? "00";
+  const hh = partMap.hour ?? "00";
+  const min = partMap.minute ?? "00";
+  return `${mm}-${dd} ${hh}:${min}`;
+}
+
+function normalizeDateTime(raw: string): string {
+  const normalized = raw.includes("T") ? raw : raw.replace(" ", "T");
+  if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+    return `${normalized}T00:00:00`;
+  }
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(normalized)) {
+    return `${normalized}:00`;
+  }
+  return normalized;
+}
+
+function parseEpochSeconds(rawTs: string, market: string): number | null {
   const raw = String(rawTs || "").trim();
   if (!raw) {
     return null;
   }
 
-  const direct = Date.parse(raw);
-  if (!Number.isNaN(direct)) {
-    return Math.floor(direct / 1000);
+  const normalized = normalizeDateTime(raw);
+  const marketCode = String(market || "").trim().toUpperCase();
+  const parseCandidates: string[] = [];
+
+  if (hasExplicitTimezone(normalized)) {
+    parseCandidates.push(normalized);
+  } else {
+    const offset = MARKET_TZ_OFFSET[marketCode];
+    if (offset) {
+      parseCandidates.push(`${normalized}${offset}`);
+    }
+    parseCandidates.push(normalized);
   }
 
-  const normalized = raw.includes("T") ? raw : raw.replace(" ", "T");
-  const normalizedParsed = Date.parse(normalized);
-  if (!Number.isNaN(normalizedParsed)) {
-    return Math.floor(normalizedParsed / 1000);
+  for (const candidate of parseCandidates) {
+    const parsed = Date.parse(candidate);
+    if (!Number.isNaN(parsed)) {
+      return Math.floor(parsed / 1000);
+    }
   }
 
   const match = normalized.match(
@@ -45,7 +102,7 @@ function parseEpochSeconds(rawTs: string): number | null {
 function normalizeCurve(data: CurvePoint[]) {
   const rows = data
     .map((item) => {
-      const parsed = parseEpochSeconds(item.ts);
+      const parsed = parseEpochSeconds(item.ts, item.market);
       if (parsed == null || !Number.isFinite(parsed)) {
         return null;
       }
@@ -72,6 +129,8 @@ function normalizeCurve(data: CurvePoint[]) {
 export function TradeCurveChart({ data }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
+  const market = String(data[0]?.market || "").trim().toUpperCase();
+  const showEt = market === "US";
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -103,11 +162,11 @@ export function TradeCurveChart({ data }: Props) {
             return "";
           }
           const dt = new Date(value * 1000);
-          const mm = String(dt.getMonth() + 1).padStart(2, "0");
-          const dd = String(dt.getDate()).padStart(2, "0");
-          const hh = String(dt.getHours()).padStart(2, "0");
-          const min = String(dt.getMinutes()).padStart(2, "0");
-          return `${mm}-${dd} ${hh}:${min}`;
+          const localText = formatMmDdHhMm(dt);
+          if (!showEt) {
+            return localText;
+          }
+          return `${localText} / ET ${formatEtMmDdHhMm(dt)}`;
         },
       },
     });
@@ -130,7 +189,7 @@ export function TradeCurveChart({ data }: Props) {
       chart.remove();
       chartRef.current = null;
     };
-  }, [data]);
+  }, [data, showEt]);
 
   return <div ref={containerRef} className="w-full overflow-hidden rounded-md border" />;
 }

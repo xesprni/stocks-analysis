@@ -73,7 +73,8 @@ export function ProvidersPage({
     const preferredProviderId = defaultProvider || orderedProviders[0].provider_id;
     const nextProvider = orderedProviders.find((item) => item.provider_id === preferredProviderId) ?? orderedProviders[0];
     setProviderId(nextProvider.provider_id);
-    if (defaultModel && nextProvider.models.includes(defaultModel)) {
+    const isDynamicProvider = (nextProvider.auth_mode ?? "") === "chatgpt_oauth";
+    if (defaultModel && (isDynamicProvider || nextProvider.models.includes(defaultModel))) {
       setModel(defaultModel);
       return;
     }
@@ -94,6 +95,7 @@ export function ProvidersPage({
   const selectedAuthModeValue = selected?.auth_mode ?? "";
   const selectedConnected = Boolean(selected?.connected);
   const selectedAuthMode = selected?.auth_mode ?? (selected?.secret_required ? "api_key" : "none");
+  const isDynamicModelProvider = selectedAuthModeValue === "chatgpt_oauth";
   const isOauthProvider = selectedAuthMode === "chatgpt_oauth";
   const isOauthConnected = Boolean(selected?.connected);
   const canConnectOauth = Boolean(selected);
@@ -144,9 +146,20 @@ export function ProvidersPage({
     if (!modelOptions.length) {
       return;
     }
-    if (!model || !modelOptions.includes(model)) {
+    if (!model) {
+      setModel(modelOptions[0]);
+      return;
+    }
+    if (!isDynamicModelProvider && !modelOptions.includes(model)) {
       setModel(modelOptions[0]);
     }
+  }, [isDynamicModelProvider, model, modelOptions]);
+
+  const resolvedModelOptions = useMemo(() => {
+    if (!model || modelOptions.includes(model)) {
+      return modelOptions;
+    }
+    return [model, ...modelOptions];
   }, [model, modelOptions]);
 
   useEffect(() => {
@@ -203,12 +216,12 @@ export function ProvidersPage({
           </div>
           <div className="space-y-2">
             <Label htmlFor="model">Model</Label>
-            <Select value={model} onValueChange={(next: string) => setModel(next)} disabled={!modelOptions.length}>
+            <Select value={model} onValueChange={(next: string) => setModel(next)} disabled={!resolvedModelOptions.length}>
               <SelectTrigger id="model">
                 <SelectValue placeholder="Model" />
               </SelectTrigger>
               <SelectContent>
-                {modelOptions.map((entry) => (
+                {resolvedModelOptions.map((entry) => (
                   <SelectItem key={entry} value={entry}>
                     {entry}
                   </SelectItem>

@@ -66,6 +66,8 @@ export function DashboardPage({
     () => analysisProviders.find((item) => item.provider_id === selectedProviderId) ?? null,
     [analysisProviders, selectedProviderId]
   );
+  const selectedProviderAuthMode = selectedProvider?.auth_mode ?? "";
+  const isDynamicModelProvider = selectedProviderAuthMode === "chatgpt_oauth";
   const selectedProviderModelsKey = selectedProvider?.models.join("|") ?? "";
 
   useEffect(() => {
@@ -103,7 +105,7 @@ export function DashboardPage({
   }, [onLoadProviderModels, selectedProviderId, selectedProviderModelsKey]);
 
   useEffect(() => {
-    if (!analysisModelOptions.length) {
+    if (!analysisModelOptions.length || isDynamicModelProvider) {
       return;
     }
     if (!analysisModelOptions.includes(config.analysis.default_model)) {
@@ -115,7 +117,15 @@ export function DashboardPage({
         },
       });
     }
-  }, [analysisModelOptions, config, setConfig]);
+  }, [analysisModelOptions, config, isDynamicModelProvider, setConfig]);
+
+  const resolvedAnalysisModelOptions = useMemo(() => {
+    const currentModel = config.analysis.default_model;
+    if (!currentModel || analysisModelOptions.includes(currentModel)) {
+      return analysisModelOptions;
+    }
+    return [currentModel, ...analysisModelOptions];
+  }, [analysisModelOptions, config.analysis.default_model]);
 
   useEffect(() => {
     setSourceRows(
@@ -270,13 +280,13 @@ export function DashboardPage({
                       },
                     })
                   }
-                  disabled={!analysisModelOptions.length}
+                  disabled={!resolvedAnalysisModelOptions.length}
                 >
                   <SelectTrigger id="analysis_default_model">
                     <SelectValue placeholder="分析 Model" />
                   </SelectTrigger>
                   <SelectContent>
-                    {analysisModelOptions.map((entry) => (
+                    {resolvedAnalysisModelOptions.map((entry) => (
                       <SelectItem key={entry} value={entry}>
                         {entry}
                       </SelectItem>
