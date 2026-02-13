@@ -594,23 +594,37 @@ class AnalysisService:
             rows = repo.list_by_symbol(
                 symbol=normalized_symbol, market=market.upper(), limit=limit
             )
-            result: List[StockAnalysisHistoryItem] = []
-            for row in rows:
-                parsed_output = self._parse_json(row.output_json)
-                result.append(
-                    StockAnalysisHistoryItem(
-                        id=row.id,
-                        symbol=row.symbol,
-                        market=row.market,
-                        provider_id=row.provider_id,
-                        model=row.model,
-                        status=row.status,
-                        created_at=row.created_at,
-                        markdown=row.markdown,
-                        output_json=parsed_output,
-                    )
-                )
-        return result
+            return [self._to_history_item(row) for row in rows]
+
+    def list_recent_history(
+        self,
+        limit: int = 50,
+        symbol: Optional[str] = None,
+        market: Optional[str] = None,
+    ) -> List[StockAnalysisHistoryItem]:
+        normalized_symbol = None
+        normalized_market = market.upper() if market else None
+        if symbol and market:
+            normalized_symbol = normalize_symbol(symbol=symbol, market=market)
+        elif symbol:
+            normalized_symbol = symbol.strip().upper()
+
+        with session_scope(self.config.database.url) as session:
+            repo = StockAnalysisRunRepo(session)
+            rows = repo.list_recent(
+                limit=limit,
+                symbol=normalized_symbol,
+                market=normalized_market,
+            )
+            return [self._to_history_item(row) for row in rows]
+
+    def get_history_item(self, run_id: int) -> StockAnalysisHistoryItem:
+        with session_scope(self.config.database.url) as session:
+            repo = StockAnalysisRunRepo(session)
+            row = repo.get(run_id=run_id)
+            if row is None:
+                raise FileNotFoundError(f"Stock analysis run not found: {run_id}")
+            return self._to_history_item(row)
 
     async def _invoke_provider(
         self,
@@ -863,6 +877,20 @@ class AnalysisService:
             return json.loads(raw)
         except Exception:
             return {}
+
+    def _to_history_item(self, row) -> StockAnalysisHistoryItem:
+        parsed_output = self._parse_json(row.output_json)
+        return StockAnalysisHistoryItem(
+            id=int(row.id),
+            symbol=row.symbol,
+            market=row.market,
+            provider_id=row.provider_id,
+            model=row.model,
+            status=row.status,
+            created_at=row.created_at,
+            markdown=row.markdown,
+            output_json=parsed_output,
+        )
 
     @staticmethod
     def _evaluate_provider_state(

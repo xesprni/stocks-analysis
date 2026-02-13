@@ -31,6 +31,7 @@ const ConfigPage = lazy(() => import("@/pages/Config").then((m) => ({ default: m
 const NewsFeedPage = lazy(() => import("@/pages/NewsFeed").then((m) => ({ default: m.NewsFeedPage })));
 const WatchlistPage = lazy(() => import("@/pages/Watchlist").then((m) => ({ default: m.WatchlistPage })));
 const StockTerminalPage = lazy(() => import("@/pages/StockTerminal").then((m) => ({ default: m.StockTerminalPage })));
+const StockResultsPage = lazy(() => import("@/pages/StockResults").then((m) => ({ default: m.StockResultsPage })));
 const AlertCenterPage = lazy(() => import("@/pages/AlertCenter").then((m) => ({ default: m.AlertCenterPage })));
 const ReportsPage = lazy(() => import("@/pages/Reports").then((m) => ({ default: m.ReportsPage })));
 
@@ -113,6 +114,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState("dashboard");
   const [configDraft, setConfigDraft] = useState<AppConfig>(emptyConfig);
   const [selectedRunId, setSelectedRunId] = useState<string>("");
+  const [selectedStockRunId, setSelectedStockRunId] = useState<string>("");
   const [errorMessage, setErrorMessage] = useState("");
   const [warningMessage, setWarningMessage] = useState("");
   const [alertStatus, setAlertStatus] = useState("UNREAD");
@@ -137,6 +139,9 @@ export default function App() {
     configQuery,
     reportsQuery,
     reportTasksQuery,
+    stockRunsQuery,
+    stockTasksQuery,
+    stockDetailQuery,
     watchlistQuery,
     newsSourcesQuery,
     providersQuery,
@@ -144,12 +149,15 @@ export default function App() {
     alertsQuery,
     detailQuery,
     sortedReports,
+    sortedStockRuns,
     options,
   } = useAppQueries(
     configDraft,
     setConfigDraft,
     selectedRunId,
     setSelectedRunId,
+    selectedStockRunId,
+    setSelectedStockRunId,
     setErrorMessage,
     alertStatus,
     alertMarket,
@@ -174,6 +182,7 @@ export default function App() {
     { key: "news-feed", label: "News Feed", icon: Newspaper },
     { key: "watchlist", label: "Watchlist", icon: ListChecks },
     { key: "terminal", label: "Stock Terminal", icon: ChartCandlestick },
+    { key: "stock-results", label: "Stock Results", icon: ClipboardList },
     { key: "alerts", label: "Alert Center", icon: BellRing },
     { key: "reports", label: "Reports", icon: ClipboardList },
   ];
@@ -436,6 +445,23 @@ export default function App() {
               defaultModel={configDraft.analysis.default_model}
               intervals={options.intervals}
               watchlistItems={watchlistQuery.data ?? []}
+            />
+          </Suspense>
+        </TabsContent>
+
+        <TabsContent value="stock-results" className="mt-0">
+          <Suspense fallback={<TabFallback />}>
+            <StockResultsPage
+              runs={sortedStockRuns}
+              tasks={stockTasksQuery.data ?? []}
+              selectedRunId={selectedStockRunId}
+              detail={stockDetailQuery.data ?? null}
+              refreshing={stockRunsQuery.isFetching || stockTasksQuery.isFetching}
+              onRefresh={() => {
+                void stockRunsQuery.refetch();
+                void stockTasksQuery.refetch();
+              }}
+              onSelect={(runId) => setSelectedStockRunId(String(runId))}
             />
           </Suspense>
         </TabsContent>

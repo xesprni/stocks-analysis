@@ -31,6 +31,8 @@ export function useAppQueries(
   setConfigDraft: React.Dispatch<React.SetStateAction<AppConfig>>,
   selectedRunId: string,
   setSelectedRunId: React.Dispatch<React.SetStateAction<string>>,
+  selectedStockRunId: string,
+  setSelectedStockRunId: React.Dispatch<React.SetStateAction<string>>,
   setErrorMessage: React.Dispatch<React.SetStateAction<string>>,
   alertStatus: string,
   alertMarket: string,
@@ -81,6 +83,28 @@ export function useAppQueries(
     queryFn: () => api.getReport(selectedRunId),
     enabled: Boolean(selectedRunId),
   });
+  const stockRunsQuery = useQuery({
+    queryKey: ["stock-analysis-runs"],
+    queryFn: () => api.listStockAnalysisRuns({ limit: 100 }),
+  });
+  const stockTasksQuery = useQuery({
+    queryKey: ["stock-analysis-tasks"],
+    queryFn: api.listStockAnalysisTasks,
+    refetchInterval: (query) => {
+      // Poll while stock tasks are active and the user is on terminal or results pages.
+      if (activeTab !== "terminal" && activeTab !== "stock-results") return false;
+      const data = query.state.data;
+      if (data?.some((t) => t.status === "PENDING" || t.status === "RUNNING")) {
+        return 2000;
+      }
+      return 30000;
+    },
+  });
+  const stockDetailQuery = useQuery({
+    queryKey: ["stock-analysis-run", selectedStockRunId],
+    queryFn: () => api.getStockAnalysisRun(Number(selectedStockRunId)),
+    enabled: Boolean(selectedStockRunId),
+  });
 
   // ---- error notification helper ----
   const notifyQueryError = useCallback(
@@ -122,6 +146,18 @@ export function useAppQueries(
   }, [detailQuery.error, notifyQueryError]);
 
   useEffect(() => {
+    notifyQueryError("stock-analysis-runs", "加载 Stock 分析历史失败", stockRunsQuery.error);
+  }, [stockRunsQuery.error, notifyQueryError]);
+
+  useEffect(() => {
+    notifyQueryError("stock-analysis-tasks", "加载 Stock 分析任务失败", stockTasksQuery.error);
+  }, [stockTasksQuery.error, notifyQueryError]);
+
+  useEffect(() => {
+    notifyQueryError("stock-analysis-detail", "加载 Stock 分析详情失败", stockDetailQuery.error);
+  }, [stockDetailQuery.error, notifyQueryError]);
+
+  useEffect(() => {
     notifyQueryError("watchlist", "加载 Watchlist 失败", watchlistQuery.error);
   }, [watchlistQuery.error, notifyQueryError]);
 
@@ -153,6 +189,10 @@ export function useAppQueries(
     () => [...(reportsQuery.data ?? [])].sort((a: ReportSummary, b: ReportSummary) => b.run_id.localeCompare(a.run_id)),
     [reportsQuery.data]
   );
+  const sortedStockRuns = useMemo(
+    () => [...(stockRunsQuery.data ?? [])].sort((a, b) => b.id - a.id),
+    [stockRunsQuery.data]
+  );
   const options = uiOptionsQuery.data ?? emptyOptions;
 
   // ---- auto-select first report ----
@@ -169,11 +209,27 @@ export function useAppQueries(
     }
   }, [sortedReports, selectedRunId, setSelectedRunId]);
 
+  useEffect(() => {
+    if (!sortedStockRuns.length) {
+      if (selectedStockRunId) {
+        setSelectedStockRunId("");
+      }
+      return;
+    }
+    const exists = sortedStockRuns.some((item) => String(item.id) === selectedStockRunId);
+    if (!exists) {
+      setSelectedStockRunId(String(sortedStockRuns[0].id));
+    }
+  }, [sortedStockRuns, selectedStockRunId, setSelectedStockRunId]);
+
   return {
     configQuery,
     uiOptionsQuery,
     reportsQuery,
     reportTasksQuery,
+    stockRunsQuery,
+    stockTasksQuery,
+    stockDetailQuery,
     watchlistQuery,
     newsSourcesQuery,
     providersQuery,
@@ -181,6 +237,7 @@ export function useAppQueries(
     alertsQuery,
     detailQuery,
     sortedReports,
+    sortedStockRuns,
     options,
   };
 }

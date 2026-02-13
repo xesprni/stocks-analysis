@@ -66,33 +66,43 @@ dashboard:
   - symbol: 000001.SH
     market: CN
     alias: 上证指数
+    enabled: true
   - symbol: 399001.SZ
     market: CN
     alias: 深证成指
+    enabled: false
   - symbol: 399006.SZ
     market: CN
     alias: 创业板指
+    enabled: false
   - symbol: 000300.SH
     market: CN
     alias: 沪深300
+    enabled: false
   - symbol: ^HSI
     market: HK
     alias: 恒生指数
+    enabled: false
   - symbol: ^HSCE
     market: HK
     alias: 国企指数
+    enabled: false
   - symbol: ^HSTECH
     market: HK
     alias: 恒生科技
+    enabled: true
   - symbol: ^GSPC
     market: US
     alias: S&P 500
+    enabled: true
   - symbol: ^IXIC
     market: US
     alias: NASDAQ
+    enabled: true
   - symbol: ^DJI
     market: US
     alias: Dow Jones
+    enabled: true
   auto_refresh_enabled: false
   auto_refresh_seconds: 60
 agent:

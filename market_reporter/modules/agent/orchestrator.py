@@ -123,6 +123,8 @@ class AgentOrchestrator:
                 from_date=ranges["news_from"],
                 to_date=ranges["news_to"],
                 limit=50,
+                symbol=symbol,
+                market=market,
             )
             tool_results["search_news"] = news_result.model_dump(mode="json")
             traces.append(self._trace("search_news", {
@@ -364,11 +366,15 @@ class AgentOrchestrator:
             )
             return result.model_dump(mode="json")
         if name == "search_news":
+            resolved_symbol = str(arguments.get("symbol") or fallback_symbol)
+            resolved_market = str(arguments.get("market") or fallback_market)
             result = await self.news_tools.search_news(
                 query=str(arguments.get("query") or request.question or fallback_symbol),
                 from_date=str(arguments.get("from") or ranges["news_from"]),
                 to_date=str(arguments.get("to") or ranges["news_to"]),
                 limit=int(arguments.get("limit") or 50),
+                symbol=resolved_symbol,
+                market=resolved_market,
             )
             return result.model_dump(mode="json")
         if name == "compute_indicators":
@@ -625,6 +631,8 @@ class AgentOrchestrator:
                         "type": "object",
                         "properties": {
                             "query": {"type": "string"},
+                            "symbol": {"type": "string"},
+                            "market": {"type": "string"},
                             "from": {"type": "string"},
                             "to": {"type": "string"},
                             "limit": {"type": "integer"},

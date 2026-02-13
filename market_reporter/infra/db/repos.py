@@ -371,10 +371,24 @@ class StockAnalysisRunRepo:
             ).all()
         )
 
-    def list_recent(self, limit: int = 50) -> List[StockAnalysisRunTable]:
-        return list(
-            self.session.exec(select(StockAnalysisRunTable).order_by(StockAnalysisRunTable.id.desc()).limit(limit)).all()
+    def get(self, run_id: int) -> Optional[StockAnalysisRunTable]:
+        return self.session.get(StockAnalysisRunTable, run_id)
+
+    def list_recent(
+        self,
+        limit: int = 50,
+        symbol: Optional[str] = None,
+        market: Optional[str] = None,
+    ) -> List[StockAnalysisRunTable]:
+        statement = select(StockAnalysisRunTable).order_by(
+            StockAnalysisRunTable.id.desc()
         )
+        if symbol:
+            statement = statement.where(StockAnalysisRunTable.symbol == symbol)
+        if market:
+            statement = statement.where(StockAnalysisRunTable.market == market)
+        statement = statement.limit(limit)
+        return list(self.session.exec(statement).all())
 
 
 class NewsListenerRunRepo:

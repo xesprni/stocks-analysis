@@ -166,6 +166,12 @@ class StockAnalysisTaskManager:
                 raise FileNotFoundError(f"Stock analysis task not found: {task_id}")
             return task
 
+    async def list_tasks(self) -> list[StockAnalysisTaskView]:
+        async with self._lock:
+            tasks = list(self._tasks.values())
+        tasks.sort(key=lambda item: item.created_at, reverse=True)
+        return tasks
+
     async def cancel_all(self) -> None:
         handles = list(self._handles.values())
         for handle in handles:

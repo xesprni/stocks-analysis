@@ -12,6 +12,7 @@ class NewsItem(BaseModel):
     title: str
     link: str = ""
     published: str = ""
+    content: str = ""
 
 
 class FlowPoint(BaseModel):

@@ -146,6 +146,7 @@ class AgentService:
                     title=str(item.get("title") or ""),
                     link=str(item.get("link") or ""),
                     published=str(item.get("published_at") or ""),
+                    content=str(item.get("summary") or ""),
                 )
             )
         return rows

@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 from datetime import datetime, timezone
 from statistics import pstdev
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from market_reporter.modules.agent.schemas import (
     IndicatorsResult,
@@ -46,6 +46,7 @@ class ComputeTools:
         ordered_timeframes = self._ordered_timeframes(list(timeframe_payload.keys()))
         timeframe_results: Dict[str, Dict[str, Any]] = {}
         signal_timeline: List[Dict[str, Any]] = []
+        resolved_backends: List[str] = []
         for timeframe in ordered_timeframes:
             rows = timeframe_payload.get(timeframe) or []
             result = self._analyze_timeframe(
@@ -58,6 +59,9 @@ class ComputeTools:
                 signal_timeline.extend(result["signal_timeline"])
             if isinstance(result.get("warnings"), list):
                 warnings.extend([str(item) for item in result["warnings"]])
+            backend = str(result.get("indicator_backend") or "").strip()
+            if backend:
+                resolved_backends.append(backend)
 
         signal_timeline.sort(key=lambda item: str(item.get("ts") or ""), reverse=True)
 
@@ -88,6 +92,7 @@ class ComputeTools:
         dedup_warnings = list(
             dict.fromkeys([str(item) for item in warnings if str(item).strip()])
         )
+        backend = self._resolve_backend(primary=primary, candidates=resolved_backends)
 
         return IndicatorsResult(
             symbol=symbol,
@@ -101,7 +106,7 @@ class ComputeTools:
             signal_timeline=signal_timeline,
             timeframes=timeframe_results,
             as_of=as_of,
-            source="pandas-ta/computed",
+            source=f"{backend}/computed",
             retrieved_at=retrieved_at,
             warnings=dedup_warnings,
         )
@@ -174,6 +179,7 @@ class ComputeTools:
             as_of = datetime.now(timezone.utc).isoformat(timespec="seconds")
             return {
                 "as_of": as_of,
+                "indicator_backend": "builtin",
                 "values": {},
                 "trend": {},
                 "momentum": {},
@@ -197,7 +203,11 @@ class ComputeTools:
         volumes = [item.get("volume") for item in normalized_rows]
         ts_list = [item.get("ts") or "" for item in normalized_rows]
 
-        ta_values, ta_warnings = self._compute_with_pandas_ta(closes, highs, lows)
+        ta_values, indicator_backend, ta_warnings = self._compute_indicator_backend(
+            closes=closes,
+            highs=highs,
+            lows=lows,
+        )
         warnings.extend(ta_warnings)
 
         ma5 = self._first_not_none(ta_values.get("ma_5"), self._sma(closes, 5))
@@ -393,6 +403,7 @@ class ComputeTools:
 
         return {
             "as_of": as_of,
+            "indicator_backend": indicator_backend,
             "values": values,
             "trend": trend,
             "momentum": momentum,
@@ -454,6 +465,119 @@ class ComputeTools:
                 }
             )
         return normalized
+
+    def _compute_indicator_backend(
+        self,
+        closes: List[float],
+        highs: List[float],
+        lows: List[float],
+    ) -> Tuple[Dict[str, Any], str, List[str]]:
+        warnings: List[str] = []
+
+        talib_values, talib_warnings = self._compute_with_talib(closes, highs, lows)
+        warnings.extend(talib_warnings)
+        if talib_values:
+            return talib_values, "ta-lib", warnings
+
+        pandas_values, pandas_warnings = self._compute_with_pandas_ta(
+            closes=closes,
+            highs=highs,
+            lows=lows,
+        )
+        warnings.extend(pandas_warnings)
+        if pandas_values:
+            return pandas_values, "pandas-ta", warnings
+
+        warnings.append("indicator_backend_builtin_fallback")
+        return {}, "builtin", warnings
+
+    def _compute_with_talib(
+        self,
+        closes: List[float],
+        highs: List[float],
+        lows: List[float],
+    ) -> Tuple[Dict[str, Any], List[str]]:
+        warnings: List[str] = []
+        try:
+            import numpy as np
+            import talib
+        except Exception:
+            return {}, ["talib_unavailable_fallback"]
+
+        if not closes:
+            return {}, warnings
+
+        output: Dict[str, Any] = {}
+        try:
+            close_arr = np.asarray(closes, dtype="float64")
+            high_arr = np.asarray(highs, dtype="float64")
+            low_arr = np.asarray(lows, dtype="float64")
+
+            output["ma_5"] = self._tail_finite(talib.SMA(close_arr, timeperiod=5))
+            output["ma_10"] = self._tail_finite(talib.SMA(close_arr, timeperiod=10))
+            output["ma_20"] = self._tail_finite(talib.SMA(close_arr, timeperiod=20))
+            output["ma_60"] = self._tail_finite(talib.SMA(close_arr, timeperiod=60))
+
+            macd_line, macd_signal, macd_hist = talib.MACD(
+                close_arr,
+                fastperiod=12,
+                slowperiod=26,
+                signalperiod=9,
+            )
+            macd_series = self._to_finite_series(macd_line)
+            signal_series = self._to_finite_series(macd_signal)
+            hist_series = self._to_finite_series(macd_hist)
+            if macd_series:
+                output["macd_series"] = macd_series
+                output["macd"] = macd_series[-1]
+            if signal_series:
+                output["macd_signal_series"] = signal_series
+                output["macd_signal"] = signal_series[-1]
+            if hist_series:
+                output["macd_hist_series"] = hist_series
+                output["macd_hist"] = hist_series[-1]
+
+            upper, middle, lower = talib.BBANDS(
+                close_arr,
+                timeperiod=20,
+                nbdevup=2.0,
+                nbdevdn=2.0,
+                matype=0,
+            )
+            output["boll_up"] = self._tail_finite(upper)
+            output["boll_mid"] = self._tail_finite(middle)
+            output["boll_low"] = self._tail_finite(lower)
+
+            rsi_values = self._to_finite_series(talib.RSI(close_arr, timeperiod=14))
+            if rsi_values:
+                output["rsi_series"] = rsi_values
+                output["rsi_14"] = rsi_values[-1]
+
+            stoch_k, stoch_d = talib.STOCH(
+                high_arr,
+                low_arr,
+                close_arr,
+                fastk_period=9,
+                slowk_period=3,
+                slowk_matype=0,
+                slowd_period=3,
+                slowd_matype=0,
+            )
+            k_values = self._to_finite_series(stoch_k)
+            d_values = self._to_finite_series(stoch_d)
+            if k_values:
+                output["stoch_k_series"] = k_values
+                output["stoch_k"] = k_values[-1]
+            if d_values:
+                output["stoch_d_series"] = d_values
+                output["stoch_d"] = d_values[-1]
+
+            output["atr_14"] = self._tail_finite(
+                talib.ATR(high_arr, low_arr, close_arr, timeperiod=14)
+            )
+        except Exception as exc:
+            warnings.append(f"talib_compute_failed:{exc}")
+        return output, warnings
 
     def _compute_with_pandas_ta(
         self,
@@ -560,6 +684,37 @@ class ComputeTools:
         except Exception as exc:
             warnings.append(f"pandas_ta_compute_failed:{exc}")
         return output, warnings
+
+    @staticmethod
+    def _resolve_backend(primary: Dict[str, Any], candidates: Sequence[str]) -> str:
+        value = str(primary.get("indicator_backend") or "").strip()
+        if value:
+            return value
+        for item in candidates:
+            current = str(item or "").strip()
+            if current:
+                return current
+        return "builtin"
+
+    @staticmethod
+    def _to_finite_series(values: Any) -> List[float]:
+        if values is None:
+            return []
+        raw_values = values.tolist() if hasattr(values, "tolist") else values
+        if not isinstance(raw_values, list):
+            return []
+        output: List[float] = []
+        for item in raw_values:
+            number = _safe_float(item)
+            if number is None or not math.isfinite(number):
+                continue
+            output.append(number)
+        return output
+
+    @classmethod
+    def _tail_finite(cls, values: Any) -> Optional[float]:
+        series = cls._to_finite_series(values)
+        return series[-1] if series else None
 
     @staticmethod
     def _first_not_none(*values: Optional[float]) -> Optional[float]:

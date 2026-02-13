@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import html
+import re
 from typing import List, Optional, Sequence, Tuple
 
 import feedparser
@@ -119,6 +121,34 @@ class RSSNewsProvider:
                     published=str(
                         entry.get("published", "") or entry.get("updated", "")
                     ).strip(),
+                    content=self._entry_content_text(entry),
                 )
             )
         return output
+
+    @staticmethod
+    def _entry_content_text(entry: object) -> str:
+        if not isinstance(entry, dict):
+            return ""
+        chunks: List[str] = []
+        for key in ("summary", "description"):
+            value = entry.get(key)
+            if isinstance(value, str) and value.strip():
+                chunks.append(value.strip())
+        rich_content = entry.get("content")
+        if isinstance(rich_content, list):
+            for item in rich_content:
+                if not isinstance(item, dict):
+                    continue
+                value = item.get("value")
+                if isinstance(value, str) and value.strip():
+                    chunks.append(value.strip())
+        if not chunks:
+            return ""
+        text = " ".join(chunks)
+        text = html.unescape(text)
+        text = re.sub(r"<[^>]+>", " ", text)
+        text = re.sub(r"\s+", " ", text).strip()
+        if len(text) > 2000:
+            return text[:2000]
+        return text

@@ -20,6 +20,7 @@ import {
   reportSummarySchema,
   reportTaskSchema,
   stockAnalysisRunSchema,
+  stockAnalysisHistoryItemSchema,
   stockAnalysisTaskSchema,
   stockSearchResultSchema,
   uiOptionsSchema,
@@ -195,22 +196,25 @@ export const api = {
     }),
   getStockAnalysisTask: (taskId: string) =>
     request(`/analysis/stocks/tasks/${encodeURIComponent(taskId)}`, stockAnalysisTaskSchema),
+  listStockAnalysisTasks: () =>
+    request("/analysis/stocks/tasks", z.array(stockAnalysisTaskSchema)),
+  listStockAnalysisRuns: (params?: { symbol?: string; market?: string; limit?: number }) => {
+    const search = new URLSearchParams();
+    search.set("limit", String(params?.limit ?? 50));
+    if (params?.symbol) {
+      search.set("symbol", params.symbol);
+    }
+    if (params?.market) {
+      search.set("market", params.market);
+    }
+    return request(`/analysis/stocks/runs?${search.toString()}`, z.array(stockAnalysisHistoryItemSchema));
+  },
+  getStockAnalysisRun: (runId: number) =>
+    request(`/analysis/stocks/runs/${runId}`, stockAnalysisHistoryItemSchema),
   listStockAnalysisHistory: (symbol: string, market: string, limit = 20) =>
     request(
       `/analysis/stocks/${encodeURIComponent(symbol)}/history?market=${market}&limit=${limit}`,
-      z.array(
-        z.object({
-          id: z.number(),
-          symbol: z.string(),
-          market: z.string(),
-          provider_id: z.string(),
-          model: z.string(),
-          status: z.string(),
-          created_at: z.string(),
-          markdown: z.string(),
-          output_json: z.record(z.any()),
-        })
-      )
+      z.array(stockAnalysisHistoryItemSchema)
     ),
 
   // ---- news listener ----

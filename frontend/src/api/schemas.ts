@@ -362,6 +362,18 @@ export const stockAnalysisTaskSchema = z.object({
   result: stockAnalysisRunSchema.nullable().optional(),
 });
 
+export const stockAnalysisHistoryItemSchema = z.object({
+  id: z.number(),
+  symbol: z.string(),
+  market: z.string(),
+  provider_id: z.string(),
+  model: z.string(),
+  status: z.string(),
+  created_at: z.string(),
+  markdown: z.string(),
+  output_json: z.record(z.any()),
+});
+
 // ---------------------------------------------------------------------------
 // Inferred TypeScript types
 // ---------------------------------------------------------------------------
@@ -384,6 +396,7 @@ export type ReportDetail = z.infer<typeof reportDetailSchema>;
 export type ReportTask = z.infer<typeof reportTaskSchema>;
 export type StockAnalysisRun = z.infer<typeof stockAnalysisRunSchema>;
 export type StockAnalysisTask = z.infer<typeof stockAnalysisTaskSchema>;
+export type StockAnalysisHistoryItem = z.infer<typeof stockAnalysisHistoryItemSchema>;
 export type StockSearchResult = z.infer<typeof stockSearchResultSchema>;
 export type NewsListenerRun = z.infer<typeof newsListenerRunSchema>;
 export type NewsAlert = z.infer<typeof newsAlertSchema>;
