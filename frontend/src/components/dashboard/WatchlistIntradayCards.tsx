@@ -1,3 +1,4 @@
+import { memo } from "react";
 import type { Dispatch, SetStateAction } from "react";
 
 import type { DashboardWatchlistMetric, Pagination } from "@/api/client";
@@ -67,7 +68,7 @@ function displayTs(ts: string): string {
   return parsed.toLocaleString();
 }
 
-export function WatchlistIntradayCards({
+export const WatchlistIntradayCards = memo(function WatchlistIntradayCards({
   rows,
   pagination,
   page,
@@ -180,4 +181,4 @@ export function WatchlistIntradayCards({
       </div>
     </div>
   );
-}
+});

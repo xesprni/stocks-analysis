@@ -36,7 +36,7 @@ export * from "./schemas";
 
 const apiBase = import.meta.env.VITE_API_BASE_URL ?? "/api";
 
-async function request<T>(path: string, schema: z.ZodSchema<T>, init?: RequestInit): Promise<T> {
+async function request<S extends z.ZodTypeAny>(path: string, schema: S, init?: RequestInit): Promise<z.output<S>> {
   const response = await fetch(`${apiBase}${path}`, init);
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}: ${await response.text()}`);

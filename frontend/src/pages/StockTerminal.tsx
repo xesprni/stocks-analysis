@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Activity, BarChart3, Bot, Play } from "lucide-react";
+import { Activity, BarChart3, Bot, Play, RefreshCw } from "lucide-react";
 
 import { api, type StockAnalysisRun, type WatchlistItem } from "@/api/client";
 import { CandlestickChart } from "@/components/charts/CandlestickChart";
@@ -236,7 +236,22 @@ export function StockTerminalPage({ defaultProvider, defaultModel, intervals, wa
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>Stock Terminal</CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle>Stock Terminal</CardTitle>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                void quoteQuery.refetch();
+                void klineQuery.refetch();
+                void curveQuery.refetch();
+              }}
+              disabled={quoteQuery.isFetching || klineQuery.isFetching || curveQuery.isFetching}
+            >
+              <RefreshCw className={`mr-2 h-4 w-4 ${quoteQuery.isFetching || klineQuery.isFetching || curveQuery.isFetching ? "animate-spin" : ""}`} />
+              刷新数据
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-4">
           <div className="space-y-2">

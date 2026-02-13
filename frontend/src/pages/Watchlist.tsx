@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Eye, Plus, Search, Trash2 } from "lucide-react";
+import { Eye, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
 
 import type { StockSearchResult, WatchlistItem } from "@/api/client";
 import { SymbolSearchDialog } from "@/components/SymbolSearchDialog";
@@ -14,6 +14,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 type Props = {
   items: Array<WatchlistItem & { keywords?: string[] }>;
   markets: string[];
+  refreshing?: boolean;
+  onRefresh?: () => void;
   onSearch: (query: string, market: string) => Promise<StockSearchResult[]>;
   onAdd: (payload: {
     symbol: string;
@@ -25,7 +27,7 @@ type Props = {
   onDelete: (id: number) => Promise<void>;
 };
 
-export function WatchlistPage({ items, markets, onSearch, onAdd, onDelete }: Props) {
+export function WatchlistPage({ items, markets, refreshing, onRefresh, onSearch, onAdd, onDelete }: Props) {
   const [symbol, setSymbol] = useState("AAPL");
   const [market, setMarket] = useState("US");
   const [alias, setAlias] = useState("");
@@ -40,14 +42,22 @@ export function WatchlistPage({ items, markets, onSearch, onAdd, onDelete }: Pro
         <div className="pointer-events-none absolute -left-12 -top-14 h-44 w-44 rounded-full bg-violet-400/20 blur-3xl" />
         <div className="pointer-events-none absolute right-0 top-10 h-32 w-32 rounded-full bg-fuchsia-400/20 blur-2xl" />
         <div className="pointer-events-none absolute -bottom-12 right-10 h-44 w-44 rounded-full bg-pink-400/20 blur-3xl" />
-        <div className="relative">
-          <h2 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-            <Eye className="h-5 w-5 text-violet-600" />
-            Watchlist 监控列表
-          </h2>
-          <p className="mt-2 text-sm text-muted-foreground">
-            管理您的股票监控列表，添加或删除跟踪标的。当前共 {items.length} 个标的。
-          </p>
+        <div className="relative flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
+              <Eye className="h-5 w-5 text-violet-600" />
+              Watchlist 监控列表
+            </h2>
+            <p className="mt-2 text-sm text-muted-foreground">
+              管理您的股票监控列表，添加或删除跟踪标的。当前共 {items.length} 个标的。
+            </p>
+          </div>
+          {onRefresh && (
+            <Button variant="outline" onClick={onRefresh} disabled={refreshing}>
+              <RefreshCw className={`mr-2 h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+              刷新数据
+            </Button>
+          )}
         </div>
       </section>
 

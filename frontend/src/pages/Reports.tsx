@@ -8,13 +8,15 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { AlertCircle, CheckCircle2, Clock, FileText, Loader2, Trash2, XCircle } from "lucide-react";
+import { AlertCircle, CheckCircle2, Clock, FileText, Loader2, RefreshCw, Trash2, XCircle } from "lucide-react";
 
 type Props = {
   reports: ReportSummary[];
   tasks: ReportTask[];
   selectedRunId: string;
   detail: ReportDetail | null;
+  refreshing?: boolean;
+  onRefresh?: () => void;
   onSelect: (runId: string) => void;
   onDelete: (runId: string) => Promise<void>;
 };
@@ -73,7 +75,7 @@ function formatTime(iso: string): string {
   }
 }
 
-export function ReportsPage({ reports, tasks, selectedRunId, detail, onSelect, onDelete }: Props) {
+export function ReportsPage({ reports, tasks, selectedRunId, detail, refreshing, onRefresh, onSelect, onDelete }: Props) {
   const [tickNow, setTickNow] = useState<number>(() => Date.now());
   const hasActiveTasks = tasks.some((t) => t.status === "PENDING" || t.status === "RUNNING");
 
@@ -99,14 +101,22 @@ export function ReportsPage({ reports, tasks, selectedRunId, detail, onSelect, o
         <div className="pointer-events-none absolute -left-12 -top-14 h-44 w-44 rounded-full bg-emerald-400/20 blur-3xl" />
         <div className="pointer-events-none absolute right-0 top-10 h-32 w-32 rounded-full bg-teal-400/20 blur-2xl" />
         <div className="pointer-events-none absolute -bottom-12 right-10 h-44 w-44 rounded-full bg-cyan-400/20 blur-3xl" />
-        <div className="relative">
-          <h2 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-            <FileText className="h-5 w-5 text-emerald-600" />
-            Reports 报告中心
-          </h2>
-          <p className="mt-2 text-sm text-muted-foreground">
-            查看已生成的分析报告与任务执行状态。当前 {reports.length} 份报告{activeTasks.length > 0 ? `，${activeTasks.length} 个任务执行中` : ""}。
-          </p>
+        <div className="relative flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
+              <FileText className="h-5 w-5 text-emerald-600" />
+              Reports 报告中心
+            </h2>
+            <p className="mt-2 text-sm text-muted-foreground">
+              查看已生成的分析报告与任务执行状态。当前 {reports.length} 份报告{activeTasks.length > 0 ? `，${activeTasks.length} 个任务执行中` : ""}。
+            </p>
+          </div>
+          {onRefresh && (
+            <Button variant="outline" onClick={onRefresh} disabled={refreshing}>
+              <RefreshCw className={`mr-2 h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+              刷新数据
+            </Button>
+          )}
         </div>
       </section>
 

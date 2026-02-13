@@ -122,7 +122,7 @@ export function ConfigPage({
 
   const addIndexRow = () => {
     updateDashboard({
-      indices: [...dashboardIndices, { symbol: "", market: "US", alias: "" }],
+      indices: [...dashboardIndices, { symbol: "", market: "US", alias: "", enabled: true }],
     });
   };
 
@@ -448,6 +448,7 @@ export function ConfigPage({
                   <TableHead>Alias</TableHead>
                   <TableHead>Symbol</TableHead>
                   <TableHead>Market</TableHead>
+                  <TableHead>启用</TableHead>
                   <TableHead>操作</TableHead>
                 </TableRow>
               </TableHeader>
@@ -492,6 +493,26 @@ export function ConfigPage({
                           <SelectItem value="US">US</SelectItem>
                         </SelectContent>
                       </Select>
+                    </TableCell>
+                    <TableCell>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={item.enabled !== false}
+                        aria-label={`${item.enabled !== false ? "禁用" : "启用"} ${item.alias || item.symbol}`}
+                        onClick={() =>
+                          updateIndexRow(index, { enabled: !(item.enabled !== false) })
+                        }
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                          item.enabled !== false ? "bg-emerald-500" : "bg-slate-400"
+                        }`}
+                      >
+                        <span
+                          className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
+                            item.enabled !== false ? "translate-x-5" : "translate-x-0.5"
+                          }`}
+                        />
+                      </button>
                     </TableCell>
                     <TableCell>
                       <Button

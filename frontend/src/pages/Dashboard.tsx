@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Activity, BarChart3, Gauge, Globe2, RefreshCw, TrendingDown, TrendingUp } from "lucide-react";
 
@@ -127,7 +127,7 @@ const MARKET_META: MarketMeta[] = [
   },
 ];
 
-function IndexCard({ item }: { item: DashboardIndexMetric }) {
+const IndexCard = memo(function IndexCard({ item }: { item: DashboardIndexMetric }) {
   const tone = toneByPct(item.change_percent);
   return (
     <Card className={`${tone.cardClass} transition-all duration-200 hover:scale-[1.02] hover:shadow-lg`}>
@@ -173,7 +173,7 @@ function IndexCard({ item }: { item: DashboardIndexMetric }) {
       </CardContent>
     </Card>
   );
-}
+});
 
 export function DashboardPage() {
   const queryClient = useQueryClient();

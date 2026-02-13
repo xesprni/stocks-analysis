@@ -36,12 +36,13 @@ class DashboardService:
         self, page: int = 1, page_size: int = 10, enabled_only: bool = True
     ) -> DashboardSnapshotView:
         index_rows = self.config.dashboard.indices or []
+        enabled_rows = [item for item in index_rows if getattr(item, "enabled", True)]
         index_metrics = await asyncio.gather(
             *[
                 self._build_index_metric(
                     symbol=item.symbol, market=item.market, alias=item.alias
                 )
-                for item in index_rows
+                for item in enabled_rows
             ]
         )
 
@@ -125,9 +126,7 @@ class DashboardService:
                 symbol=cleaned_symbol, market=cleaned_market
             )
         except Exception:
-            return self._unavailable_quote(
-                symbol=cleaned_symbol, market=cleaned_market
-            )
+            return self._unavailable_quote(symbol=cleaned_symbol, market=cleaned_market)
 
     @staticmethod
     def _unavailable_quote(symbol: str, market: str) -> Quote:
@@ -148,4 +147,3 @@ class DashboardService:
             currency=currency,
             source="unavailable",
         )
-

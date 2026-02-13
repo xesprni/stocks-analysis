@@ -64,6 +64,7 @@ export const appConfigSchema = z.object({
         symbol: z.string(),
         market: z.string(),
         alias: z.string().nullable().optional(),
+        enabled: z.boolean().default(true),
       })
     ),
     auto_refresh_enabled: z.boolean(),

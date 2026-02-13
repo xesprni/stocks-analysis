@@ -97,6 +97,7 @@ class DashboardIndexConfig(BaseModel):
     symbol: str
     market: str = Field(default="US", pattern="^(CN|HK|US)$")
     alias: Optional[str] = None
+    enabled: bool = True
 
 
 class DashboardConfig(BaseModel):

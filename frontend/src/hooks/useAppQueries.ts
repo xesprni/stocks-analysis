@@ -35,6 +35,7 @@ export function useAppQueries(
   alertStatus: string,
   alertMarket: string,
   alertSymbol: string,
+  activeTab: string = "dashboard",
 ) {
   const notifier = useNotifier();
   const queryErrorCache = useRef<Record<string, string>>({});
@@ -47,6 +48,8 @@ export function useAppQueries(
     queryKey: ["report-tasks"],
     queryFn: api.listReportTasks,
     refetchInterval: (query) => {
+      // Only poll when reports or report-runner tab is active
+      if (activeTab !== "reports" && activeTab !== "report-runner") return false;
       const data = query.state.data;
       if (data?.some((t) => t.status === "PENDING" || t.status === "RUNNING")) {
         return 2000;
@@ -60,7 +63,7 @@ export function useAppQueries(
   const listenerRunsQuery = useQuery({
     queryKey: ["news-listener-runs"],
     queryFn: () => api.listNewsListenerRuns(50),
-    refetchInterval: 15000,
+    refetchInterval: activeTab === "alerts" ? 15000 : false,
   });
   const alertsQuery = useQuery({
     queryKey: ["news-alerts", alertStatus, alertMarket, alertSymbol],
@@ -71,7 +74,7 @@ export function useAppQueries(
         symbol: alertSymbol,
         limit: 50,
       }),
-    refetchInterval: 15000,
+    refetchInterval: activeTab === "alerts" ? 15000 : false,
   });
   const detailQuery = useQuery({
     queryKey: ["report-detail", selectedRunId],
