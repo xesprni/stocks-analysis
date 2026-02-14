@@ -1,0 +1,29 @@
+# 后端技术文档
+
+本目录用于沉淀 `market_reporter` 后端的模块化技术文档，按“基础层 + 业务模块”组织。
+
+## 文档索引
+
+- [后端架构总览](./backend/architecture.md)
+- [API 层设计与端点清单](./backend/api.md)
+- [Core 与配置系统](./backend/core_and_config.md)
+- [基础设施层（DB/HTTP/安全）](./backend/infra.md)
+
+### 业务模块（`market_reporter/modules`）
+
+- [watchlist 模块](./backend/modules/watchlist.md)
+- [news 模块](./backend/modules/news.md)
+- [news_listener 模块](./backend/modules/news_listener.md)
+- [market_data 模块](./backend/modules/market_data.md)
+- [symbol_search 模块](./backend/modules/symbol_search.md)
+- [fund_flow 模块](./backend/modules/fund_flow.md)
+- [analysis_engine 模块](./backend/modules/analysis_engine.md)
+- [agent 模块](./backend/modules/agent.md)
+- [reports 模块](./backend/modules/reports.md)
+- [dashboard 模块](./backend/modules/dashboard.md)
+
+## 约定
+
+- 术语中的“模块”默认指 `market_reporter/modules/*` 下子模块。
+- API 路由统一挂载在 `/api/*`。
+- 当前后端默认数据库为 SQLite（`data/market_reporter.db`）。
