@@ -152,6 +152,18 @@ async def get_stock_analysis_run(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+@router.delete("/analysis/stocks/runs/{run_id}")
+async def delete_stock_analysis_run(
+    run_id: int,
+    config_store: ConfigStore = Depends(get_config_store),
+) -> dict:
+    config = config_store.load()
+    init_db(config.database.url)
+    service = AnalysisService(config=config, registry=ProviderRegistry())
+    deleted = service.delete_history_item(run_id=run_id)
+    return {"deleted": deleted}
+
+
 @router.get(
     "/analysis/stocks/{symbol}/history",
     response_model=List[StockAnalysisHistoryItem],

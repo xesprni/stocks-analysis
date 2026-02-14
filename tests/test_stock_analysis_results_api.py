@@ -95,6 +95,17 @@ class StockAnalysisResultsApiTest(unittest.TestCase):
             not_found = client.get("/api/analysis/stocks/runs/999999")
             self.assertEqual(not_found.status_code, 404)
 
+            deleted = client.delete(f"/api/analysis/stocks/runs/{row1_id}")
+            self.assertEqual(deleted.status_code, 200)
+            self.assertEqual(deleted.json(), {"deleted": True})
+
+            deleted_again = client.delete(f"/api/analysis/stocks/runs/{row1_id}")
+            self.assertEqual(deleted_again.status_code, 200)
+            self.assertEqual(deleted_again.json(), {"deleted": False})
+
+            after_delete = client.get(f"/api/analysis/stocks/runs/{row1_id}")
+            self.assertEqual(after_delete.status_code, 404)
+
     def test_list_stock_analysis_tasks(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)

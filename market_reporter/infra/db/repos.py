@@ -390,6 +390,14 @@ class StockAnalysisRunRepo:
         statement = statement.limit(limit)
         return list(self.session.exec(statement).all())
 
+    def delete(self, run_id: int) -> bool:
+        row = self.get(run_id=run_id)
+        if row is None:
+            return False
+        self.session.delete(row)
+        self.session.flush()
+        return True
+
 
 class NewsListenerRunRepo:
     def __init__(self, session: Session) -> None:

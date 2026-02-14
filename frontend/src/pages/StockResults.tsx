@@ -16,6 +16,7 @@ type Props = {
   refreshing?: boolean;
   onRefresh?: () => void;
   onSelect: (runId: number) => void;
+  onDelete?: (runId: number) => void;
 };
 
 function statusBadge(status: StockAnalysisTask["status"]) {
@@ -78,7 +79,7 @@ function formatTime(iso: string): string {
   }
 }
 
-export function StockResultsPage({ runs, tasks, selectedRunId, detail, refreshing, onRefresh, onSelect }: Props) {
+export function StockResultsPage({ runs, tasks, selectedRunId, detail, refreshing, onRefresh, onSelect, onDelete }: Props) {
   const [tickNow, setTickNow] = useState<number>(() => Date.now());
   const hasActiveTasks = tasks.some((t) => t.status === "PENDING" || t.status === "RUNNING");
 
@@ -221,6 +222,7 @@ export function StockResultsPage({ runs, tasks, selectedRunId, detail, refreshin
                       <TableHead>Provider</TableHead>
                       <TableHead>Model</TableHead>
                       <TableHead>Time</TableHead>
+                      <TableHead className="w-[88px] text-right">操作</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -238,6 +240,20 @@ export function StockResultsPage({ runs, tasks, selectedRunId, detail, refreshin
                         <TableCell>{item.provider_id || "-"}</TableCell>
                         <TableCell>{item.model || "-"}</TableCell>
                         <TableCell className="text-xs text-muted-foreground">{formatTime(item.created_at)}</TableCell>
+                        <TableCell className="text-right">
+                          {onDelete ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                onDelete(item.id);
+                              }}
+                            >
+                              删除
+                            </Button>
+                          ) : null}
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>

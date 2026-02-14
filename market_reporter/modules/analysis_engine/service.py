@@ -626,6 +626,11 @@ class AnalysisService:
                 raise FileNotFoundError(f"Stock analysis run not found: {run_id}")
             return self._to_history_item(row)
 
+    def delete_history_item(self, run_id: int) -> bool:
+        with session_scope(self.config.database.url) as session:
+            repo = StockAnalysisRunRepo(session)
+            return repo.delete(run_id=run_id)
+
     async def _invoke_provider(
         self,
         provider_cfg: AnalysisProviderConfig,

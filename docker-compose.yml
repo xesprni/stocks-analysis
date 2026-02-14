@@ -1,0 +1,37 @@
+services:
+  market-reporter:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: market-reporter
+    ports:
+      - "8000:8000"
+    environment:
+      MARKET_REPORTER_API_HOST: 0.0.0.0
+      MARKET_REPORTER_API_PORT: 8000
+      MARKET_REPORTER_CONFIG_FILE: /app/config/settings.yaml
+      MARKET_REPORTER_FRONTEND_DIST: /app/frontend/dist
+      MARKET_REPORTER_MASTER_KEY_FILE: /app/data/master_key.b64
+      CODEX_BIN: /usr/bin/codex
+      CODEX_HOME: /root/.codex
+    volumes:
+      - ./config:/app/config
+      - ./data:/app/data
+      - ./output:/app/output
+      - codex_home:/root/.codex
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=5)",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+volumes:
+  codex_home:

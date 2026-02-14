@@ -94,6 +94,70 @@ npm run build
 
 构建产物默认在 `frontend/dist`，后端会自动挂载静态文件。
 
+## Docker Compose 部署
+
+### 0) 前置条件
+
+1. 本机已安装并启动 Docker（Docker Desktop 或 Docker Engine）。
+2. 在项目根目录执行命令（即包含 `docker-compose.yml` 的目录）。
+
+### 1) 首次启动（构建镜像并启动服务）
+
+```bash
+docker compose up -d --build
+```
+
+启动后访问：`http://127.0.0.1:8000`
+
+### 2) 日常启动（不重建镜像）
+
+```bash
+docker compose up -d
+```
+
+### 3) 查看状态 / 日志
+
+```bash
+docker compose ps
+docker compose logs -f market-reporter
+```
+
+### 4) 停止服务
+
+```bash
+docker compose down
+```
+
+### 5) 代码更新后重建
+
+```bash
+docker compose up -d --build
+```
+
+### 6) 持久化目录
+
+`docker-compose.yml` 已挂载以下目录到容器内：
+
+1. `./config -> /app/config`
+2. `./data -> /app/data`
+3. `./output -> /app/output`
+
+其中 `MARKET_REPORTER_MASTER_KEY_FILE=/app/data/master_key.b64` 用于容器环境下主密钥文件回退（当系统 keyring 不可用时）。
+
+### 7) 容器内 Codex CLI（用于 `codex_app_server`）
+
+镜像已内置 `codex` CLI，并挂载持久化目录 `codex_home:/root/.codex`。
+
+```bash
+# 查看版本
+docker compose exec market-reporter codex --version
+
+# 首次登录（按终端提示完成）
+docker compose exec market-reporter codex login
+```
+
+登录成功后，`codex_app_server` provider 可在容器内直接调用。
+
 ## 数据库（当前实现）
 
 ### 存储位置与配置
@@ -200,6 +264,7 @@ UV_CACHE_DIR=.uv-cache uv run market-reporter db init
 5. `GET /api/analysis/stocks/runs`
 6. `GET /api/analysis/stocks/runs/{run_id}`
 7. `GET /api/analysis/stocks/{symbol}/history`
+8. `DELETE /api/analysis/stocks/runs/{run_id}`
 
 ### 行情与搜索
 

@@ -1,5 +1,5 @@
 output_root: output
-config_file: config/settings.yaml
+config_file: /app/config/settings.yaml
 timezone: Asia/Shanghai
 news_limit: 20
 flow_periods: 12
@@ -66,7 +66,7 @@ dashboard:
   - symbol: 000001.SH
     market: CN
     alias: 上证指数
-    enabled: true
+    enabled: false
   - symbol: 399001.SZ
     market: CN
     alias: 深证成指
@@ -90,19 +90,19 @@ dashboard:
   - symbol: ^HSTECH
     market: HK
     alias: 恒生科技
-    enabled: true
+    enabled: false
   - symbol: ^GSPC
     market: US
     alias: S&P 500
-    enabled: true
+    enabled: false
   - symbol: ^IXIC
     market: US
     alias: NASDAQ
-    enabled: true
+    enabled: false
   - symbol: ^DJI
     market: US
     alias: Dow Jones
-    enabled: true
+    enabled: false
   auto_refresh_enabled: false
   auto_refresh_seconds: 60
 agent:

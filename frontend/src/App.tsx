@@ -567,6 +567,27 @@ export default function App() {
                 void stockTasksQuery.refetch();
               }}
               onSelect={(runId) => setSelectedStockRunId(String(runId))}
+              onDelete={async (runId) => {
+                try {
+                  if (!window.confirm(`确认删除 Stock 分析记录 #${runId} ?`)) {
+                    return;
+                  }
+                  const payload = await api.deleteStockAnalysisRun(runId);
+                  if (!payload.deleted) {
+                    notifier.warning("记录不存在或已删除", `#${runId}`);
+                    return;
+                  }
+                  if (selectedStockRunId === String(runId)) {
+                    setSelectedStockRunId("");
+                  }
+                  await queryClient.invalidateQueries({ queryKey: ["stock-analysis-runs"] });
+                  notifier.success("Stock 分析记录已删除", `#${runId}`);
+                } catch (error) {
+                  const message = toErrorMessage(error);
+                  setErrorMessage(message);
+                  notifier.error("删除 Stock 分析记录失败", message);
+                }
+              }}
             />
           </Suspense>
         </TabsContent>

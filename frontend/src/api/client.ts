@@ -223,6 +223,10 @@ export const api = {
   },
   getStockAnalysisRun: (runId: number) =>
     request(`/analysis/stocks/runs/${runId}`, stockAnalysisHistoryItemSchema),
+  deleteStockAnalysisRun: (runId: number) =>
+    request(`/analysis/stocks/runs/${runId}`, z.object({ deleted: z.boolean() }), {
+      method: "DELETE",
+    }),
   listStockAnalysisHistory: (symbol: string, market: string, limit = 20) =>
     request(
       `/analysis/stocks/${encodeURIComponent(symbol)}/history?market=${market}&limit=${limit}`,
