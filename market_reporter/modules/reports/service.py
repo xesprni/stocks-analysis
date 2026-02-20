@@ -12,9 +12,9 @@ from zoneinfo import ZoneInfo
 from market_reporter.config import AppConfig
 from market_reporter.core.registry import ProviderRegistry
 from market_reporter.infra.http.client import HttpClient
-from market_reporter.modules.agent.schemas import AgentRunRequest
-from market_reporter.modules.agent.service import AgentService
-from market_reporter.modules.analysis_engine.service import AnalysisService
+from market_reporter.modules.analysis.agent.schemas import AgentRunRequest
+from market_reporter.modules.analysis.agent.service import AgentService
+from market_reporter.modules.analysis.service import AnalysisService
 from market_reporter.modules.fund_flow.service import FundFlowService
 from market_reporter.modules.news.service import NewsService
 from market_reporter.schemas import (
@@ -151,28 +151,14 @@ class ReportService:
                 fund_flow_service=fund_flow_service,
             )
             try:
-                provider_cfg, selected_model = (
-                    analysis_service._select_provider_and_model(
+                provider_cfg, selected_model, api_key, access_token = (
+                    analysis_service.resolve_credentials(
                         provider_id=None,
                         model=None,
                     )
                 )
                 provider_id = provider_cfg.provider_id
                 model = selected_model
-
-                auth_mode = analysis_service._resolve_auth_mode(provider_cfg)
-                api_key: Optional[str] = None
-                access_token: Optional[str] = None
-                if provider_cfg.type == "codex_app_server":
-                    access_token = None
-                elif auth_mode == "chatgpt_oauth":
-                    access_token = analysis_service._resolve_access_token(
-                        provider_cfg=provider_cfg
-                    )
-                elif auth_mode == "api_key":
-                    api_key = analysis_service._resolve_api_key(
-                        provider_cfg=provider_cfg
-                    )
 
                 agent_service = AgentService(
                     config=config,

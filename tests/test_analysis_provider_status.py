@@ -7,7 +7,7 @@ from market_reporter.config import AnalysisConfig, AnalysisProviderConfig, AppCo
 from market_reporter.core.registry import ProviderRegistry
 from market_reporter.infra.db.session import init_db
 from market_reporter.infra.security.crypto import generate_master_key
-from market_reporter.modules.analysis_engine.service import AnalysisService
+from market_reporter.modules.analysis.service import AnalysisService
 
 
 class DummyKeychainStore:

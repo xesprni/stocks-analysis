@@ -1,7 +1,7 @@
 import unittest
 
-from market_reporter.modules.agent.guardrails import AgentGuardrails
-from market_reporter.modules.agent.schemas import AgentEvidence
+from market_reporter.modules.analysis.agent.guardrails import AgentGuardrails
+from market_reporter.modules.analysis.agent.schemas import AgentEvidence
 
 
 class AgentGuardrailsTest(unittest.TestCase):
@@ -44,7 +44,9 @@ class AgentGuardrailsTest(unittest.TestCase):
         self.assertIn("pe_inconsistency", codes)
         self.assertIn("conclusion_without_evidence", codes)
 
-        adjusted = guardrails.apply_confidence_penalty(base_confidence=0.8, issues=issues)
+        adjusted = guardrails.apply_confidence_penalty(
+            base_confidence=0.8, issues=issues
+        )
         self.assertLess(adjusted, 0.8)
         self.assertGreaterEqual(adjusted, 0.2)
 

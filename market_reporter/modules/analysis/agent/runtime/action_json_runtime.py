@@ -3,8 +3,9 @@ from __future__ import annotations
 import json
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
-from market_reporter.modules.agent.schemas import RuntimeDraft, ToolCallTrace
-from market_reporter.modules.analysis_engine.providers.codex_app_server_provider import (
+from market_reporter.core.utils import parse_json
+from market_reporter.modules.analysis.agent.schemas import RuntimeDraft, ToolCallTrace
+from market_reporter.modules.analysis.providers.codex_app_server_provider import (
     CodexAppServerProvider,
 )
 
@@ -60,7 +61,11 @@ class ActionJSONRuntime:
                             "action_items": ["string"],
                             "confidence": "number",
                             "conclusions": ["string"],
-                            "scenario_assumptions": {"base": "", "bull": "", "bear": ""},
+                            "scenario_assumptions": {
+                                "base": "",
+                                "bull": "",
+                                "bear": "",
+                            },
                             "markdown": "string",
                         },
                     },
@@ -75,7 +80,7 @@ class ActionJSONRuntime:
                 ),
                 access_token=self.access_token,
             )
-            parsed = self._parse_json(response_text)
+            parsed = parse_json(response_text)
             if not isinstance(parsed, dict):
                 break
 
@@ -112,27 +117,6 @@ class ActionJSONRuntime:
                 break
 
         return self._fallback_draft(context), traces
-
-    @staticmethod
-    def _parse_json(content: str) -> Optional[Dict[str, Any]]:
-        if not content:
-            return None
-        try:
-            parsed = json.loads(content)
-            if isinstance(parsed, dict):
-                return parsed
-        except Exception:
-            pass
-        start = content.find("{")
-        end = content.rfind("}")
-        if start >= 0 and end > start:
-            try:
-                parsed = json.loads(content[start : end + 1])
-                if isinstance(parsed, dict):
-                    return parsed
-            except Exception:
-                return None
-        return None
 
     @staticmethod
     def _to_draft(data: Dict[str, Any]) -> RuntimeDraft:

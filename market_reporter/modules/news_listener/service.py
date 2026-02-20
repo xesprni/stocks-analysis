@@ -10,7 +10,7 @@ from market_reporter.core.registry import ProviderRegistry
 from market_reporter.infra.db.models import WatchlistNewsAlertTable
 from market_reporter.infra.db.repos import NewsListenerRunRepo, WatchlistNewsAlertRepo
 from market_reporter.infra.db.session import session_scope
-from market_reporter.modules.analysis_engine.service import AnalysisService
+from market_reporter.modules.analysis.service import AnalysisService
 from market_reporter.modules.market_data.service import MarketDataService
 from market_reporter.modules.news.service import NewsService
 from market_reporter.modules.news_listener.matcher import (

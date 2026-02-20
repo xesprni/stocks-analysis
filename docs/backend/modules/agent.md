@@ -1,13 +1,13 @@
-# agent 模块
+# agent 子包（analysis/agent）
 
 ## 1. 模块职责
 
-将“多工具数据采集 + LLM 结构化推理 + 规则护栏校验 + 报告格式化”串成统一执行链。
+`analysis` 模块的子包，将"多工具数据采集 + LLM 结构化推理 + 规则护栏校验 + 报告格式化"串成统一执行链。
 
 ## 2. 核心文件
 
-- 编排：`market_reporter/modules/agent/orchestrator.py`
-- 门面：`market_reporter/modules/agent/service.py`
+- 编排：`market_reporter/modules/analysis/agent/orchestrator.py`
+- 门面：`market_reporter/modules/analysis/agent/service.py`
 - 运行时：
   - `runtime/openai_tool_runtime.py`
   - `runtime/action_json_runtime.py`

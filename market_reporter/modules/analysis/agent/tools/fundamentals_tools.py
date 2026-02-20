@@ -4,8 +4,8 @@ import asyncio
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-from market_reporter.modules.agent.schemas import FundamentalsResult
-from market_reporter.modules.agent.tools.market_tools import infer_market_from_symbol
+from market_reporter.modules.analysis.agent.schemas import FundamentalsResult
+from market_reporter.modules.analysis.agent.tools.market_tools import infer_market_from_symbol
 from market_reporter.modules.market_data.symbol_mapper import normalize_symbol, to_yfinance_symbol
 
 

@@ -4,8 +4,10 @@ import math
 import unittest
 from datetime import datetime, timedelta
 
-from market_reporter.modules.agent.tools.compute_tools import ComputeTools
-from market_reporter.modules.agent.tools.fundamentals_tools import FundamentalsTools
+from market_reporter.modules.analysis.agent.tools.compute_tools import ComputeTools
+from market_reporter.modules.analysis.agent.tools.fundamentals_tools import (
+    FundamentalsTools,
+)
 
 
 class ComputeToolsSupportResistanceTest(unittest.TestCase):

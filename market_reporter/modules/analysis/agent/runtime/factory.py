@@ -4,8 +4,12 @@ from typing import Optional
 
 from market_reporter.config import AnalysisProviderConfig
 from market_reporter.core.registry import ProviderRegistry
-from market_reporter.modules.agent.runtime.action_json_runtime import ActionJSONRuntime
-from market_reporter.modules.agent.runtime.openai_tool_runtime import OpenAIToolRuntime
+from market_reporter.modules.analysis.agent.runtime.action_json_runtime import (
+    ActionJSONRuntime,
+)
+from market_reporter.modules.analysis.agent.runtime.openai_tool_runtime import (
+    OpenAIToolRuntime,
+)
 
 
 class AgentRuntimeFactory:

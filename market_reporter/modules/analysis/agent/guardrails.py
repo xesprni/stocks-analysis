@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from market_reporter.modules.agent.schemas import AgentEvidence, GuardrailIssue
+from market_reporter.modules.analysis.agent.schemas import AgentEvidence, GuardrailIssue
 
 
 class AgentGuardrails:
@@ -40,7 +40,9 @@ class AgentGuardrails:
         return max(0.2, min(1.0, base_confidence - penalty))
 
     @staticmethod
-    def _validate_tool_metadata(tool_results: Dict[str, Dict[str, Any]]) -> List[GuardrailIssue]:
+    def _validate_tool_metadata(
+        tool_results: Dict[str, Dict[str, Any]],
+    ) -> List[GuardrailIssue]:
         issues: List[GuardrailIssue] = []
         for tool_name, payload in tool_results.items():
             if not isinstance(payload, dict):

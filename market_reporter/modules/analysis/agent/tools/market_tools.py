@@ -4,7 +4,7 @@ import asyncio
 from datetime import datetime, timezone
 from typing import Optional
 
-from market_reporter.modules.agent.schemas import PriceBar, PriceHistoryResult
+from market_reporter.modules.analysis.agent.schemas import PriceBar, PriceHistoryResult
 from market_reporter.modules.market_data.symbol_mapper import normalize_symbol, to_yfinance_symbol
 
 

@@ -5,12 +5,21 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from market_reporter.config import AnalysisConfig, AnalysisProviderConfig, AppConfig, DatabaseConfig
+from market_reporter.config import (
+    AnalysisConfig,
+    AnalysisProviderConfig,
+    AppConfig,
+    DatabaseConfig,
+)
 from market_reporter.core.registry import ProviderRegistry
 from market_reporter.infra.db.session import init_db
-from market_reporter.modules.analysis_engine.service import AnalysisService
-from market_reporter.modules.agent.schemas import AgentFinalReport, AgentRunResult, RuntimeDraft
-from market_reporter.modules.agent.service import AgentService
+from market_reporter.modules.analysis.service import AnalysisService
+from market_reporter.modules.analysis.agent.schemas import (
+    AgentFinalReport,
+    AgentRunResult,
+    RuntimeDraft,
+)
+from market_reporter.modules.analysis.agent.service import AgentService
 
 
 class _DummyNewsService:
@@ -46,13 +55,19 @@ class StockAnalysisIndicatorContractTest(unittest.TestCase):
                             "source": "pandas-ta/computed",
                             "values": {"close": 200.0, "rsi_14": 61.2},
                             "trend": {"primary": {"ma": {"state": "bullish"}}},
-                            "momentum": {"primary": {"rsi": {"value": 61.2, "status": "neutral"}}},
+                            "momentum": {
+                                "primary": {"rsi": {"value": 61.2, "status": "neutral"}}
+                            },
                             "volume_price": {"primary": {"volume_ratio": 1.45}},
                             "patterns": {"primary": {"recent": []}},
                             "support_resistance": {
                                 "primary": {
-                                    "supports": [{"level": "S1", "price": 188.0, "touches": 3}],
-                                    "resistances": [{"level": "R1", "price": 212.0, "touches": 2}],
+                                    "supports": [
+                                        {"level": "S1", "price": 188.0, "touches": 3}
+                                    ],
+                                    "resistances": [
+                                        {"level": "R1", "price": 212.0, "touches": 2}
+                                    ],
                                 }
                             },
                             "strategy": {
@@ -160,8 +175,12 @@ class StockAnalysisIndicatorContractTest(unittest.TestCase):
                 self.assertIn("technical_analysis", raw)
                 self.assertIn("strategy", raw)
                 self.assertIn("signal_timeline", raw)
-                self.assertEqual(raw["technical_analysis"].get("source"), "pandas-ta/computed")
-                self.assertEqual(raw["technical_analysis"].get("as_of"), "2026-02-13T00:00:00")
+                self.assertEqual(
+                    raw["technical_analysis"].get("source"), "pandas-ta/computed"
+                )
+                self.assertEqual(
+                    raw["technical_analysis"].get("as_of"), "2026-02-13T00:00:00"
+                )
                 self.assertEqual(raw["strategy"].get("stance"), "bullish")
                 self.assertTrue(isinstance(raw["signal_timeline"], list))
         finally:

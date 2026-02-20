@@ -31,8 +31,8 @@ market_reporter/
     market_data/             # 行情模块（akshare/yfinance/composite）
     fund_flow/               # 资金流模块
     watchlist/               # watchlist 服务
-    analysis_engine/         # 报告/个股分析引擎
-    agent/                   # agent 工具链（价格/新闻/指标/宏观/filings）
+    analysis/                # 统一分析模块（含 agent 子包）
+      agent/                 # agent 工具链（价格/新闻/指标/宏观/filings）
     reports/                 # 报告生成与任务管理
   infra/
     db/                      # SQLModel + repository

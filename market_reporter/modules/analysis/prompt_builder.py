@@ -1,75 +1,13 @@
 from __future__ import annotations
 
 import json
-from typing import Dict, List
+from typing import Dict
 
 from market_reporter.core.types import AnalysisInput
 
 
 # ---------------------------------------------------------------------------
-# System prompt: Senior Equity Research Analyst persona
-# ---------------------------------------------------------------------------
-
-SYSTEM_PROMPT = """\
-You are a senior equity research analyst with 15+ years of experience in cross-market analysis \
-(CN A-shares, HK equities, US equities). You combine technical analysis, fundamental insights, \
-and macro/political awareness to produce actionable trading recommendations.
-
-## Your analysis methodology
-
-1. **Technical Analysis**
-   - K-line pattern recognition: identify doji, engulfing, hammer, morning/evening star, etc.
-   - Support and resistance levels from recent swing highs/lows
-   - Moving average alignment (infer from price trajectory)
-   - Volume-price divergence detection
-   - Intraday momentum from real-time curve data
-
-2. **News & Sentiment Analysis**
-   - Categorize news by relevance: company-specific, sector, macro, political/regulatory
-   - Assess sentiment polarity and urgency of each news cluster
-   - Identify catalysts that may trigger short-term price moves
-   - Flag conflicting signals between news sentiment and price action
-
-3. **Fund Flow & Institutional Activity**
-   - Analyze net inflow/outflow trends (northbound, southbound, ETF, etc.)
-   - Detect institutional accumulation or distribution patterns
-   - Compare fund flow direction vs. price direction for divergence
-
-4. **Macro & Political Risk**
-   - Evaluate relevant policy changes, trade tensions, regulatory shifts
-   - Assess central bank signals, interest rate environment
-   - Consider geopolitical events that may affect the market or sector
-
-5. **Risk Assessment Framework**
-   - Assign risk level: LOW / MEDIUM / HIGH / CRITICAL
-   - Identify specific downside triggers and their probability
-   - Suggest position sizing guidance based on risk level
-   - Define stop-loss and take-profit zones where applicable
-
-## Output requirements
-
-Return exactly one valid JSON object with these keys:
-- "summary": One-sentence core conclusion (in Chinese)
-- "sentiment": "bullish" | "neutral" | "bearish"
-- "key_levels": Array of key price levels or conditions (strings)
-- "risks": Array of main risks (strings)
-- "action_items": Array of actionable recommendations with specific conditions and thresholds
-- "confidence": Decimal between 0 and 1
-- "markdown": Structured Chinese analysis report in markdown format, organized into clear sections
-
-For the "markdown" field, structure your report as follows:
-## 核心观点
-## 技术面分析
-## 消息面与情绪
-## 资金流向
-## 风险评估
-## 操作建议
-
-Do NOT wrap output with markdown code fences. Return raw JSON only.
-"""
-
-# ---------------------------------------------------------------------------
-# System prompt variant for market overview (no specific stock)
+# System prompt: Market overview / news alert analyst persona
 # ---------------------------------------------------------------------------
 
 MARKET_OVERVIEW_SYSTEM_PROMPT = """\
@@ -133,107 +71,13 @@ Do NOT wrap output with markdown code fences. Return raw JSON only.
 
 
 def build_user_prompt(payload: AnalysisInput) -> str:
-    """Build the user prompt for individual stock analysis."""
-    # Reuse one prompt entry point for stock analysis, overview, and alert triage modes.
-    is_market_overview = payload.symbol in (
-        "MARKET",
-        "WATCHLIST_ALERTS",
-    ) or payload.watch_meta.get("mode") in (
-        "overview",
-        "watchlist_news_listener",
-    )
-
-    if is_market_overview:
-        return _build_market_overview_prompt(payload)
-    return _build_stock_analysis_prompt(payload)
+    """Build the user prompt for market overview / news alert triage."""
+    return _build_market_overview_prompt(payload)
 
 
 def get_system_prompt(payload: AnalysisInput) -> str:
-    """Return the appropriate system prompt based on analysis mode."""
-    is_market_overview = payload.symbol in (
-        "MARKET",
-        "WATCHLIST_ALERTS",
-    ) or payload.watch_meta.get("mode") in (
-        "overview",
-        "watchlist_news_listener",
-    )
-    if is_market_overview:
-        return MARKET_OVERVIEW_SYSTEM_PROMPT
-    return SYSTEM_PROMPT
-
-
-def _build_stock_analysis_prompt(payload: AnalysisInput) -> str:
-    quote = payload.quote.model_dump(mode="json") if payload.quote else {}
-
-    kline_tail = [
-        {
-            "ts": item.ts,
-            "open": item.open,
-            "high": item.high,
-            "low": item.low,
-            "close": item.close,
-            "volume": item.volume,
-        }
-        for item in payload.kline[-60:]
-    ]
-    curve_tail = [
-        {
-            "ts": item.ts,
-            "price": item.price,
-            "volume": item.volume,
-        }
-        for item in payload.curve[-90:]
-    ]
-
-    # Categorize news by type for richer analysis
-    news_digest = _categorize_news(payload.news[:40])
-
-    fund_flow: Dict[str, list] = {
-        key: [point.model_dump(mode="json") for point in value[-12:]]
-        for key, value in payload.fund_flow.items()
-    }
-    # Keep payload compact but information-rich to fit provider context windows.
-
-    request_json = {
-        "task": "对以下股票进行专业级多维度交易分析，输出可执行的投资建议。",
-        "analysis_mode": "individual_stock",
-        "symbol": payload.symbol,
-        "market": payload.market,
-        "output_contract": {
-            "summary": "一句话核心结论（中文），包含方向判断和关键条件",
-            "sentiment": "bullish|neutral|bearish",
-            "key_levels": ["具体的关键价位、支撑位、压力位，附带触发条件"],
-            "risks": ["具体风险描述，包含风险等级(LOW/MEDIUM/HIGH)和触发条件"],
-            "action_items": ["具体可执行操作，包含进场条件、目标位、止损位"],
-            "confidence": "0到1之间的小数，综合考虑数据质量和信号一致性",
-            "markdown": "结构化中文分析报告",
-        },
-        "analysis_instructions": [
-            "1. 技术面分析：识别K线形态（十字星、吞没、锤头等），判断趋势方向，计算支撑/压力位。",
-            "2. 量价分析：检查成交量与价格变动是否配合，是否存在量价背离。",
-            "3. 消息面分析：对新闻进行分类（公司、行业、宏观），评估情绪倾向和紧急程度。",
-            "4. 资金流向分析：分析主力资金动向，是否与价格走势一致或背离。",
-            "5. 风险评估：结合以上因素给出风险等级，提供具体的止损建议。",
-            "6. 如果数据不足以支撑结论，明确指出并相应降低confidence值。",
-            "7. 避免空泛判断，所有结论必须有数据支撑和具体触发条件。",
-            "8. 只返回JSON对象，不要输出多余文本。",
-        ],
-        "data": {
-            "quote": quote,
-            "technical_summary": {
-                "kline": _summarize_kline(payload),
-                "curve": _summarize_curve(payload),
-                "pattern_hints": _detect_basic_patterns(payload),
-            },
-            "kline_tail": kline_tail,
-            "curve_tail": curve_tail,
-            "news_digest": news_digest,
-            "fund_flow": fund_flow,
-            "fund_flow_summary": _summarize_fund_flow(payload),
-            "watch_meta": payload.watch_meta,
-        },
-    }
-    return json.dumps(request_json, ensure_ascii=False)
+    """Return the system prompt for LLM-based analysis."""
+    return MARKET_OVERVIEW_SYSTEM_PROMPT
 
 
 def _build_market_overview_prompt(payload: AnalysisInput) -> str:
@@ -290,168 +134,8 @@ def _build_market_overview_prompt(payload: AnalysisInput) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Technical analysis helpers
+# News categorization helpers
 # ---------------------------------------------------------------------------
-
-
-def _summarize_kline(payload: AnalysisInput) -> Dict[str, object]:
-    bars = payload.kline[-120:]
-    if not bars:
-        return {}
-    first = bars[0]
-    last = bars[-1]
-    highs = [item.high for item in bars]
-    lows = [item.low for item in bars]
-    closes = [item.close for item in bars]
-    volumes = [item.volume for item in bars if item.volume is not None]
-    change_pct = 0.0
-    if first.close:
-        change_pct = round(((last.close - first.close) / first.close) * 100, 4)
-
-    # Calculate simple moving-average proxies from available history window.
-    ma5 = round(sum(closes[-5:]) / min(5, len(closes[-5:])), 4) if closes else None
-    ma10 = (
-        round(sum(closes[-10:]) / min(10, len(closes[-10:])), 4)
-        if len(closes) >= 5
-        else None
-    )
-    ma20 = (
-        round(sum(closes[-20:]) / min(20, len(closes[-20:])), 4)
-        if len(closes) >= 10
-        else None
-    )
-
-    # Determine coarse trend state from MA alignment.
-    trend = "unknown"
-    if ma5 and ma10 and ma20:
-        if ma5 > ma10 > ma20:
-            trend = "bullish_aligned"
-        elif ma5 < ma10 < ma20:
-            trend = "bearish_aligned"
-        else:
-            trend = "mixed"
-
-    # Volume trend compares recent 5 bars vs prior 5 bars.
-    volume_trend = "unknown"
-    if len(volumes) >= 10:
-        recent_vol = sum(volumes[-5:]) / 5
-        prior_vol = sum(volumes[-10:-5]) / 5
-        if prior_vol > 0:
-            vol_change = (recent_vol - prior_vol) / prior_vol
-            if vol_change > 0.2:
-                volume_trend = "increasing"
-            elif vol_change < -0.2:
-                volume_trend = "decreasing"
-            else:
-                volume_trend = "stable"
-
-    return {
-        "bars": len(bars),
-        "interval": last.interval,
-        "start_ts": first.ts,
-        "end_ts": last.ts,
-        "first_close": first.close,
-        "last_close": last.close,
-        "change_pct": change_pct,
-        "high_max": max(highs),
-        "low_min": min(lows),
-        "avg_volume": round(sum(volumes) / len(volumes), 2) if volumes else None,
-        "ma5": ma5,
-        "ma10": ma10,
-        "ma20": ma20,
-        "ma_trend": trend,
-        "volume_trend": volume_trend,
-    }
-
-
-def _summarize_curve(payload: AnalysisInput) -> Dict[str, object]:
-    points = payload.curve[-180:]
-    if not points:
-        return {}
-    first = points[0]
-    last = points[-1]
-    prices: List[float] = [item.price for item in points]
-    change_pct = 0.0
-    if first.price:
-        change_pct = round(((last.price - first.price) / first.price) * 100, 4)
-
-    # Detect intraday momentum via recent-vs-prior segment averages.
-    momentum = "flat"
-    if len(prices) >= 20:
-        recent_segment = prices[-10:]
-        prior_segment = prices[-20:-10]
-        recent_avg = sum(recent_segment) / len(recent_segment)
-        prior_avg = sum(prior_segment) / len(prior_segment)
-        if prior_avg > 0:
-            seg_change = (recent_avg - prior_avg) / prior_avg * 100
-            if seg_change > 0.3:
-                momentum = "accelerating_up"
-            elif seg_change < -0.3:
-                momentum = "accelerating_down"
-            else:
-                momentum = "stable"
-
-    return {
-        "points": len(points),
-        "start_ts": first.ts,
-        "end_ts": last.ts,
-        "first_price": first.price,
-        "last_price": last.price,
-        "change_pct": change_pct,
-        "price_high": max(prices),
-        "price_low": min(prices),
-        "intraday_momentum": momentum,
-    }
-
-
-def _detect_basic_patterns(payload: AnalysisInput) -> List[str]:
-    """Detect basic K-line patterns from the last few bars to hint the LLM."""
-    bars = payload.kline[-10:]
-    if len(bars) < 2:
-        return []
-
-    patterns: List[str] = []
-    last = bars[-1]
-    prev = bars[-2]
-
-    body_last = abs(last.close - last.open)
-    range_last = last.high - last.low
-
-    # Doji detection
-    if range_last > 0 and body_last / range_last < 0.1:
-        patterns.append("doji_last_bar")
-
-    # Hammer / inverted hammer
-    if range_last > 0:
-        lower_shadow = min(last.open, last.close) - last.low
-        upper_shadow = last.high - max(last.open, last.close)
-        if lower_shadow > body_last * 2 and upper_shadow < body_last * 0.5:
-            patterns.append("hammer_last_bar")
-        if upper_shadow > body_last * 2 and lower_shadow < body_last * 0.5:
-            patterns.append("inverted_hammer_last_bar")
-
-    # Bullish / bearish engulfing
-    if last.close > last.open and prev.close < prev.open:
-        if last.open <= prev.close and last.close >= prev.open:
-            patterns.append("bullish_engulfing")
-    if last.close < last.open and prev.close > prev.open:
-        if last.open >= prev.close and last.close <= prev.open:
-            patterns.append("bearish_engulfing")
-
-    # Gap detection
-    if last.low > prev.high:
-        patterns.append("gap_up")
-    if last.high < prev.low:
-        patterns.append("gap_down")
-
-    # Volume spike on last bar
-    volumes = [b.volume for b in bars if b.volume is not None]
-    if len(volumes) >= 5 and volumes[-1] is not None:
-        avg_vol = sum(volumes[:-1]) / len(volumes[:-1])
-        if avg_vol > 0 and volumes[-1] > avg_vol * 2:
-            patterns.append("volume_spike_last_bar")
-
-    return patterns
 
 
 def _categorize_news(news_items: list) -> Dict[str, list]:

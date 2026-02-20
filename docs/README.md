@@ -17,8 +17,8 @@
 - [market_data 模块](./backend/modules/market_data.md)
 - [symbol_search 模块](./backend/modules/symbol_search.md)
 - [fund_flow 模块](./backend/modules/fund_flow.md)
-- [analysis_engine 模块](./backend/modules/analysis_engine.md)
-- [agent 模块](./backend/modules/agent.md)
+- [analysis 模块](./backend/modules/analysis.md)（含 agent 子包）
+- [agent 子包](./backend/modules/agent.md)
 - [reports 模块](./backend/modules/reports.md)
 - [dashboard 模块](./backend/modules/dashboard.md)
 

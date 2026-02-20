@@ -5,8 +5,12 @@ from pathlib import Path
 
 from market_reporter.config import AnalysisConfig, AnalysisProviderConfig, AppConfig
 from market_reporter.core.types import AnalysisInput, AnalysisOutput
-from market_reporter.modules.agent.schemas import AgentFinalReport, AgentRunResult, RuntimeDraft
-from market_reporter.modules.agent.service import AgentService
+from market_reporter.modules.analysis.agent.schemas import (
+    AgentFinalReport,
+    AgentRunResult,
+    RuntimeDraft,
+)
+from market_reporter.modules.analysis.agent.service import AgentService
 from market_reporter.schemas import RunRequest
 from market_reporter.services.config_store import ConfigStore
 from market_reporter.services.report_service import ReportService
@@ -69,7 +73,9 @@ class ReportServiceAgentModesTest(unittest.TestCase):
 
         def fake_to_payload(self, request, run_result):
             del self
-            payload = AnalysisInput(symbol=request.symbol or "MARKET", market=request.market or "GLOBAL")
+            payload = AnalysisInput(
+                symbol=request.symbol or "MARKET", market=request.market or "GLOBAL"
+            )
             output = AnalysisOutput(
                 summary="summary",
                 sentiment="neutral",
@@ -114,8 +120,13 @@ class ReportServiceAgentModesTest(unittest.TestCase):
                 store.save(config)
                 service = ReportService(config_store=store)
 
-                market_result = asyncio.run(service.run_report(RunRequest(mode="market")))
-                self.assertIn("Agent 分析报告", market_result.summary.report_path.read_text(encoding="utf-8"))
+                market_result = asyncio.run(
+                    service.run_report(RunRequest(mode="market"))
+                )
+                self.assertIn(
+                    "Agent 分析报告",
+                    market_result.summary.report_path.read_text(encoding="utf-8"),
+                )
                 self.assertEqual(market_result.summary.news_total, 2)
 
                 stock_result = asyncio.run(
@@ -127,7 +138,10 @@ class ReportServiceAgentModesTest(unittest.TestCase):
                         )
                     )
                 )
-                self.assertIn("模式: stock", stock_result.summary.report_path.read_text(encoding="utf-8"))
+                self.assertIn(
+                    "模式: stock",
+                    stock_result.summary.report_path.read_text(encoding="utf-8"),
+                )
         finally:
             AgentService.run = original_run  # type: ignore[method-assign]
             AgentService.to_analysis_payload = original_to_payload  # type: ignore[method-assign]

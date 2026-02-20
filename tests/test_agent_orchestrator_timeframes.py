@@ -6,8 +6,8 @@ from datetime import datetime, timedelta
 
 from market_reporter.config import AnalysisProviderConfig, AppConfig
 from market_reporter.core.registry import ProviderRegistry
-from market_reporter.modules.agent.orchestrator import AgentOrchestrator
-from market_reporter.modules.agent.schemas import (
+from market_reporter.modules.analysis.agent.orchestrator import AgentOrchestrator
+from market_reporter.modules.analysis.agent.schemas import (
     AgentRunRequest,
     FilingsResult,
     FundamentalsResult,

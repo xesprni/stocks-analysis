@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-from market_reporter.modules.agent.schemas import (
+from market_reporter.modules.analysis.agent.schemas import (
     AgentEvidence,
     AgentFinalReport,
     GuardrailIssue,
@@ -25,7 +25,9 @@ class AgentReportFormatter:
         market_technical = self._build_market_technical(mode, tool_results)
         indicator_table = self._build_indicator_table(mode, tool_results)
         fundamentals = self._build_fundamentals(mode, tool_results)
-        catalysts_risks = self._build_catalysts_and_risks(runtime_draft, tool_results, guardrail_issues)
+        catalysts_risks = self._build_catalysts_and_risks(
+            runtime_draft, tool_results, guardrail_issues
+        )
         risk_action_table = self._build_risk_action_table(runtime_draft)
         valuation_scenarios = self._build_valuation(runtime_draft)
 
@@ -92,7 +94,9 @@ class AgentReportFormatter:
         return result[:6]
 
     @staticmethod
-    def _build_market_technical(mode: str, tool_results: Dict[str, Dict[str, Any]]) -> str:
+    def _build_market_technical(
+        mode: str, tool_results: Dict[str, Dict[str, Any]]
+    ) -> str:
         if mode != "stock":
             return "N/A（市场模式不提供单一标的技术位，使用宏观与新闻横截面信号）"
 
@@ -100,23 +104,55 @@ class AgentReportFormatter:
         if not isinstance(indicators, dict) or not indicators:
             return "价格样本不足，无法计算趋势与关键位。"
 
-        trend = indicators.get("trend", {}) if isinstance(indicators.get("trend"), dict) else {}
-        momentum = indicators.get("momentum", {}) if isinstance(indicators.get("momentum"), dict) else {}
-        volume_price = indicators.get("volume_price", {}) if isinstance(indicators.get("volume_price"), dict) else {}
-        patterns = indicators.get("patterns", {}) if isinstance(indicators.get("patterns"), dict) else {}
-        sr = indicators.get("support_resistance", {}) if isinstance(indicators.get("support_resistance"), dict) else {}
-        strategy = indicators.get("strategy", {}) if isinstance(indicators.get("strategy"), dict) else {}
+        trend = (
+            indicators.get("trend", {})
+            if isinstance(indicators.get("trend"), dict)
+            else {}
+        )
+        momentum = (
+            indicators.get("momentum", {})
+            if isinstance(indicators.get("momentum"), dict)
+            else {}
+        )
+        volume_price = (
+            indicators.get("volume_price", {})
+            if isinstance(indicators.get("volume_price"), dict)
+            else {}
+        )
+        patterns = (
+            indicators.get("patterns", {})
+            if isinstance(indicators.get("patterns"), dict)
+            else {}
+        )
+        sr = (
+            indicators.get("support_resistance", {})
+            if isinstance(indicators.get("support_resistance"), dict)
+            else {}
+        )
+        strategy = (
+            indicators.get("strategy", {})
+            if isinstance(indicators.get("strategy"), dict)
+            else {}
+        )
         as_of = str(indicators.get("as_of") or "N/A")
 
         trend_primary = trend.get("primary", {}) if isinstance(trend, dict) else {}
-        momentum_primary = momentum.get("primary", {}) if isinstance(momentum, dict) else {}
-        volume_primary = volume_price.get("primary", {}) if isinstance(volume_price, dict) else {}
-        patterns_primary = patterns.get("primary", {}) if isinstance(patterns, dict) else {}
+        momentum_primary = (
+            momentum.get("primary", {}) if isinstance(momentum, dict) else {}
+        )
+        volume_primary = (
+            volume_price.get("primary", {}) if isinstance(volume_price, dict) else {}
+        )
+        patterns_primary = (
+            patterns.get("primary", {}) if isinstance(patterns, dict) else {}
+        )
         sr_primary = sr.get("primary", {}) if isinstance(sr, dict) else {}
 
         supports = AgentReportFormatter._format_levels(sr_primary.get("supports"))
         resistances = AgentReportFormatter._format_levels(sr_primary.get("resistances"))
-        recent_patterns = AgentReportFormatter._format_patterns(patterns_primary.get("recent"))
+        recent_patterns = AgentReportFormatter._format_patterns(
+            patterns_primary.get("recent")
+        )
 
         lines = [
             f"数据日期: {as_of}",
@@ -155,37 +191,63 @@ class AgentReportFormatter:
         return "\n".join(lines)
 
     @staticmethod
-    def _build_indicator_table(mode: str, tool_results: Dict[str, Dict[str, Any]]) -> str:
+    def _build_indicator_table(
+        mode: str, tool_results: Dict[str, Dict[str, Any]]
+    ) -> str:
         header = [
             "| 维度 | 指标 | 值 | 说明 |",
             "| --- | --- | --- | --- |",
         ]
         if mode != "stock":
-            return "\n".join(header + ["| 宏观 | 综合信号 | N/A | 市场模式不输出单一标的技术指标 |"])
+            return "\n".join(
+                header + ["| 宏观 | 综合信号 | N/A | 市场模式不输出单一标的技术指标 |"]
+            )
 
         indicators = tool_results.get("compute_indicators", {})
         if not isinstance(indicators, dict) or not indicators:
-            return "\n".join(header + ["| 技术面 | 指标缺失 | N/A | 价格样本不足，无法计算指标 |"])
+            return "\n".join(
+                header + ["| 技术面 | 指标缺失 | N/A | 价格样本不足，无法计算指标 |"]
+            )
 
-        trend = indicators.get("trend", {}) if isinstance(indicators.get("trend"), dict) else {}
-        momentum = indicators.get("momentum", {}) if isinstance(indicators.get("momentum"), dict) else {}
+        trend = (
+            indicators.get("trend", {})
+            if isinstance(indicators.get("trend"), dict)
+            else {}
+        )
+        momentum = (
+            indicators.get("momentum", {})
+            if isinstance(indicators.get("momentum"), dict)
+            else {}
+        )
         volume_price = (
             indicators.get("volume_price", {})
             if isinstance(indicators.get("volume_price"), dict)
             else {}
         )
-        strategy = indicators.get("strategy", {}) if isinstance(indicators.get("strategy"), dict) else {}
+        strategy = (
+            indicators.get("strategy", {})
+            if isinstance(indicators.get("strategy"), dict)
+            else {}
+        )
 
         trend_primary = trend.get("primary", {}) if isinstance(trend, dict) else {}
-        momentum_primary = momentum.get("primary", {}) if isinstance(momentum, dict) else {}
-        volume_primary = volume_price.get("primary", {}) if isinstance(volume_price, dict) else {}
+        momentum_primary = (
+            momentum.get("primary", {}) if isinstance(momentum, dict) else {}
+        )
+        volume_primary = (
+            volume_price.get("primary", {}) if isinstance(volume_price, dict) else {}
+        )
 
         rows = [
             (
                 "趋势",
                 "MA 状态",
                 AgentReportFormatter._format_metric(
-                    ((trend_primary.get("ma") or {}).get("state") if isinstance(trend_primary, dict) else None)
+                    (
+                        (trend_primary.get("ma") or {}).get("state")
+                        if isinstance(trend_primary, dict)
+                        else None
+                    )
                 ),
                 "均线排列方向",
             ),
@@ -193,7 +255,11 @@ class AgentReportFormatter:
                 "趋势",
                 "MACD",
                 AgentReportFormatter._format_metric(
-                    ((trend_primary.get("macd") or {}).get("cross") if isinstance(trend_primary, dict) else None)
+                    (
+                        (trend_primary.get("macd") or {}).get("cross")
+                        if isinstance(trend_primary, dict)
+                        else None
+                    )
                 ),
                 "MACD 交叉状态",
             ),
@@ -201,7 +267,11 @@ class AgentReportFormatter:
                 "趋势",
                 "布林状态",
                 AgentReportFormatter._format_metric(
-                    ((trend_primary.get("bollinger") or {}).get("status") if isinstance(trend_primary, dict) else None)
+                    (
+                        (trend_primary.get("bollinger") or {}).get("status")
+                        if isinstance(trend_primary, dict)
+                        else None
+                    )
                 ),
                 "价格与布林带关系",
             ),
@@ -209,17 +279,29 @@ class AgentReportFormatter:
                 "动量",
                 "RSI",
                 AgentReportFormatter._format_metric(
-                    ((momentum_primary.get("rsi") or {}).get("value") if isinstance(momentum_primary, dict) else None)
+                    (
+                        (momentum_primary.get("rsi") or {}).get("value")
+                        if isinstance(momentum_primary, dict)
+                        else None
+                    )
                 ),
                 AgentReportFormatter._format_metric(
-                    ((momentum_primary.get("rsi") or {}).get("status") if isinstance(momentum_primary, dict) else None)
+                    (
+                        (momentum_primary.get("rsi") or {}).get("status")
+                        if isinstance(momentum_primary, dict)
+                        else None
+                    )
                 ),
             ),
             (
                 "动量",
                 "KDJ",
                 AgentReportFormatter._format_metric(
-                    ((momentum_primary.get("kdj") or {}).get("status") if isinstance(momentum_primary, dict) else None)
+                    (
+                        (momentum_primary.get("kdj") or {}).get("status")
+                        if isinstance(momentum_primary, dict)
+                        else None
+                    )
                 ),
                 "KDJ 状态",
             ),
@@ -239,7 +321,9 @@ class AgentReportFormatter:
                 "量价",
                 "量比",
                 AgentReportFormatter._format_metric(
-                    volume_primary.get("volume_ratio") if isinstance(volume_primary, dict) else None
+                    volume_primary.get("volume_ratio")
+                    if isinstance(volume_primary, dict)
+                    else None
                 ),
                 "成交量变化",
             ),
@@ -247,7 +331,9 @@ class AgentReportFormatter:
                 "量价",
                 "放量突破",
                 AgentReportFormatter._format_metric(
-                    volume_primary.get("volume_breakout") if isinstance(volume_primary, dict) else None
+                    volume_primary.get("volume_breakout")
+                    if isinstance(volume_primary, dict)
+                    else None
                 ),
                 "放量突破信号",
             ),
@@ -255,7 +341,9 @@ class AgentReportFormatter:
                 "量价",
                 "ATR14",
                 AgentReportFormatter._format_metric(
-                    volume_primary.get("atr_14") if isinstance(volume_primary, dict) else None
+                    volume_primary.get("atr_14")
+                    if isinstance(volume_primary, dict)
+                    else None
                 ),
                 "波动幅度",
             ),
@@ -304,7 +392,11 @@ class AgentReportFormatter:
             "| 风险项 | 触发条件 | 执行建议 |",
             "| --- | --- | --- |",
         ]
-        risks = [AgentReportFormatter._format_metric(item) for item in runtime_draft.risks if str(item).strip()]
+        risks = [
+            AgentReportFormatter._format_metric(item)
+            for item in runtime_draft.risks
+            if str(item).strip()
+        ]
         actions = [
             AgentReportFormatter._format_metric(item)
             for item in runtime_draft.action_items
@@ -411,8 +503,16 @@ class AgentReportFormatter:
                 if not isinstance(row, dict):
                     continue
                 top_news.append(f"{row.get('published_at', '')} {row.get('title', '')}")
-        risk_text = "；".join(runtime_draft.risks[:4]) if runtime_draft.risks else "未识别高置信风险项。"
-        guardrail_text = "；".join([issue.message for issue in guardrail_issues]) if guardrail_issues else "无一致性冲突。"
+        risk_text = (
+            "；".join(runtime_draft.risks[:4])
+            if runtime_draft.risks
+            else "未识别高置信风险项。"
+        )
+        guardrail_text = (
+            "；".join([issue.message for issue in guardrail_issues])
+            if guardrail_issues
+            else "无一致性冲突。"
+        )
         catalyst_text = "；".join(top_news) if top_news else "新闻催化不足。"
         return (
             f"短中期催化: {catalyst_text}\n"

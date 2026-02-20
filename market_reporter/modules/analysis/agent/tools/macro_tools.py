@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from market_reporter.modules.agent.schemas import MacroResult, MacroSeriesItem
+from market_reporter.modules.analysis.agent.schemas import MacroResult, MacroSeriesItem
 from market_reporter.modules.fund_flow.service import FundFlowService
 
 

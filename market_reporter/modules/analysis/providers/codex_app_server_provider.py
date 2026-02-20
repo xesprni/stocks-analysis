@@ -13,7 +13,8 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 from market_reporter.config import AnalysisProviderConfig
 from market_reporter.core.types import AnalysisInput, AnalysisOutput
-from market_reporter.modules.analysis_engine.prompt_builder import (
+from market_reporter.core.utils import parse_json
+from market_reporter.modules.analysis.prompt_builder import (
     build_user_prompt,
     get_system_prompt,
 )
@@ -119,7 +120,7 @@ class CodexAppServerProvider:
             get_system_prompt(payload),
         )
         # Provider output should be JSON; fallback path keeps output schema stable.
-        structured = self._parse_json(content)
+        structured = parse_json(content)
         if structured is None:
             structured = {
                 "summary": content[:300]
@@ -539,23 +540,6 @@ class CodexAppServerProvider:
             if isinstance(model_id, str) and model_id.strip():
                 values.append(model_id.strip())
         return sorted({entry for entry in values if entry})
-
-    @staticmethod
-    def _parse_json(content: str):
-        if not content:
-            return None
-        try:
-            return json.loads(content)
-        except json.JSONDecodeError:
-            # Recover embedded JSON from mixed text responses.
-            start = content.find("{")
-            end = content.rfind("}")
-            if start >= 0 and end > start:
-                try:
-                    return json.loads(content[start : end + 1])
-                except json.JSONDecodeError:
-                    return None
-            return None
 
     @staticmethod
     def _pick_string(data: Dict[str, object], keys: Sequence[str]) -> Optional[str]:

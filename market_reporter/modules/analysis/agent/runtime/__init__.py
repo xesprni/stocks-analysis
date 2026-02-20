@@ -1,3 +1,3 @@
-from market_reporter.modules.agent.runtime.factory import AgentRuntimeFactory
+from market_reporter.modules.analysis.agent.runtime.factory import AgentRuntimeFactory
 
 __all__ = ["AgentRuntimeFactory"]

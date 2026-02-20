@@ -46,4 +46,4 @@
 
 - 行情 provider：`yfinance`、`akshare`
 - 持久化：`MarketDataRepo`
-- 使用方：`stocks API`、`dashboard`、`analysis_engine`、`news_listener`
+- 使用方：`stocks API`、`dashboard`、`analysis`、`news_listener`

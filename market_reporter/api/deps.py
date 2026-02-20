@@ -8,7 +8,7 @@ from market_reporter.config import AppConfig
 from market_reporter.core.registry import ProviderRegistry
 from market_reporter.infra.db.session import init_db
 from market_reporter.infra.http.client import HttpClient
-from market_reporter.modules.analysis_engine.service import AnalysisService
+from market_reporter.modules.analysis.service import AnalysisService
 from market_reporter.modules.fund_flow.service import FundFlowService
 from market_reporter.modules.market_data.service import MarketDataService
 from market_reporter.modules.news.service import NewsService

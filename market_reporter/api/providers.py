@@ -11,7 +11,7 @@ from market_reporter.api.deps import get_config_store
 from market_reporter.config import AppConfig
 from market_reporter.core.registry import ProviderRegistry
 from market_reporter.infra.db.session import init_db
-from market_reporter.modules.analysis_engine.schemas import (
+from market_reporter.modules.analysis.schemas import (
     AnalysisProviderView,
     ProviderAuthStartRequest,
     ProviderAuthStartResponse,
@@ -20,7 +20,7 @@ from market_reporter.modules.analysis_engine.schemas import (
     ProviderModelSelectionRequest,
     ProviderSecretRequest,
 )
-from market_reporter.modules.analysis_engine.service import AnalysisService
+from market_reporter.modules.analysis.service import AnalysisService
 from market_reporter.services.config_store import ConfigStore
 
 router = APIRouter(prefix="/api", tags=["providers"])

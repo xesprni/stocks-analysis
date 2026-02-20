@@ -3,8 +3,10 @@ from __future__ import annotations
 import unittest
 from datetime import datetime, timedelta
 
-from market_reporter.modules.agent.tools.compute_tools import ComputeTools
-from market_reporter.modules.agent.tools.fundamentals_tools import FundamentalsTools
+from market_reporter.modules.analysis.agent.tools.compute_tools import ComputeTools
+from market_reporter.modules.analysis.agent.tools.fundamentals_tools import (
+    FundamentalsTools,
+)
 
 
 class ComputeToolsMomentumVolumePatternsTest(unittest.TestCase):
@@ -91,7 +93,10 @@ class ComputeToolsMomentumVolumePatternsTest(unittest.TestCase):
         self.assertIn("rsi", momentum)
         self.assertIn("kdj", momentum)
         self.assertIn("divergence", momentum)
-        self.assertIn(momentum.get("rsi", {}).get("status"), {"overbought", "oversold", "neutral", "unknown"})
+        self.assertIn(
+            momentum.get("rsi", {}).get("status"),
+            {"overbought", "oversold", "neutral", "unknown"},
+        )
 
         volume_price = result.volume_price.get("primary", {})
         self.assertIn("volume_ratio", volume_price)

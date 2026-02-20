@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from market_reporter.api.deps import build_listener_query_service, get_config_store
 from market_reporter.core.registry import ProviderRegistry
 from market_reporter.infra.http.client import HttpClient
-from market_reporter.modules.analysis_engine.service import AnalysisService
+from market_reporter.modules.analysis.service import AnalysisService
 from market_reporter.modules.market_data.service import MarketDataService
 from market_reporter.modules.news.service import NewsService
 from market_reporter.modules.news_listener.schemas import (

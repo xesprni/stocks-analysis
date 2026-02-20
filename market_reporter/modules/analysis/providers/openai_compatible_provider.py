@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-import json
 from typing import Optional
 
 from openai import AsyncOpenAI
 
 from market_reporter.config import AnalysisProviderConfig
 from market_reporter.core.types import AnalysisInput, AnalysisOutput
-from market_reporter.modules.analysis_engine.prompt_builder import (
+from market_reporter.core.utils import parse_json
+from market_reporter.modules.analysis.prompt_builder import (
     build_user_prompt,
     get_system_prompt,
 )
@@ -42,7 +42,7 @@ class OpenAICompatibleProvider:
 
         content = (response.choices[0].message.content or "").strip()
         # Prefer strict JSON; fallback parser extracts first JSON object when wrapped.
-        structured = self._parse_json(content)
+        structured = parse_json(content)
         if structured is None:
             # Graceful degradation keeps API contract valid even on free-form model replies.
             structured = {
@@ -68,20 +68,3 @@ class OpenAICompatibleProvider:
             }
         )
         return output
-
-    @staticmethod
-    def _parse_json(content: str):
-        if not content:
-            return None
-        try:
-            return json.loads(content)
-        except json.JSONDecodeError:
-            # Recover from responses that include prose before/after JSON.
-            start = content.find("{")
-            end = content.rfind("}")
-            if start >= 0 and end > start:
-                try:
-                    return json.loads(content[start : end + 1])
-                except json.JSONDecodeError:
-                    return None
-            return None

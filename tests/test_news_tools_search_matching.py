@@ -5,11 +5,13 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from market_reporter.core.types import NewsItem
-from market_reporter.modules.agent.tools.news_tools import NewsTools
+from market_reporter.modules.analysis.agent.tools.news_tools import NewsTools
 
 
 class _DummyNewsService:
-    def __init__(self, items: list[NewsItem], warnings: list[str] | None = None) -> None:
+    def __init__(
+        self, items: list[NewsItem], warnings: list[str] | None = None
+    ) -> None:
         self._items = items
         self._warnings = warnings or []
 
@@ -103,7 +105,9 @@ class NewsToolsSearchMatchingTest(unittest.TestCase):
 
         result = asyncio.run(scenario())
         self.assertEqual(len(result.items), 2)
-        self.assertEqual(result.items[0].title, "US yields retreat as bond market rallies")
+        self.assertEqual(
+            result.items[0].title, "US yields retreat as bond market rallies"
+        )
         self.assertEqual(result.items[1].title, "Oil steadies after volatile session")
         self.assertIn("no_news_matched", result.warnings)
         self.assertIn("news_fallback_recent_headlines", result.warnings)

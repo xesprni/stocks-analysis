@@ -6,7 +6,8 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 from openai import AsyncOpenAI
 
 from market_reporter.config import AnalysisProviderConfig
-from market_reporter.modules.agent.schemas import RuntimeDraft, ToolCallTrace
+from market_reporter.core.utils import parse_json
+from market_reporter.modules.analysis.agent.schemas import RuntimeDraft, ToolCallTrace
 
 ToolExecutor = Callable[[str, Dict[str, Any]], Awaitable[Dict[str, Any]]]
 
@@ -117,10 +118,12 @@ class OpenAIToolRuntime:
             content_text = (msg.content or "").strip()
             break
 
-        structured = self._parse_json(content_text)
+        structured = parse_json(content_text)
         if structured is None:
             structured = {
-                "summary": content_text[:240] if content_text else "模型未返回结构化内容。",
+                "summary": content_text[:240]
+                if content_text
+                else "模型未返回结构化内容。",
                 "sentiment": "neutral",
                 "key_levels": [],
                 "risks": [],
@@ -146,27 +149,6 @@ class OpenAIToolRuntime:
             }
         )
         return draft, traces
-
-    @staticmethod
-    def _parse_json(content: str) -> Optional[Dict[str, Any]]:
-        if not content:
-            return None
-        try:
-            parsed = json.loads(content)
-            if isinstance(parsed, dict):
-                return parsed
-        except Exception:
-            pass
-        start = content.find("{")
-        end = content.rfind("}")
-        if start >= 0 and end > start:
-            try:
-                parsed = json.loads(content[start : end + 1])
-                if isinstance(parsed, dict):
-                    return parsed
-            except Exception:
-                return None
-        return None
 
     @staticmethod
     def _preview_result(result: Dict[str, Any]) -> Dict[str, Any]:

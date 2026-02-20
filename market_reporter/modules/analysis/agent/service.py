@@ -4,9 +4,18 @@ from typing import Any, Dict, Optional, Tuple
 
 from market_reporter.config import AnalysisProviderConfig, AppConfig
 from market_reporter.core.registry import ProviderRegistry
-from market_reporter.core.types import AnalysisInput, AnalysisOutput, FlowPoint, KLineBar, NewsItem
-from market_reporter.modules.agent.orchestrator import AgentOrchestrator
-from market_reporter.modules.agent.schemas import AgentRunRequest, AgentRunResult
+from market_reporter.core.types import (
+    AnalysisInput,
+    AnalysisOutput,
+    FlowPoint,
+    KLineBar,
+    NewsItem,
+)
+from market_reporter.modules.analysis.agent.orchestrator import AgentOrchestrator
+from market_reporter.modules.analysis.agent.schemas import (
+    AgentRunRequest,
+    AgentRunResult,
+)
 from market_reporter.modules.fund_flow.service import FundFlowService
 from market_reporter.modules.news.service import NewsService
 
@@ -84,13 +93,21 @@ class AgentService:
                     else {}
                 ),
                 "signal_timeline": (
-                    tool_results.get("compute_indicators", {}).get("signal_timeline", [])
+                    tool_results.get("compute_indicators", {}).get(
+                        "signal_timeline", []
+                    )
                     if isinstance(tool_results.get("compute_indicators"), dict)
                     else []
                 ),
-                "tool_calls": [item.model_dump(mode="json") for item in run_result.tool_calls],
-                "evidence_map": [item.model_dump(mode="json") for item in run_result.evidence_map],
-                "guardrail_issues": [item.model_dump(mode="json") for item in run_result.guardrail_issues],
+                "tool_calls": [
+                    item.model_dump(mode="json") for item in run_result.tool_calls
+                ],
+                "evidence_map": [
+                    item.model_dump(mode="json") for item in run_result.evidence_map
+                ],
+                "guardrail_issues": [
+                    item.model_dump(mode="json") for item in run_result.guardrail_issues
+                ],
                 "tool_results": tool_results,
                 "agent_runtime": run_result.runtime_draft.raw,
             },
@@ -119,7 +136,9 @@ class AgentService:
                         high=float(row.get("high") or 0.0),
                         low=float(row.get("low") or 0.0),
                         close=float(row.get("close") or 0.0),
-                        volume=float(row.get("volume")) if row.get("volume") is not None else None,
+                        volume=float(row.get("volume"))
+                        if row.get("volume") is not None
+                        else None,
                         source=str(price_payload.get("source") or ""),
                     )
                 )

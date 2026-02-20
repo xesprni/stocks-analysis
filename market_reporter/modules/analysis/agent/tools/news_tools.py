@@ -7,8 +7,8 @@ from email.utils import parsedate_to_datetime
 from typing import Dict, List, Optional, Tuple
 
 from market_reporter.core.types import NewsItem
-from market_reporter.modules.agent.schemas import NewsSearchItem, NewsSearchResult
-from market_reporter.modules.agent.tools.market_tools import infer_market_from_symbol
+from market_reporter.modules.analysis.agent.schemas import NewsSearchItem, NewsSearchResult
+from market_reporter.modules.analysis.agent.tools.market_tools import infer_market_from_symbol
 from market_reporter.modules.market_data.symbol_mapper import (
     normalize_symbol,
     strip_market_suffix,

@@ -4,8 +4,10 @@ import unittest
 from datetime import datetime, timedelta
 from unittest.mock import patch
 
-from market_reporter.modules.agent.tools.compute_tools import ComputeTools
-from market_reporter.modules.agent.tools.fundamentals_tools import FundamentalsTools
+from market_reporter.modules.analysis.agent.tools.compute_tools import ComputeTools
+from market_reporter.modules.analysis.agent.tools.fundamentals_tools import (
+    FundamentalsTools,
+)
 
 
 class ComputeToolsBackendSelectionTest(unittest.TestCase):
@@ -47,7 +49,9 @@ class ComputeToolsBackendSelectionTest(unittest.TestCase):
                 return_value=({"rsi_14": 40.0, "macd": -0.4}, []),
             ),
         ):
-            result = self.compute.compute_indicators(price_df={"1d": bars}, symbol="AAPL")
+            result = self.compute.compute_indicators(
+                price_df={"1d": bars}, symbol="AAPL"
+            )
 
         self.assertEqual(result.source, "ta-lib/computed")
 
@@ -65,7 +69,9 @@ class ComputeToolsBackendSelectionTest(unittest.TestCase):
                 return_value=({"rsi_14": 52.5}, []),
             ),
         ):
-            result = self.compute.compute_indicators(price_df={"1d": bars}, symbol="AAPL")
+            result = self.compute.compute_indicators(
+                price_df={"1d": bars}, symbol="AAPL"
+            )
 
         self.assertEqual(result.source, "pandas-ta/computed")
         self.assertIn("talib_unavailable_fallback", result.warnings)
@@ -84,7 +90,9 @@ class ComputeToolsBackendSelectionTest(unittest.TestCase):
                 return_value=({}, ["pandas_ta_unavailable_fallback"]),
             ),
         ):
-            result = self.compute.compute_indicators(price_df={"1d": bars}, symbol="AAPL")
+            result = self.compute.compute_indicators(
+                price_df={"1d": bars}, symbol="AAPL"
+            )
 
         self.assertEqual(result.source, "builtin/computed")
         self.assertIn("talib_unavailable_fallback", result.warnings)

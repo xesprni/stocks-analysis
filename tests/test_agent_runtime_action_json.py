@@ -1,7 +1,9 @@
 import asyncio
 import unittest
 
-from market_reporter.modules.agent.runtime.action_json_runtime import ActionJSONRuntime
+from market_reporter.modules.analysis.agent.runtime.action_json_runtime import (
+    ActionJSONRuntime,
+)
 
 
 class _FakeProvider:

@@ -5,12 +5,14 @@ from datetime import datetime, timezone
 from statistics import pstdev
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from market_reporter.modules.agent.schemas import (
+from market_reporter.modules.analysis.agent.schemas import (
     IndicatorsResult,
     PeerCompareResult,
     PeerCompareRow,
 )
-from market_reporter.modules.agent.tools.fundamentals_tools import FundamentalsTools
+from market_reporter.modules.analysis.agent.tools.fundamentals_tools import (
+    FundamentalsTools,
+)
 
 
 def _safe_float(value: Any) -> Optional[float]:
@@ -87,7 +89,10 @@ class ComputeTools:
         )
 
         values = dict(primary.get("values") or {})
-        as_of = str(primary.get("as_of") or datetime.now(timezone.utc).isoformat(timespec="seconds"))
+        as_of = str(
+            primary.get("as_of")
+            or datetime.now(timezone.utc).isoformat(timespec="seconds")
+        )
         retrieved_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
         dedup_warnings = list(
             dict.fromkeys([str(item) for item in warnings if str(item).strip()])
@@ -149,7 +154,9 @@ class ComputeTools:
                             metrics_payload[key] = None
                     else:
                         metrics_payload[key] = result.metrics.get(key)
-                rows.append(PeerCompareRow(symbol=result.symbol, metrics=metrics_payload))
+                rows.append(
+                    PeerCompareRow(symbol=result.symbol, metrics=metrics_payload)
+                )
             except Exception as exc:
                 warnings.append(f"peer_compare_failed:{ticker}:{exc}")
 
@@ -243,19 +250,29 @@ class ComputeTools:
         )
 
         boll_low_fallback, boll_up_fallback = self._bollinger_band(closes, 20, 2.0)
-        boll_mid = self._first_not_none(ta_values.get("boll_mid"), self._sma(closes, 20))
+        boll_mid = self._first_not_none(
+            ta_values.get("boll_mid"), self._sma(closes, 20)
+        )
         boll_up = self._first_not_none(ta_values.get("boll_up"), boll_up_fallback)
         boll_low = self._first_not_none(ta_values.get("boll_low"), boll_low_fallback)
 
-        rsi_series = self._as_float_list(ta_values.get("rsi_series"), self._rsi_series(closes, 14))
+        rsi_series = self._as_float_list(
+            ta_values.get("rsi_series"), self._rsi_series(closes, 14)
+        )
         rsi = self._first_not_none(
             ta_values.get("rsi_14"),
             rsi_series[-1] if rsi_series else self._rsi(closes, 14),
         )
 
-        k_series_fallback, d_series_fallback = self._stoch_series(closes, highs, lows, period=9)
-        k_series = self._as_float_list(ta_values.get("stoch_k_series"), k_series_fallback)
-        d_series = self._as_float_list(ta_values.get("stoch_d_series"), d_series_fallback)
+        k_series_fallback, d_series_fallback = self._stoch_series(
+            closes, highs, lows, period=9
+        )
+        k_series = self._as_float_list(
+            ta_values.get("stoch_k_series"), k_series_fallback
+        )
+        d_series = self._as_float_list(
+            ta_values.get("stoch_d_series"), d_series_fallback
+        )
         stoch_k = self._first_not_none(
             ta_values.get("stoch_k"),
             k_series[-1] if k_series else None,
@@ -267,7 +284,9 @@ class ComputeTools:
         kdj_j_series = self._compute_kdj_j_series(k_series, d_series)
         kdj_j = kdj_j_series[-1] if kdj_j_series else None
 
-        atr = self._first_not_none(ta_values.get("atr_14"), self._atr(highs, lows, closes, 14))
+        atr = self._first_not_none(
+            ta_values.get("atr_14"), self._atr(highs, lows, closes, 14)
+        )
         volatility = self._volatility(closes, 20)
         max_drawdown = self._max_drawdown(closes)
 
@@ -317,7 +336,11 @@ class ComputeTools:
 
         pattern_hits = self._detect_patterns(normalized_rows)
 
-        as_of = ts_list[-1] if ts_list else datetime.now(timezone.utc).isoformat(timespec="seconds")
+        as_of = (
+            ts_list[-1]
+            if ts_list
+            else datetime.now(timezone.utc).isoformat(timespec="seconds")
+        )
         signals = self._build_signal_timeline(
             timeframe=timeframe,
             as_of=as_of,
@@ -621,7 +644,9 @@ class ComputeTools:
                     "",
                 )
                 if macd_col and signal_col and hist_col:
-                    macd_series = [float(item) for item in macd_df[macd_col].dropna().tolist()]
+                    macd_series = [
+                        float(item) for item in macd_df[macd_col].dropna().tolist()
+                    ]
                     signal_series = [
                         float(item) for item in macd_df[signal_col].dropna().tolist()
                     ]
@@ -660,7 +685,9 @@ class ComputeTools:
                 output["rsi_series"] = rsi_values
                 output["rsi_14"] = rsi_values[-1] if rsi_values else None
 
-            stoch_df = ta.stoch(series_high, series_low, series_close, k=9, d=3, smooth_k=3)
+            stoch_df = ta.stoch(
+                series_high, series_low, series_close, k=9, d=3, smooth_k=3
+            )
             if stoch_df is not None and not stoch_df.empty:
                 k_col = next(
                     (col for col in stoch_df.columns if col.startswith("STOCHk_")),
@@ -671,8 +698,12 @@ class ComputeTools:
                     "",
                 )
                 if k_col and d_col:
-                    k_values = [float(item) for item in stoch_df[k_col].dropna().tolist()]
-                    d_values = [float(item) for item in stoch_df[d_col].dropna().tolist()]
+                    k_values = [
+                        float(item) for item in stoch_df[k_col].dropna().tolist()
+                    ]
+                    d_values = [
+                        float(item) for item in stoch_df[d_col].dropna().tolist()
+                    ]
                     output["stoch_k_series"] = k_values
                     output["stoch_d_series"] = d_values
                     output["stoch_k"] = k_values[-1] if k_values else None
@@ -864,7 +895,9 @@ class ComputeTools:
         return {"status": "none", "type": "none", "oscillator": oscillator_name}
 
     @staticmethod
-    def _volume_ratio(volumes: List[Optional[float]], window: int = 20) -> Optional[float]:
+    def _volume_ratio(
+        volumes: List[Optional[float]], window: int = 20
+    ) -> Optional[float]:
         clean = [item for item in volumes if item is not None]
         if len(clean) < 2:
             return None
@@ -875,7 +908,9 @@ class ComputeTools:
         return clean[-1] / avg
 
     @staticmethod
-    def _volume_average(volumes: List[Optional[float]], window: int = 20) -> Optional[float]:
+    def _volume_average(
+        volumes: List[Optional[float]], window: int = 20
+    ) -> Optional[float]:
         clean = [item for item in volumes if item is not None]
         if not clean:
             return None
@@ -906,7 +941,9 @@ class ComputeTools:
         if len(closes) < 21 or len(highs) < 21 or volume_ratio is None:
             return False
         recent_resistance = max(highs[-21:-1])
-        threshold = resistance_level if resistance_level is not None else recent_resistance
+        threshold = (
+            resistance_level if resistance_level is not None else recent_resistance
+        )
         return closes[-1] > threshold and volume_ratio > 1.5
 
     def _detect_patterns(self, rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -924,7 +961,11 @@ class ComputeTools:
             upper_shadow = high_v - max(open_v, close_v)
             lower_shadow = min(open_v, close_v) - low_v
 
-            if lower_shadow >= body * 2 and upper_shadow <= body * 0.7 and body / full_range <= 0.45:
+            if (
+                lower_shadow >= body * 2
+                and upper_shadow <= body * 0.7
+                and body / full_range <= 0.45
+            ):
                 hits.append({"ts": ts, "type": "hammer", "direction": "bullish"})
 
             if body / full_range <= 0.08:
@@ -1205,9 +1246,17 @@ class ComputeTools:
     @staticmethod
     def _trend_score(trend: Dict[str, Any]) -> float:
         score = 50.0
-        ma_state = ((trend.get("ma") or {}).get("state") if isinstance(trend, dict) else "") or ""
-        macd_cross = ((trend.get("macd") or {}).get("cross") if isinstance(trend, dict) else "") or ""
-        boll = ((trend.get("bollinger") or {}).get("status") if isinstance(trend, dict) else "") or ""
+        ma_state = (
+            (trend.get("ma") or {}).get("state") if isinstance(trend, dict) else ""
+        ) or ""
+        macd_cross = (
+            (trend.get("macd") or {}).get("cross") if isinstance(trend, dict) else ""
+        ) or ""
+        boll = (
+            (trend.get("bollinger") or {}).get("status")
+            if isinstance(trend, dict)
+            else ""
+        ) or ""
 
         if ma_state == "bullish":
             score += 20
@@ -1231,12 +1280,21 @@ class ComputeTools:
     @staticmethod
     def _momentum_score(momentum: Dict[str, Any]) -> float:
         score = 50.0
-        rsi_status = ((momentum.get("rsi") or {}).get("status") if isinstance(momentum, dict) else "") or ""
-        kdj_status = ((momentum.get("kdj") or {}).get("status") if isinstance(momentum, dict) else "") or ""
+        rsi_status = (
+            (momentum.get("rsi") or {}).get("status")
+            if isinstance(momentum, dict)
+            else ""
+        ) or ""
+        kdj_status = (
+            (momentum.get("kdj") or {}).get("status")
+            if isinstance(momentum, dict)
+            else ""
+        ) or ""
         divergence_type = (
-            ((momentum.get("divergence") or {}).get("type") if isinstance(momentum, dict) else "")
-            or ""
-        )
+            (momentum.get("divergence") or {}).get("type")
+            if isinstance(momentum, dict)
+            else ""
+        ) or ""
 
         if rsi_status == "oversold":
             score += 15
@@ -1258,7 +1316,11 @@ class ComputeTools:
     @staticmethod
     def _volume_score(volume_price: Dict[str, Any]) -> float:
         score = 50.0
-        ratio = _safe_float(volume_price.get("volume_ratio")) if isinstance(volume_price, dict) else None
+        ratio = (
+            _safe_float(volume_price.get("volume_ratio"))
+            if isinstance(volume_price, dict)
+            else None
+        )
         if volume_price.get("volume_breakout"):
             score += 20
         if volume_price.get("shrink_pullback"):
@@ -1298,12 +1360,18 @@ class ComputeTools:
         supports = sr.get("supports") if isinstance(sr, dict) else []
         resistances = sr.get("resistances") if isinstance(sr, dict) else []
         if isinstance(supports, list) and supports:
-            s1 = _safe_float(supports[0].get("price") if isinstance(supports[0], dict) else None)
+            s1 = _safe_float(
+                supports[0].get("price") if isinstance(supports[0], dict) else None
+            )
             if s1 and s1 != 0 and abs(close - s1) / s1 <= 0.01:
                 score += 10
 
         if isinstance(resistances, list) and resistances:
-            r1 = _safe_float(resistances[0].get("price") if isinstance(resistances[0], dict) else None)
+            r1 = _safe_float(
+                resistances[0].get("price")
+                if isinstance(resistances[0], dict)
+                else None
+            )
             if r1 and r1 != 0 and abs(close - r1) / r1 <= 0.01:
                 score -= 10
 
@@ -1325,7 +1393,9 @@ class ComputeTools:
     ) -> List[Dict[str, Any]]:
         timeline: List[Dict[str, Any]] = []
 
-        def add(signal: str, direction: str, strength: str, ts: Optional[str] = None) -> None:
+        def add(
+            signal: str, direction: str, strength: str, ts: Optional[str] = None
+        ) -> None:
             event_ts = ts or as_of
             timeline.append(
                 {
@@ -1422,14 +1492,9 @@ class ComputeTools:
             ema_value = (value - ema_value) * multiplier + ema_value
         return ema_value
 
-    def _macd(self, values: List[float]) -> Tuple[Optional[float], Optional[float], Optional[float]]:
-        macd_series, signal_series, hist_series = self._macd_series(values)
-        macd = macd_series[-1] if macd_series else None
-        signal = signal_series[-1] if signal_series else None
-        hist = hist_series[-1] if hist_series else None
-        return macd, signal, hist
-
-    def _macd_series(self, values: List[float]) -> Tuple[List[float], List[float], List[float]]:
+    def _macd_series(
+        self, values: List[float]
+    ) -> Tuple[List[float], List[float], List[float]]:
         if len(values) < 35:
             return [], [], []
         macd_series: List[float] = []
@@ -1512,7 +1577,9 @@ class ComputeTools:
         return k_series, d_series
 
     @staticmethod
-    def _compute_kdj_j_series(k_series: List[float], d_series: List[float]) -> List[float]:
+    def _compute_kdj_j_series(
+        k_series: List[float], d_series: List[float]
+    ) -> List[float]:
         length = min(len(k_series), len(d_series))
         if length == 0:
             return []
@@ -1525,7 +1592,11 @@ class ComputeTools:
         closes: List[float],
         period: int,
     ) -> Optional[float]:
-        if len(highs) < period + 1 or len(lows) < period + 1 or len(closes) < period + 1:
+        if (
+            len(highs) < period + 1
+            or len(lows) < period + 1
+            or len(closes) < period + 1
+        ):
             return None
         tr_values = []
         for idx in range(1, min(len(highs), len(lows), len(closes))):

@@ -6,17 +6,17 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from market_reporter.config import AnalysisProviderConfig, AppConfig
 from market_reporter.core.registry import ProviderRegistry
-from market_reporter.modules.agent.guardrails import AgentGuardrails
-from market_reporter.modules.agent.report_formatter import AgentReportFormatter
-from market_reporter.modules.agent.runtime.factory import AgentRuntimeFactory
-from market_reporter.modules.agent.schemas import (
+from market_reporter.modules.analysis.agent.guardrails import AgentGuardrails
+from market_reporter.modules.analysis.agent.report_formatter import AgentReportFormatter
+from market_reporter.modules.analysis.agent.runtime.factory import AgentRuntimeFactory
+from market_reporter.modules.analysis.agent.schemas import (
     AgentEvidence,
     AgentRunRequest,
     AgentRunResult,
     RuntimeDraft,
     ToolCallTrace,
 )
-from market_reporter.modules.agent.tools import (
+from market_reporter.modules.analysis.agent.tools import (
     ComputeTools,
     FilingsTools,
     FundamentalsTools,
@@ -107,7 +107,9 @@ class AgentOrchestrator:
                 "timeframes": price_timeframes,
                 "as_of": str(primary_price.get("as_of") or ""),
                 "source": str(primary_price.get("source") or "yfinance"),
-                "retrieved_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                "retrieved_at": datetime.now(timezone.utc).isoformat(
+                    timespec="seconds"
+                ),
                 "warnings": list(dict.fromkeys(price_warnings)),
             }
 
@@ -115,8 +117,16 @@ class AgentOrchestrator:
                 symbol=symbol,
                 market=market,
             )
-            tool_results["get_fundamentals"] = fundamentals_result.model_dump(mode="json")
-            traces.append(self._trace("get_fundamentals", {"symbol": symbol}, tool_results["get_fundamentals"]))
+            tool_results["get_fundamentals"] = fundamentals_result.model_dump(
+                mode="json"
+            )
+            traces.append(
+                self._trace(
+                    "get_fundamentals",
+                    {"symbol": symbol},
+                    tool_results["get_fundamentals"],
+                )
+            )
 
             news_result = await self.news_tools.search_news(
                 query=symbol,
@@ -127,11 +137,17 @@ class AgentOrchestrator:
                 market=market,
             )
             tool_results["search_news"] = news_result.model_dump(mode="json")
-            traces.append(self._trace("search_news", {
-                "query": symbol,
-                "from": ranges["news_from"],
-                "to": ranges["news_to"],
-            }, tool_results["search_news"]))
+            traces.append(
+                self._trace(
+                    "search_news",
+                    {
+                        "query": symbol,
+                        "from": ranges["news_from"],
+                        "to": ranges["news_to"],
+                    },
+                    tool_results["search_news"],
+                )
+            )
 
             indicators = request.indicators or ["RSI", "MACD", "MA", "ATR", "VOL"]
             timeframe_bars = {
@@ -145,12 +161,20 @@ class AgentOrchestrator:
                 symbol=symbol,
                 indicator_profile=request.indicator_profile,
             )
-            tool_results["compute_indicators"] = indicator_result.model_dump(mode="json")
-            traces.append(self._trace("compute_indicators", {
-                "indicators": indicators,
-                "timeframes": resolved_timeframes,
-                "indicator_profile": request.indicator_profile,
-            }, tool_results["compute_indicators"]))
+            tool_results["compute_indicators"] = indicator_result.model_dump(
+                mode="json"
+            )
+            traces.append(
+                self._trace(
+                    "compute_indicators",
+                    {
+                        "indicators": indicators,
+                        "timeframes": resolved_timeframes,
+                        "indicator_profile": request.indicator_profile,
+                    },
+                    tool_results["compute_indicators"],
+                )
+            )
 
             if market == "US":
                 filings_result = await self.filings_tools.get_filings(
@@ -161,12 +185,18 @@ class AgentOrchestrator:
                     market=market,
                 )
                 tool_results["get_filings"] = filings_result.model_dump(mode="json")
-                traces.append(self._trace("get_filings", {
-                    "symbol_or_cik": symbol,
-                    "form_type": "10-K",
-                    "from": ranges["filing_from"],
-                    "to": ranges["filing_to"],
-                }, tool_results["get_filings"]))
+                traces.append(
+                    self._trace(
+                        "get_filings",
+                        {
+                            "symbol_or_cik": symbol,
+                            "form_type": "10-K",
+                            "from": ranges["filing_from"],
+                            "to": ranges["filing_to"],
+                        },
+                        tool_results["get_filings"],
+                    )
+                )
 
             if request.peer_list:
                 peer_result = await self.compute_tools.peer_compare(
@@ -176,10 +206,16 @@ class AgentOrchestrator:
                     market=market,
                 )
                 tool_results["peer_compare"] = peer_result.model_dump(mode="json")
-                traces.append(self._trace("peer_compare", {
-                    "symbol": symbol,
-                    "peer_list": request.peer_list,
-                }, tool_results["peer_compare"]))
+                traces.append(
+                    self._trace(
+                        "peer_compare",
+                        {
+                            "symbol": symbol,
+                            "peer_list": request.peer_list,
+                        },
+                        tool_results["peer_compare"],
+                    )
+                )
 
         else:
             news_result = await self.news_tools.search_news(
@@ -189,19 +225,31 @@ class AgentOrchestrator:
                 limit=80,
             )
             tool_results["search_news"] = news_result.model_dump(mode="json")
-            traces.append(self._trace("search_news", {
-                "query": "macro market",
-                "from": ranges["news_from"],
-                "to": ranges["news_to"],
-            }, tool_results["search_news"]))
+            traces.append(
+                self._trace(
+                    "search_news",
+                    {
+                        "query": "macro market",
+                        "from": ranges["news_from"],
+                        "to": ranges["news_to"],
+                    },
+                    tool_results["search_news"],
+                )
+            )
 
             macro_result = await self.macro_tools.get_macro_data(
                 periods=min(self.config.flow_periods, 20),
             )
             tool_results["get_macro_data"] = macro_result.model_dump(mode="json")
-            traces.append(self._trace("get_macro_data", {
-                "periods": min(self.config.flow_periods, 20),
-            }, tool_results["get_macro_data"]))
+            traces.append(
+                self._trace(
+                    "get_macro_data",
+                    {
+                        "periods": min(self.config.flow_periods, 20),
+                    },
+                    tool_results["get_macro_data"],
+                )
+            )
 
         runtime_context = {
             "question": question,
@@ -251,7 +299,9 @@ class AgentOrchestrator:
             base_confidence=runtime_draft.confidence,
             issues=issues,
         )
-        runtime_draft = runtime_draft.model_copy(update={"confidence": adjusted_confidence})
+        runtime_draft = runtime_draft.model_copy(
+            update={"confidence": adjusted_confidence}
+        )
 
         final_report = self.formatter.format_report(
             mode=mode,
@@ -369,7 +419,9 @@ class AgentOrchestrator:
             resolved_symbol = str(arguments.get("symbol") or fallback_symbol)
             resolved_market = str(arguments.get("market") or fallback_market)
             result = await self.news_tools.search_news(
-                query=str(arguments.get("query") or request.question or fallback_symbol),
+                query=str(
+                    arguments.get("query") or request.question or fallback_symbol
+                ),
                 from_date=str(arguments.get("from") or ranges["news_from"]),
                 to_date=str(arguments.get("to") or ranges["news_to"]),
                 limit=int(arguments.get("limit") or 50),
@@ -383,7 +435,9 @@ class AgentOrchestrator:
                 payload = []
             result = self.compute_tools.compute_indicators(
                 price_df=payload,
-                indicators=arguments.get("indicators") if isinstance(arguments.get("indicators"), list) else None,
+                indicators=arguments.get("indicators")
+                if isinstance(arguments.get("indicators"), list)
+                else None,
                 symbol=str(arguments.get("symbol") or fallback_symbol),
                 indicator_profile=str(
                     arguments.get("indicator_profile")
@@ -397,18 +451,24 @@ class AgentOrchestrator:
             result = await self.compute_tools.peer_compare(
                 symbol=str(arguments.get("symbol") or fallback_symbol),
                 peer_list=peer_list if isinstance(peer_list, list) else [],
-                metrics=arguments.get("metrics") if isinstance(arguments.get("metrics"), list) else None,
+                metrics=arguments.get("metrics")
+                if isinstance(arguments.get("metrics"), list)
+                else None,
                 market=str(arguments.get("market") or fallback_market),
             )
             return result.model_dump(mode="json")
         if name == "get_macro_data":
             result = await self.macro_tools.get_macro_data(
-                periods=int(arguments.get("periods") or min(self.config.flow_periods, 20)),
+                periods=int(
+                    arguments.get("periods") or min(self.config.flow_periods, 20)
+                ),
             )
             return result.model_dump(mode="json")
         raise ValueError(f"Unsupported tool: {name}")
 
-    def _build_evidence(self, tool_results: Dict[str, Dict[str, Any]]) -> List[AgentEvidence]:
+    def _build_evidence(
+        self, tool_results: Dict[str, Dict[str, Any]]
+    ) -> List[AgentEvidence]:
         evidence: List[AgentEvidence] = []
         cursor = 1
         for tool_name, payload in tool_results.items():
@@ -459,7 +519,9 @@ class AgentOrchestrator:
                             evidence_id=f"E{cursor}",
                             statement=statement,
                             source=str(indicator_payload.get("source") or "computed"),
-                            as_of=str(item.get("ts") or indicator_payload.get("as_of") or ""),
+                            as_of=str(
+                                item.get("ts") or indicator_payload.get("as_of") or ""
+                            ),
                             pointer=f"compute_indicators.signal_timeline[{index}]",
                         )
                     )
@@ -512,7 +574,9 @@ class AgentOrchestrator:
         return tool_name
 
     @staticmethod
-    def _trace(tool: str, arguments: Dict[str, Any], result: Dict[str, Any]) -> ToolCallTrace:
+    def _trace(
+        tool: str, arguments: Dict[str, Any], result: Dict[str, Any]
+    ) -> ToolCallTrace:
         preview = dict(result)
         for key in ("bars", "items", "points", "rows", "filings"):
             value = preview.get(key)
@@ -650,7 +714,10 @@ class AgentOrchestrator:
                         "properties": {
                             "symbol": {"type": "string"},
                             "price_df": {"type": "object"},
-                            "indicators": {"type": "array", "items": {"type": "string"}},
+                            "indicators": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                            },
                             "indicator_profile": {"type": "string"},
                         },
                     },
@@ -687,5 +754,10 @@ class AgentOrchestrator:
             },
         ]
         if mode == "market":
-            return [item for item in base if item.get("function", {}).get("name") in {"search_news", "get_macro_data"}]
+            return [
+                item
+                for item in base
+                if item.get("function", {}).get("name")
+                in {"search_news", "get_macro_data"}
+            ]
         return base

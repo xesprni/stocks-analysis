@@ -14,7 +14,7 @@ from market_reporter.api.stock_analysis_tasks import StockAnalysisTaskManager
 from market_reporter.config import AppConfig, DatabaseConfig
 from market_reporter.infra.db.repos import StockAnalysisRunRepo
 from market_reporter.infra.db.session import init_db, session_scope
-from market_reporter.modules.analysis_engine.schemas import StockAnalysisTaskStatus, StockAnalysisTaskView
+from market_reporter.modules.analysis.schemas import StockAnalysisTaskStatus, StockAnalysisTaskView
 from market_reporter.services.config_store import ConfigStore
 
 

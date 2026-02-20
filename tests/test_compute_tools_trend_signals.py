@@ -3,8 +3,10 @@ from __future__ import annotations
 import unittest
 from datetime import datetime, timedelta
 
-from market_reporter.modules.agent.tools.compute_tools import ComputeTools
-from market_reporter.modules.agent.tools.fundamentals_tools import FundamentalsTools
+from market_reporter.modules.analysis.agent.tools.compute_tools import ComputeTools
+from market_reporter.modules.analysis.agent.tools.fundamentals_tools import (
+    FundamentalsTools,
+)
 
 
 class ComputeToolsTrendSignalsTest(unittest.TestCase):
@@ -45,8 +47,14 @@ class ComputeToolsTrendSignalsTest(unittest.TestCase):
         self.assertIn("primary", result.trend)
         self.assertIn("ma", result.trend["primary"])
         self.assertEqual(result.trend["primary"]["ma"]["state"], "bullish")
-        self.assertIn(result.trend["primary"]["macd"]["cross"], {"none", "golden_cross", "dead_cross"})
-        self.assertIn(result.trend["primary"]["bollinger"]["status"], {"inside_band", "above_mid", "breakout_up", "breakout_down", "revert_mid"})
+        self.assertIn(
+            result.trend["primary"]["macd"]["cross"],
+            {"none", "golden_cross", "dead_cross"},
+        )
+        self.assertIn(
+            result.trend["primary"]["bollinger"]["status"],
+            {"inside_band", "above_mid", "breakout_up", "breakout_down", "revert_mid"},
+        )
 
         self.assertIn("score", result.strategy)
         self.assertIn("stance", result.strategy)
@@ -57,8 +65,12 @@ class ComputeToolsTrendSignalsTest(unittest.TestCase):
         self.assertIn("macd", result.values)
 
     def test_macd_cross_helper(self):
-        self.assertEqual(self.compute._macd_cross([-0.3, 0.2], [-0.1, 0.0]), "golden_cross")
-        self.assertEqual(self.compute._macd_cross([0.2, -0.3], [0.1, 0.0]), "dead_cross")
+        self.assertEqual(
+            self.compute._macd_cross([-0.3, 0.2], [-0.1, 0.0]), "golden_cross"
+        )
+        self.assertEqual(
+            self.compute._macd_cross([0.2, -0.3], [0.1, 0.0]), "dead_cross"
+        )
         self.assertEqual(self.compute._macd_cross([0.1, 0.2], [0.0, 0.1]), "none")
 
 

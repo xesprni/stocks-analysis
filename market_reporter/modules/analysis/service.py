@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from market_reporter.config import AnalysisProviderConfig, AppConfig
 from market_reporter.core.registry import ProviderRegistry
+from market_reporter.core.utils import parse_json
 from market_reporter.core.types import (
     AnalysisInput,
     AnalysisOutput,
@@ -22,16 +23,16 @@ from market_reporter.infra.db.repos import (
 from market_reporter.infra.db.session import session_scope
 from market_reporter.infra.security.crypto import decrypt_text, encrypt_text
 from market_reporter.infra.security.keychain_store import KeychainStore
-from market_reporter.modules.analysis_engine.providers.codex_app_server_provider import (
+from market_reporter.modules.analysis.providers.codex_app_server_provider import (
     CodexAppServerProvider,
 )
-from market_reporter.modules.analysis_engine.providers.mock_provider import (
+from market_reporter.modules.analysis.providers.mock_provider import (
     MockAnalysisProvider,
 )
-from market_reporter.modules.analysis_engine.providers.openai_compatible_provider import (
+from market_reporter.modules.analysis.providers.openai_compatible_provider import (
     OpenAICompatibleProvider,
 )
-from market_reporter.modules.analysis_engine.schemas import (
+from market_reporter.modules.analysis.schemas import (
     AnalysisProviderView,
     ProviderAuthStartResponse,
     ProviderAuthStatusView,
@@ -39,8 +40,8 @@ from market_reporter.modules.analysis_engine.schemas import (
     StockAnalysisHistoryItem,
     StockAnalysisRunView,
 )
-from market_reporter.modules.agent.schemas import AgentRunRequest
-from market_reporter.modules.agent.service import AgentService
+from market_reporter.modules.analysis.agent.schemas import AgentRunRequest
+from market_reporter.modules.analysis.agent.service import AgentService
 from market_reporter.modules.fund_flow.service import FundFlowService
 from market_reporter.modules.market_data.service import MarketDataService
 from market_reporter.modules.market_data.symbol_mapper import normalize_symbol
@@ -452,7 +453,7 @@ class AnalysisService:
         timeframes: Optional[List[str]] = None,
         indicator_profile: Optional[str] = None,
     ) -> StockAnalysisRunView:
-        provider_cfg, selected_model = self._select_provider_and_model(
+        provider_cfg, selected_model, api_key, access_token = self.resolve_credentials(
             provider_id=provider_id, model=model
         )
         if self.news_service is None or self.fund_flow_service is None:
@@ -460,16 +461,6 @@ class AnalysisService:
                 "AnalysisService missing runtime dependencies for stock analysis"
             )
         normalized_symbol = normalize_symbol(symbol=symbol, market=market)
-
-        auth_mode = self._resolve_auth_mode(provider_cfg)
-        api_key: Optional[str] = None
-        access_token: Optional[str] = None
-        if provider_cfg.type == "codex_app_server":
-            access_token = None
-        elif auth_mode == "chatgpt_oauth":
-            access_token = self._resolve_access_token(provider_cfg=provider_cfg)
-        elif auth_mode == "api_key":
-            api_key = self._resolve_api_key(provider_cfg=provider_cfg)
 
         agent_service = AgentService(
             config=self.config,
@@ -524,28 +515,30 @@ class AnalysisService:
             created_at=created_at,
         )
 
-    async def analyze_market_overview(
+    def resolve_credentials(
         self,
-        news_items: List[NewsItem],
-        flow_series: Dict[str, List[FlowPoint]],
-    ) -> Tuple[AnalysisOutput, str, str]:
+        provider_id: Optional[str] = None,
+        model: Optional[str] = None,
+    ) -> Tuple[AnalysisProviderConfig, str, Optional[str], Optional[str]]:
+        """Select a provider and resolve its credentials.
+
+        Returns ``(provider_cfg, selected_model, api_key, access_token)``.
+        This is the public entry-point for callers that need to construct an
+        ``AgentService`` without going through ``run_stock_analysis``.
+        """
         provider_cfg, selected_model = self._select_provider_and_model(
-            provider_id=None, model=None
+            provider_id=provider_id, model=model
         )
-        payload = AnalysisInput(
-            symbol="MARKET",
-            market="GLOBAL",
-            quote=None,
-            kline=[],
-            curve=[],
-            news=news_items,
-            fund_flow=flow_series,
-            watch_meta={"mode": "overview"},
-        )
-        output = await self._invoke_provider(
-            provider_cfg=provider_cfg, model=selected_model, payload=payload
-        )
-        return output, provider_cfg.provider_id, selected_model
+        auth_mode = self._resolve_auth_mode(provider_cfg)
+        api_key: Optional[str] = None
+        access_token: Optional[str] = None
+        if provider_cfg.type == "codex_app_server":
+            access_token = None
+        elif auth_mode == "chatgpt_oauth":
+            access_token = self._resolve_access_token(provider_cfg=provider_cfg)
+        elif auth_mode == "api_key":
+            api_key = self._resolve_api_key(provider_cfg=provider_cfg)
+        return provider_cfg, selected_model, api_key, access_token
 
     async def analyze_news_alert_batch(
         self,
@@ -876,15 +869,8 @@ class AnalysisService:
                 return None
         return None
 
-    @staticmethod
-    def _parse_json(raw: str) -> Dict[str, object]:
-        try:
-            return json.loads(raw)
-        except Exception:
-            return {}
-
     def _to_history_item(self, row) -> StockAnalysisHistoryItem:
-        parsed_output = self._parse_json(row.output_json)
+        parsed_output = parse_json(row.output_json) or {}
         return StockAnalysisHistoryItem(
             id=int(row.id),
             symbol=row.symbol,

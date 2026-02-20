@@ -10,8 +10,12 @@ from fastapi.testclient import TestClient
 from market_reporter.api import reports
 from market_reporter.config import AnalysisConfig, AnalysisProviderConfig, AppConfig
 from market_reporter.core.types import AnalysisInput, AnalysisOutput
-from market_reporter.modules.agent.schemas import AgentFinalReport, AgentRunResult, RuntimeDraft
-from market_reporter.modules.agent.service import AgentService
+from market_reporter.modules.analysis.agent.schemas import (
+    AgentFinalReport,
+    AgentRunResult,
+    RuntimeDraft,
+)
+from market_reporter.modules.analysis.agent.service import AgentService
 from market_reporter.schemas import ReportRunSummary, ReportTaskStatus, RunResult
 from market_reporter.services.config_store import ConfigStore
 from market_reporter.services.report_service import ReportService
@@ -19,7 +23,9 @@ from market_reporter.services.report_service import ReportService
 
 class ReportServiceTest(unittest.TestCase):
     @staticmethod
-    def _build_reports_app(config_store: ConfigStore, report_service: ReportService) -> FastAPI:
+    def _build_reports_app(
+        config_store: ConfigStore, report_service: ReportService
+    ) -> FastAPI:
         app = FastAPI()
         app.state.config_store = config_store
         app.state.report_service = report_service
@@ -50,7 +56,9 @@ class ReportServiceTest(unittest.TestCase):
                 news_total=10,
             )
             (run_dir / "meta.json").write_text(
-                json.dumps({"summary": summary.model_dump(mode="json"), "warnings": ["x"]}),
+                json.dumps(
+                    {"summary": summary.model_dump(mode="json"), "warnings": ["x"]}
+                ),
                 encoding="utf-8",
             )
 
@@ -120,7 +128,10 @@ class ReportServiceTest(unittest.TestCase):
 
                 for _ in range(50):
                     snapshot = await service.get_report_task(task.task_id)
-                    if snapshot.status in {ReportTaskStatus.SUCCEEDED, ReportTaskStatus.FAILED}:
+                    if snapshot.status in {
+                        ReportTaskStatus.SUCCEEDED,
+                        ReportTaskStatus.FAILED,
+                    }:
                         return snapshot
                     await asyncio.sleep(0.01)
                 return await service.get_report_task(task.task_id)
@@ -154,7 +165,10 @@ class ReportServiceTest(unittest.TestCase):
                 task = await service.start_report_async()
                 for _ in range(50):
                     snapshot = await service.get_report_task(task.task_id)
-                    if snapshot.status in {ReportTaskStatus.SUCCEEDED, ReportTaskStatus.FAILED}:
+                    if snapshot.status in {
+                        ReportTaskStatus.SUCCEEDED,
+                        ReportTaskStatus.FAILED,
+                    }:
                         return snapshot
                     await asyncio.sleep(0.01)
                 return await service.get_report_task(task.task_id)
@@ -265,7 +279,11 @@ class ReportServiceTest(unittest.TestCase):
                 self.assertEqual(result.summary.sentiment, "bullish")
                 self.assertEqual(result.summary.mode, "market")
 
-                meta_payload = json.loads((result.summary.report_path.parent / "meta.json").read_text(encoding="utf-8"))
+                meta_payload = json.loads(
+                    (result.summary.report_path.parent / "meta.json").read_text(
+                        encoding="utf-8"
+                    )
+                )
                 self.assertEqual(meta_payload["summary"].get("confidence"), 0.73)
                 self.assertEqual(meta_payload["summary"].get("sentiment"), "bullish")
                 self.assertEqual(meta_payload["summary"].get("mode"), "market")
