@@ -15,6 +15,16 @@ from market_reporter.modules.watchlist.schemas import WatchlistItem
 class _FakeMarketDataService:
     def __init__(self, fail_keys: set[tuple[str, str]] | None = None) -> None:
         self.fail_keys = fail_keys or set()
+        self.batch_calls = 0
+
+    async def get_quotes(self, items: list[tuple[str, str]]):
+        self.batch_calls += 1
+        rows = []
+        for symbol, market in items:
+            if (symbol, market) in self.fail_keys:
+                continue
+            rows.append(await self.get_quote(symbol=symbol, market=market))
+        return rows
 
     async def get_quote(self, symbol: str, market: str) -> Quote:
         key = (symbol, market)
@@ -75,7 +85,9 @@ class DashboardServiceTest(unittest.IsolatedAsyncioTestCase):
             market_data_service=_FakeMarketDataService(),
             watchlist_service=_FakeWatchlistService(items=[]),
         )
-        empty_snapshot = await service.get_snapshot(page=1, page_size=10, enabled_only=True)
+        empty_snapshot = await service.get_snapshot(
+            page=1, page_size=10, enabled_only=True
+        )
         self.assertEqual(empty_snapshot.pagination.total, 0)
         self.assertEqual(empty_snapshot.pagination.total_pages, 0)
         self.assertEqual(empty_snapshot.watchlist, [])
@@ -87,8 +99,12 @@ class DashboardServiceTest(unittest.IsolatedAsyncioTestCase):
             market_data_service=_FakeMarketDataService(),
             watchlist_service=_FakeWatchlistService(items=items),
         )
-        page2 = await paged_service.get_snapshot(page=2, page_size=10, enabled_only=True)
-        overflow = await paged_service.get_snapshot(page=3, page_size=10, enabled_only=True)
+        page2 = await paged_service.get_snapshot(
+            page=2, page_size=10, enabled_only=True
+        )
+        overflow = await paged_service.get_snapshot(
+            page=3, page_size=10, enabled_only=True
+        )
         self.assertEqual(page2.pagination.total, 13)
         self.assertEqual(page2.pagination.total_pages, 2)
         self.assertEqual(len(page2.watchlist), 3)
@@ -112,7 +128,9 @@ class DashboardServiceTest(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertGreaterEqual(len(index_snapshot.indices), 1)
-        self.assertEqual(index_snapshot.auto_refresh_enabled, config.dashboard.auto_refresh_enabled)
+        self.assertEqual(
+            index_snapshot.auto_refresh_enabled, config.dashboard.auto_refresh_enabled
+        )
         self.assertEqual(watchlist_snapshot.pagination.total, 5)
         self.assertEqual(watchlist_snapshot.pagination.total_pages, 3)
         self.assertEqual(len(watchlist_snapshot.watchlist), 2)
@@ -124,11 +142,18 @@ class DashboardServiceTest(unittest.IsolatedAsyncioTestCase):
             registry=ProviderRegistry(),
             market_data_service=_FakeMarketDataService(),
             watchlist_service=_FakeWatchlistService(
-                items=[self._build_item(1, enabled=True), self._build_item(2, enabled=False)]
+                items=[
+                    self._build_item(1, enabled=True),
+                    self._build_item(2, enabled=False),
+                ]
             ),
         )
-        enabled_snapshot = await service.get_snapshot(page=1, page_size=10, enabled_only=True)
-        all_snapshot = await service.get_snapshot(page=1, page_size=10, enabled_only=False)
+        enabled_snapshot = await service.get_snapshot(
+            page=1, page_size=10, enabled_only=True
+        )
+        all_snapshot = await service.get_snapshot(
+            page=1, page_size=10, enabled_only=False
+        )
         self.assertEqual(len(enabled_snapshot.watchlist), 1)
         self.assertEqual(enabled_snapshot.watchlist[0].id, 1)
         self.assertEqual(len(all_snapshot.watchlist), 2)
@@ -141,13 +166,28 @@ class DashboardServiceTest(unittest.IsolatedAsyncioTestCase):
             market_data_service=_FakeMarketDataService(
                 fail_keys={("^GSPC", "US"), ("T1", "US")}
             ),
-            watchlist_service=_FakeWatchlistService(items=[self._build_item(1, enabled=True)]),
+            watchlist_service=_FakeWatchlistService(
+                items=[self._build_item(1, enabled=True)]
+            ),
         )
         snapshot = await service.get_snapshot(page=1, page_size=10, enabled_only=True)
         self.assertEqual(snapshot.indices[0].source, "unavailable")
         self.assertEqual(snapshot.indices[0].symbol, "^GSPC")
         self.assertEqual(snapshot.watchlist[0].source, "unavailable")
         self.assertEqual(snapshot.watchlist[0].id, 1)
+
+    async def test_snapshot_prefers_batch_quotes(self):
+        config = self._build_config()
+        market_data = _FakeMarketDataService()
+        service = DashboardService(
+            config=config,
+            registry=ProviderRegistry(),
+            market_data_service=market_data,
+            watchlist_service=_FakeWatchlistService(items=[self._build_item(1)]),
+        )
+
+        await service.get_snapshot(page=1, page_size=10, enabled_only=True)
+        self.assertGreaterEqual(market_data.batch_calls, 2)
 
 
 if __name__ == "__main__":

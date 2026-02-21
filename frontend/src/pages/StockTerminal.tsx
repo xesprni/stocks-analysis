@@ -3,7 +3,10 @@ import { useQuery } from "@tanstack/react-query";
 import { Activity, BarChart3, Bot, Play, RefreshCw } from "lucide-react";
 
 import { api, type StockAnalysisRun, type WatchlistItem } from "@/api/client";
-import { CandlestickChart } from "@/components/charts/CandlestickChart";
+import {
+  CandlestickChart,
+  type IndicatorVisibility,
+} from "@/components/charts/CandlestickChart";
 import { TradeCurveChart } from "@/components/charts/TradeCurveChart";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -80,6 +83,23 @@ export function StockTerminalPage({ defaultProvider, defaultModel, intervals, wa
   const [peerListText, setPeerListText] = useState("");
   const [timeframesText, setTimeframesText] = useState("1d,5m");
   const [indicatorProfile, setIndicatorProfile] = useState<"balanced" | "trend" | "momentum">("balanced");
+  const [indicatorVisibility, setIndicatorVisibility] = useState<IndicatorVisibility>({
+    sma5: true,
+    sma10: true,
+    sma20: false,
+    ema12: false,
+    ema26: false,
+    boll: false,
+    rsi: true,
+    macd: true,
+  });
+
+  const toggleIndicator = (key: keyof IndicatorVisibility) => {
+    setIndicatorVisibility((prev) => ({
+      ...prev,
+      [key]: !prev[key],
+    }));
+  };
 
   const watchlistOptions = useMemo(
     () =>
@@ -313,8 +333,69 @@ export function StockTerminalPage({ defaultProvider, defaultModel, intervals, wa
               K线
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <CandlestickChart data={klineQuery.data ?? []} />
+          <CardContent className="space-y-3">
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant={indicatorVisibility.sma5 ? "default" : "outline"}
+                size="sm"
+                onClick={() => toggleIndicator("sma5")}
+              >
+                SMA5
+              </Button>
+              <Button
+                variant={indicatorVisibility.sma10 ? "default" : "outline"}
+                size="sm"
+                onClick={() => toggleIndicator("sma10")}
+              >
+                SMA10
+              </Button>
+              <Button
+                variant={indicatorVisibility.sma20 ? "default" : "outline"}
+                size="sm"
+                onClick={() => toggleIndicator("sma20")}
+              >
+                SMA20
+              </Button>
+              <Button
+                variant={indicatorVisibility.ema12 ? "default" : "outline"}
+                size="sm"
+                onClick={() => toggleIndicator("ema12")}
+              >
+                EMA12
+              </Button>
+              <Button
+                variant={indicatorVisibility.ema26 ? "default" : "outline"}
+                size="sm"
+                onClick={() => toggleIndicator("ema26")}
+              >
+                EMA26
+              </Button>
+              <Button
+                variant={indicatorVisibility.boll ? "default" : "outline"}
+                size="sm"
+                onClick={() => toggleIndicator("boll")}
+              >
+                BOLL
+              </Button>
+              <Button
+                variant={indicatorVisibility.rsi ? "default" : "outline"}
+                size="sm"
+                onClick={() => toggleIndicator("rsi")}
+              >
+                RSI
+              </Button>
+              <Button
+                variant={indicatorVisibility.macd ? "default" : "outline"}
+                size="sm"
+                onClick={() => toggleIndicator("macd")}
+              >
+                MACD
+              </Button>
+            </div>
+            <CandlestickChart
+              data={klineQuery.data ?? []}
+              indicators={indicatorVisibility}
+            />
           </CardContent>
         </Card>
 

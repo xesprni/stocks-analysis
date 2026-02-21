@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import Any, Dict, List, Optional, Tuple, cast
 
 from market_reporter.config import LongbridgeConfig
 from market_reporter.core.types import CurvePoint, KLineBar, Quote
@@ -26,13 +26,13 @@ class LongbridgeMarketDataProvider:
 
     def __init__(self, lb_config: LongbridgeConfig) -> None:
         self._lb_config = lb_config
-        self._ctx: Optional[object] = None
+        self._ctx: Optional[Any] = None
 
     # ------------------------------------------------------------------
     # Lazy context – created once per provider instance.
     # ------------------------------------------------------------------
 
-    def _ensure_ctx(self):
+    def _ensure_ctx(self) -> Any:
         """Create a QuoteContext on first use (must be called in a thread)."""
         if self._ctx is not None:
             return self._ctx
@@ -53,6 +53,9 @@ class LongbridgeMarketDataProvider:
     async def get_quote(self, symbol: str, market: str) -> Quote:
         return await asyncio.to_thread(self._get_quote_sync, symbol, market)
 
+    async def get_quotes(self, items: List[Tuple[str, str]]) -> List[Quote]:
+        return await asyncio.to_thread(self._get_quotes_sync, items)
+
     async def get_kline(
         self, symbol: str, market: str, interval: str, limit: int
     ) -> List[KLineBar]:
@@ -70,47 +73,55 @@ class LongbridgeMarketDataProvider:
     # ------------------------------------------------------------------
 
     def _get_quote_sync(self, symbol: str, market: str) -> Quote:
-        ctx = self._ensure_ctx()
-        lb_symbol = to_longbridge_symbol(symbol, market)
-        normalized = normalize_symbol(symbol, market)
-
-        quotes = ctx.quote([lb_symbol])
-        if not quotes:
+        rows = self._get_quotes_sync([(symbol, market)])
+        if not rows:
+            lb_symbol = to_longbridge_symbol(symbol, market)
             raise ValueError(f"No quote returned for {lb_symbol}")
+        return rows[0]
 
-        q = quotes[0]
-        price = float(q.last_done)
-        prev_close = float(q.prev_close) if q.prev_close else None
-        change = None
-        pct = None
-        if prev_close and prev_close != 0:
-            change = price - prev_close
-            pct = change / prev_close * 100
+    def _get_quotes_sync(self, items: List[Tuple[str, str]]) -> List[Quote]:
+        if not items:
+            return []
 
-        ts = (
-            q.timestamp.isoformat(timespec="seconds")
-            if q.timestamp
-            else datetime.now(timezone.utc).isoformat(timespec="seconds")
-        )
+        ctx = cast(Any, self._ensure_ctx())
+        prepared: List[Tuple[str, str, str]] = []
+        for symbol, market in items:
+            market_upper = market.upper()
+            lb_symbol = to_longbridge_symbol(symbol, market_upper)
+            normalized = normalize_symbol(symbol, market_upper)
+            prepared.append((normalized, market_upper, lb_symbol))
 
-        return Quote(
-            symbol=normalized,
-            market=market.upper(),
-            ts=ts,
-            price=price,
-            change=change,
-            change_percent=pct,
-            volume=float(q.volume) if q.volume is not None else None,
-            currency=self._currency_by_market(market),
-            source=self.provider_id,
-        )
+        lb_symbols = [entry[2] for entry in prepared]
+        quote_rows = ctx.quote(lb_symbols)
+        ordered_rows = list(quote_rows)
+        row_map: Dict[str, object] = {
+            str(getattr(row, "symbol", "") or "").strip().upper(): row
+            for row in quote_rows
+            if str(getattr(row, "symbol", "") or "").strip()
+        }
+
+        quotes: List[Quote] = []
+        for idx, (normalized, market_upper, lb_symbol) in enumerate(prepared):
+            row = row_map.get(lb_symbol.upper())
+            if row is None and len(ordered_rows) == len(prepared):
+                row = ordered_rows[idx]
+            if row is None:
+                continue
+            quotes.append(
+                self._build_quote(
+                    row=row,
+                    normalized_symbol=normalized,
+                    market=market_upper,
+                )
+            )
+        return quotes
 
     def _get_kline_sync(
         self, symbol: str, market: str, interval: str, limit: int
     ) -> List[KLineBar]:
         from longbridge.openapi import AdjustType, Period
 
-        ctx = self._ensure_ctx()
+        ctx = cast(Any, self._ensure_ctx())
         lb_symbol = to_longbridge_symbol(symbol, market)
         normalized = normalize_symbol(symbol, market)
 
@@ -144,7 +155,7 @@ class LongbridgeMarketDataProvider:
     def _get_curve_sync(
         self, symbol: str, market: str, window: str
     ) -> List[CurvePoint]:
-        ctx = self._ensure_ctx()
+        ctx = cast(Any, self._ensure_ctx())
         lb_symbol = to_longbridge_symbol(symbol, market)
         normalized = normalize_symbol(symbol, market)
 
@@ -193,3 +204,34 @@ class LongbridgeMarketDataProvider:
             "HK": "HKD",
             "US": "USD",
         }.get(market.upper(), "")
+
+    def _build_quote(self, row: object, normalized_symbol: str, market: str) -> Quote:
+        price = float(getattr(row, "last_done", 0.0) or 0.0)
+        prev_close_raw = getattr(row, "prev_close", None)
+        prev_close = float(prev_close_raw) if prev_close_raw else None
+        change = None
+        pct = None
+        if prev_close and prev_close != 0:
+            change = price - prev_close
+            pct = change / prev_close * 100
+
+        ts_raw = getattr(row, "timestamp", None)
+        ts = (
+            ts_raw.isoformat(timespec="seconds")
+            if ts_raw
+            else datetime.now(timezone.utc).isoformat(timespec="seconds")
+        )
+
+        volume_raw = getattr(row, "volume", None)
+        volume = float(volume_raw) if volume_raw is not None else None
+        return Quote(
+            symbol=normalized_symbol,
+            market=market.upper(),
+            ts=ts,
+            price=price,
+            change=change,
+            change_percent=pct,
+            volume=volume,
+            currency=self._currency_by_market(market),
+            source=self.provider_id,
+        )

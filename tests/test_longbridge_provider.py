@@ -110,6 +110,36 @@ class LongbridgeProviderQuoteTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(quote.market, "HK")
         self.assertEqual(quote.currency, "HKD")
 
+    async def test_get_quotes_batch(self):
+        provider = LongbridgeMarketDataProvider(_make_lb_config())
+        mock_ctx = MagicMock()
+        mock_ctx.quote.return_value = [
+            SimpleNamespace(
+                symbol="AAPL.US",
+                last_done=150.0,
+                prev_close=148.0,
+                volume=100,
+                timestamp=datetime(2026, 2, 20, 10, 30, 0, tzinfo=timezone.utc),
+            ),
+            SimpleNamespace(
+                symbol="0700.HK",
+                last_done=300.0,
+                prev_close=295.0,
+                volume=200,
+                timestamp=datetime(2026, 2, 20, 10, 31, 0, tzinfo=timezone.utc),
+            ),
+        ]
+        provider._ctx = mock_ctx
+
+        rows = await provider.get_quotes([("AAPL", "US"), ("700", "HK")])
+
+        mock_ctx.quote.assert_called_once_with(["AAPL.US", "0700.HK"])
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0].symbol, "AAPL")
+        self.assertEqual(rows[0].market, "US")
+        self.assertEqual(rows[1].symbol, "0700.HK")
+        self.assertEqual(rows[1].market, "HK")
+
     async def test_get_quote_no_prev_close(self):
         provider = LongbridgeMarketDataProvider(_make_lb_config())
         mock_ctx = MagicMock()

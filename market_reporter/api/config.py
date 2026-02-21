@@ -10,6 +10,7 @@ from market_reporter.config import AppConfig, LongbridgeConfig
 from market_reporter.infra.db.session import init_db
 from market_reporter.schemas import ConfigUpdateRequest
 from market_reporter.services.config_store import ConfigStore
+from market_reporter.services.longbridge_credentials import LongbridgeCredentialService
 
 router = APIRouter(prefix="/api", tags=["config"])
 
@@ -90,6 +91,9 @@ async def delete_longbridge_token(
     config_store: ConfigStore = Depends(get_config_store),
 ) -> dict:
     current = config_store.load()
+    init_db(current.database.url)
+    credential_service = LongbridgeCredentialService(database_url=current.database.url)
+    credential_service.delete()
     next_lb = LongbridgeConfig()  # Reset to defaults (disabled, empty credentials)
     next_config = current.model_copy(update={"longbridge": next_lb})
     config_store.save(next_config)

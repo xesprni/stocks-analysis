@@ -10,6 +10,8 @@ from market_reporter.config import (
     default_analysis_providers,
     default_app_config,
 )
+from market_reporter.infra.db.session import init_db
+from market_reporter.services.longbridge_credentials import LongbridgeCredentialService
 
 
 class ConfigStore:
@@ -37,22 +39,24 @@ class ConfigStore:
             self._should_rewrite_analysis(raw, config)
             or self._should_rewrite_agent(raw)
             or self._should_rewrite_dashboard(raw)
+            or self._should_rewrite_longbridge(raw)
         ):
-            self.save(config)
-        return config
+            return self.save(config)
+        return self._hydrate_longbridge_credentials(config)
 
     def save(self, config: AppConfig) -> AppConfig:
         normalized = config.model_copy(
             update={"config_file": self.config_path}
         ).normalized()
         normalized.ensure_data_root()
+        normalized = self._persist_longbridge_credentials(config=normalized)
         self.config_path.parent.mkdir(parents=True, exist_ok=True)
         payload = normalized.model_dump(mode="json")
         self.config_path.write_text(
             yaml.safe_dump(payload, allow_unicode=True, sort_keys=False),
             encoding="utf-8",
         )
-        return normalized
+        return self._hydrate_longbridge_credentials(normalized)
 
     def patch(self, patch_data: Dict[str, Any]) -> AppConfig:
         current = self.load()
@@ -212,3 +216,71 @@ class ConfigStore:
             "auto_refresh_seconds",
         }
         return not required_keys.issubset(set(raw_dashboard.keys()))
+
+    @staticmethod
+    def _should_rewrite_longbridge(raw_config: Dict[str, Any]) -> bool:
+        raw_longbridge = raw_config.get("longbridge")
+        if not isinstance(raw_longbridge, dict):
+            return False
+        app_secret = str(raw_longbridge.get("app_secret") or "").strip()
+        access_token = str(raw_longbridge.get("access_token") or "").strip()
+        return app_secret not in {"", "***"} or access_token not in {"", "***"}
+
+    def _persist_longbridge_credentials(self, config: AppConfig) -> AppConfig:
+        longbridge = config.longbridge
+        app_secret = str(longbridge.app_secret or "").strip()
+        access_token = str(longbridge.access_token or "").strip()
+        app_key = str(longbridge.app_key or "").strip()
+
+        has_credentials = False
+        try:
+            init_db(config.database.url)
+            service = LongbridgeCredentialService(database_url=config.database.url)
+            if (
+                app_secret
+                and access_token
+                and app_secret != "***"
+                and access_token != "***"
+            ):
+                service.upsert(app_secret=app_secret, access_token=access_token)
+            has_credentials = service.has_credentials()
+        except Exception:
+            has_credentials = bool(
+                app_secret
+                and access_token
+                and app_secret != "***"
+                and access_token != "***"
+            )
+
+        sanitized_longbridge = longbridge.model_copy(
+            update={
+                "app_secret": "",
+                "access_token": "",
+                "enabled": bool(longbridge.enabled and app_key and has_credentials),
+            }
+        )
+        return config.model_copy(update={"longbridge": sanitized_longbridge})
+
+    def _hydrate_longbridge_credentials(self, config: AppConfig) -> AppConfig:
+        longbridge = config.longbridge
+        app_key = str(longbridge.app_key or "").strip()
+        app_secret = ""
+        access_token = ""
+        has_credentials = False
+
+        try:
+            init_db(config.database.url)
+            service = LongbridgeCredentialService(database_url=config.database.url)
+            app_secret, access_token = service.get()
+            has_credentials = bool(app_secret and access_token)
+        except Exception:
+            has_credentials = False
+
+        hydrated_longbridge = longbridge.model_copy(
+            update={
+                "app_secret": app_secret,
+                "access_token": access_token,
+                "enabled": bool(longbridge.enabled and app_key and has_credentials),
+            }
+        )
+        return config.model_copy(update={"longbridge": hydrated_longbridge})

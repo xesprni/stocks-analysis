@@ -67,10 +67,9 @@ async def stock_quotes_batch(
     config = config_store.load()
     init_db(config.database.url)
     service = MarketDataService(config=config, registry=ProviderRegistry())
-    return [
-        await service.get_quote(symbol=item.symbol, market=item.market)
-        for item in payload.items
-    ]
+    return await service.get_quotes(
+        items=[(item.symbol, item.market) for item in payload.items]
+    )
 
 
 @router.get("/stocks/{symbol}/kline")

@@ -10,7 +10,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from market_reporter.api import config as config_module
-from market_reporter.config import AppConfig, LongbridgeConfig
+from market_reporter.config import AppConfig, DatabaseConfig, LongbridgeConfig
+from market_reporter.services.longbridge_credentials import LongbridgeCredentialService
 from market_reporter.services.config_store import ConfigStore
 
 
@@ -29,7 +30,7 @@ class LongbridgeApiTest(unittest.TestCase):
         config = AppConfig(
             output_root=root / "output",
             config_file=config_path,
-            database={"url": f"sqlite:///{db_path}"},
+            database=DatabaseConfig(url=f"sqlite:///{db_path}"),
             longbridge=lb,
         )
         store = ConfigStore(config_path=config_path)
@@ -97,6 +98,10 @@ class LongbridgeApiTest(unittest.TestCase):
             self.assertEqual(config.longbridge.access_token, "new_token")
             self.assertTrue(config.longbridge.enabled)
 
+            raw_yaml = store.config_path.read_text(encoding="utf-8")
+            self.assertNotIn("new_secret", raw_yaml)
+            self.assertNotIn("new_token", raw_yaml)
+
     def test_update_longbridge_token_partial_disables(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             store = self._make_store(tmpdir)
@@ -139,6 +144,11 @@ class LongbridgeApiTest(unittest.TestCase):
             self.assertEqual(config.longbridge.app_secret, "")
             self.assertEqual(config.longbridge.access_token, "")
 
+            credential_service = LongbridgeCredentialService(
+                database_url=config.database.url
+            )
+            self.assertFalse(credential_service.has_credentials())
+
     # ---- GET /api/config redaction ----
 
     def test_get_config_redacts_longbridge_secrets(self):
@@ -160,6 +170,29 @@ class LongbridgeApiTest(unittest.TestCase):
             self.assertEqual(lb["app_key"], "my_key")
             self.assertEqual(lb["app_secret"], "***")
             self.assertEqual(lb["access_token"], "***")
+
+    def test_update_config_keeps_redacted_longbridge_secrets(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = self._make_store(
+                tmpdir,
+                enabled=True,
+                app_key="my_key",
+                app_secret="my_secret",
+                access_token="my_token",
+            )
+            app = self._build_app(store)
+            client = TestClient(app)
+
+            payload = client.get("/api/config").json()
+            payload["symbol_search"]["default_provider"] = "longbridge"
+
+            response = client.put("/api/config", json=payload)
+            self.assertEqual(response.status_code, 200)
+
+            config = store.load()
+            self.assertEqual(config.longbridge.app_secret, "my_secret")
+            self.assertEqual(config.longbridge.access_token, "my_token")
+            self.assertEqual(config.symbol_search.default_provider, "longbridge")
 
 
 class LongbridgeConfigModelTest(unittest.TestCase):

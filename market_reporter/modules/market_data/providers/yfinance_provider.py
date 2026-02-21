@@ -5,7 +5,10 @@ from datetime import datetime, timezone
 from typing import List
 
 from market_reporter.core.types import CurvePoint, KLineBar, Quote
-from market_reporter.modules.market_data.symbol_mapper import normalize_symbol, to_yfinance_symbol
+from market_reporter.modules.market_data.symbol_mapper import (
+    normalize_symbol,
+    to_yfinance_symbol,
+)
 
 
 class YahooFinanceMarketDataProvider:
@@ -15,12 +18,20 @@ class YahooFinanceMarketDataProvider:
         # yfinance SDK is sync; run in thread to avoid blocking event loop.
         return await asyncio.to_thread(self._get_quote_sync, symbol, market)
 
-    async def get_kline(self, symbol: str, market: str, interval: str, limit: int) -> List[KLineBar]:
-        return await asyncio.to_thread(self._get_kline_sync, symbol, market, interval, limit)
+    async def get_kline(
+        self, symbol: str, market: str, interval: str, limit: int
+    ) -> List[KLineBar]:
+        return await asyncio.to_thread(
+            self._get_kline_sync, symbol, market, interval, limit
+        )
 
-    async def get_curve(self, symbol: str, market: str, window: str) -> List[CurvePoint]:
+    async def get_curve(
+        self, symbol: str, market: str, window: str
+    ) -> List[CurvePoint]:
         # Curve is derived from minute bars to keep one data source contract.
-        bars = await self.get_kline(symbol=symbol, market=market, interval="1m", limit=300)
+        bars = await self.get_kline(
+            symbol=symbol, market=market, interval="1m", limit=300
+        )
         return [
             CurvePoint(
                 symbol=bar.symbol,
@@ -46,6 +57,14 @@ class YahooFinanceMarketDataProvider:
                     or info.get("regular_market_price") is not None
                 )
                 if not has_price:
+                    quote_from_history = self._quote_from_history(
+                        ticker=ticker,
+                        symbol=symbol,
+                        market=market,
+                        currency=str(info.get("currency") or ""),
+                    )
+                    if quote_from_history is not None:
+                        return quote_from_history
                     raise ValueError(f"No quote data for symbol: {yf_symbol}")
                 now = datetime.now(timezone.utc).isoformat(timespec="seconds")
                 price = float(
@@ -80,7 +99,50 @@ class YahooFinanceMarketDataProvider:
             raise last_error
         raise ValueError("Unable to resolve yfinance symbol for quote.")
 
-    def _get_kline_sync(self, symbol: str, market: str, interval: str, limit: int) -> List[KLineBar]:
+    def _quote_from_history(
+        self,
+        ticker,
+        symbol: str,
+        market: str,
+        currency: str,
+    ) -> Quote | None:
+        hist = ticker.history(period="5d", interval="1d")
+        if hist is None or hist.empty:
+            return None
+
+        closes = hist["Close"].dropna()
+        if closes.empty:
+            return None
+
+        latest_close = float(closes.iloc[-1])
+        prev_close = float(closes.iloc[-2]) if len(closes) >= 2 else None
+        change = None
+        pct = None
+        if prev_close and prev_close != 0:
+            change = latest_close - prev_close
+            pct = change / prev_close * 100
+
+        latest_row = hist.iloc[-1]
+        ts_raw = closes.index[-1]
+        ts = ts_raw.to_pydatetime().isoformat(timespec="seconds")
+        volume_value = latest_row.get("Volume") if hasattr(latest_row, "get") else None
+        volume = float(volume_value) if volume_value is not None else None
+
+        return Quote(
+            symbol=normalize_symbol(symbol, market),
+            market=market.upper(),
+            ts=ts,
+            price=latest_close,
+            change=change,
+            change_percent=pct,
+            volume=volume,
+            currency=currency,
+            source=self.provider_id,
+        )
+
+    def _get_kline_sync(
+        self, symbol: str, market: str, interval: str, limit: int
+    ) -> List[KLineBar]:
         import yfinance as yf
 
         interval_map = {"1m": "1m", "5m": "5m", "1d": "1d"}

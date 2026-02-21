@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import os
 from datetime import datetime, timezone
 from typing import List
 
 from market_reporter.core.types import CurvePoint, KLineBar, Quote
-from market_reporter.modules.market_data.symbol_mapper import normalize_symbol, strip_market_suffix
+from market_reporter.modules.market_data.symbol_mapper import (
+    normalize_symbol,
+    strip_market_suffix,
+)
 
 
 class AkshareMarketDataProvider:
@@ -15,11 +20,19 @@ class AkshareMarketDataProvider:
         # akshare calls are sync and can be slow; isolate them in worker threads.
         return await asyncio.to_thread(self._get_quote_sync, symbol, market)
 
-    async def get_kline(self, symbol: str, market: str, interval: str, limit: int) -> List[KLineBar]:
-        return await asyncio.to_thread(self._get_kline_sync, symbol, market, interval, limit)
+    async def get_kline(
+        self, symbol: str, market: str, interval: str, limit: int
+    ) -> List[KLineBar]:
+        return await asyncio.to_thread(
+            self._get_kline_sync, symbol, market, interval, limit
+        )
 
-    async def get_curve(self, symbol: str, market: str, window: str) -> List[CurvePoint]:
-        bars = await self.get_kline(symbol=symbol, market=market, interval="1m", limit=300)
+    async def get_curve(
+        self, symbol: str, market: str, window: str
+    ) -> List[CurvePoint]:
+        bars = await self.get_kline(
+            symbol=symbol, market=market, interval="1m", limit=300
+        )
         return [
             CurvePoint(
                 symbol=bar.symbol,
@@ -42,7 +55,8 @@ class AkshareMarketDataProvider:
 
         if market == "CN":
             # CN/HK/US use different akshare spot endpoints.
-            df = ak.stock_zh_a_spot_em()
+            with self._silence_console():
+                df = ak.stock_zh_a_spot_em()
             row = df[df["代码"] == code].head(1)
             if row.empty:
                 raise ValueError(f"CN quote not found: {symbol}")
@@ -60,7 +74,8 @@ class AkshareMarketDataProvider:
             )
 
         if market == "HK":
-            df = ak.stock_hk_spot_em()
+            with self._silence_console():
+                df = ak.stock_hk_spot_em()
             row = df[df["代码"].astype(str).str.zfill(4) == code.zfill(4)].head(1)
             if row.empty:
                 raise ValueError(f"HK quote not found: {symbol}")
@@ -77,7 +92,8 @@ class AkshareMarketDataProvider:
                 source=self.provider_id,
             )
 
-        df = ak.stock_us_spot_em()
+        with self._silence_console():
+            df = ak.stock_us_spot_em()
         row = df[df["代码"].astype(str).str.upper() == code.upper()].head(1)
         if row.empty:
             raise ValueError(f"US quote not found: {symbol}")
@@ -94,7 +110,9 @@ class AkshareMarketDataProvider:
             source=self.provider_id,
         )
 
-    def _get_kline_sync(self, symbol: str, market: str, interval: str, limit: int) -> List[KLineBar]:
+    def _get_kline_sync(
+        self, symbol: str, market: str, interval: str, limit: int
+    ) -> List[KLineBar]:
         import akshare as ak
 
         market = market.upper()
@@ -104,7 +122,8 @@ class AkshareMarketDataProvider:
 
         if market == "CN" and interval in {"1m", "5m"}:
             period = "1" if interval == "1m" else "5"
-            df = ak.stock_zh_a_hist_min_em(symbol=code, period=period, adjust="")
+            with self._silence_console():
+                df = ak.stock_zh_a_hist_min_em(symbol=code, period=period, adjust="")
             for _, row in df.tail(limit).iterrows():
                 rows.append(
                     KLineBar(
@@ -123,7 +142,8 @@ class AkshareMarketDataProvider:
             return rows
 
         if market == "CN" and interval == "1d":
-            df = ak.stock_zh_a_hist(symbol=code, period="daily", adjust="")
+            with self._silence_console():
+                df = ak.stock_zh_a_hist(symbol=code, period="daily", adjust="")
             for _, row in df.tail(limit).iterrows():
                 rows.append(
                     KLineBar(
@@ -142,4 +162,13 @@ class AkshareMarketDataProvider:
             return rows
 
         # Current provider implementation intentionally limits scope to CN bars.
-        raise ValueError(f"Akshare kline unsupported for market={market}, interval={interval}")
+        raise ValueError(
+            f"Akshare kline unsupported for market={market}, interval={interval}"
+        )
+
+    @staticmethod
+    @contextlib.contextmanager
+    def _silence_console():
+        with open(os.devnull, "w", encoding="utf-8") as sink:
+            with contextlib.redirect_stdout(sink), contextlib.redirect_stderr(sink):
+                yield

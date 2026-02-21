@@ -105,7 +105,17 @@ class ConfigUpdateRequest(BaseModel):
         if self.agent is not None:
             patch_data["agent"] = self.agent
         if self.longbridge is not None:
-            patch_data["longbridge"] = self.longbridge
+            next_lb = dict(self.longbridge)
+            current_lb = current.longbridge
+            if str(next_lb.get("app_secret") or "").strip() == "***":
+                next_lb["app_secret"] = current_lb.app_secret
+            if str(next_lb.get("access_token") or "").strip() == "***":
+                next_lb["access_token"] = current_lb.access_token
+            app_key = str(next_lb.get("app_key") or "").strip()
+            app_secret = str(next_lb.get("app_secret") or "").strip()
+            access_token = str(next_lb.get("access_token") or "").strip()
+            next_lb["enabled"] = bool(app_key and app_secret and access_token)
+            patch_data["longbridge"] = next_lb
         payload.update(patch_data)
         return AppConfig.model_validate(payload)
 

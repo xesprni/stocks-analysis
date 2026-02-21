@@ -12,10 +12,44 @@ from market_reporter.modules.symbol_search.providers.akshare_search_provider imp
 from market_reporter.modules.symbol_search.providers.finnhub_search_provider import (
     FinnhubSearchProvider,
 )
+from market_reporter.modules.symbol_search.providers.longbridge_search_provider import (
+    LongbridgeSearchProvider,
+)
 from market_reporter.modules.symbol_search.providers.yfinance_search_provider import (
     YahooFinanceSearchProvider,
 )
 from market_reporter.modules.symbol_search.schemas import StockSearchResult
+
+_US_INDEX_ALIAS_MAP: List[Dict[str, str]] = [
+    {
+        "symbol": "^GSPC",
+        "market": "US",
+        "name": "S&P 500 Index",
+        "exchange": "INDEX",
+        "aliases": "标普|标普500|标普指数|普500|sp500|s&p500|s&p 500|gspc|spx",
+    },
+    {
+        "symbol": "^IXIC",
+        "market": "US",
+        "name": "NASDAQ Composite Index",
+        "exchange": "INDEX",
+        "aliases": "纳斯达克|纳指|nasdaq|nasdaqcomposite|ixic",
+    },
+    {
+        "symbol": "^DJI",
+        "market": "US",
+        "name": "Dow Jones Industrial Average",
+        "exchange": "INDEX",
+        "aliases": "道琼斯|道指|dowjones|djia|dji",
+    },
+]
+
+
+def _normalize_alias_query(query: str) -> str:
+    q = query.strip().lower()
+    q = q.replace("＆", "&")
+    q = q.replace("和", "")
+    return re.sub(r"[^\w\u4e00-\u9fff]+", "", q)
 
 
 class SymbolSearchService:
@@ -27,6 +61,7 @@ class SymbolSearchService:
         self.registry.register(self.MODULE_NAME, "yfinance", self._build_yfinance)
         self.registry.register(self.MODULE_NAME, "akshare", self._build_akshare)
         self.registry.register(self.MODULE_NAME, "finnhub", self._build_finnhub)
+        self.registry.register(self.MODULE_NAME, "longbridge", self._build_longbridge)
         self.registry.register(self.MODULE_NAME, "composite", self._build_composite)
 
     def _build_yfinance(self):
@@ -38,14 +73,18 @@ class SymbolSearchService:
     def _build_finnhub(self):
         return FinnhubSearchProvider()
 
+    def _build_longbridge(self):
+        return LongbridgeSearchProvider(lb_config=self.config.longbridge)
+
     def _build_composite(self):
-        return CompositeSymbolSearchProvider(
-            providers={
-                "finnhub": self._build_finnhub(),
-                "yfinance": self._build_yfinance(),
-                "akshare": self._build_akshare(),
-            }
-        )
+        providers = {
+            "finnhub": self._build_finnhub(),
+            "yfinance": self._build_yfinance(),
+            "akshare": self._build_akshare(),
+        }
+        if self.config.longbridge.enabled:
+            providers["longbridge"] = self._build_longbridge()
+        return CompositeSymbolSearchProvider(providers=providers)
 
     async def search(
         self,
@@ -58,6 +97,24 @@ class SymbolSearchService:
         if not normalized_query:
             return []
         resolved_limit = limit or self.config.symbol_search.max_results
+        requested_market = market.upper()
+        alias_rows = self._index_alias_results(
+            query=normalized_query,
+            market=requested_market,
+            limit=resolved_limit,
+        )
+        if requested_market in {
+            "CN",
+            "HK",
+            "US",
+        } and not self._query_compatible_with_market(
+            query=normalized_query,
+            market=requested_market,
+        ):
+            return alias_rows
+        resolved_market = self._resolve_search_market(
+            query=normalized_query, market=market.upper()
+        )
         chosen_provider = (
             provider_id
             or self.config.symbol_search.default_provider
@@ -67,23 +124,30 @@ class SymbolSearchService:
         provider = self._resolve_provider_with_fallback(chosen_provider=chosen_provider)
         try:
             rows = await provider.search(
-                query=normalized_query, market=market.upper(), limit=resolved_limit
+                query=normalized_query, market=resolved_market, limit=resolved_limit
             )
         except Exception:
-            if chosen_provider != "composite":
+            if (chosen_provider or "").strip().lower() == "longbridge":
+                rows = await self._search_fast_fallback(
+                    query=normalized_query,
+                    market=resolved_market,
+                    limit=resolved_limit,
+                )
+            elif chosen_provider != "composite":
                 fallback = self._resolve_provider_with_fallback(
                     chosen_provider="composite"
                 )
                 try:
                     rows = await fallback.search(
                         query=normalized_query,
-                        market=market.upper(),
+                        market=resolved_market,
                         limit=resolved_limit,
                     )
                 except Exception:
                     rows = []
             else:
                 rows = []
+        rows = alias_rows + rows
         dedup: Dict[Tuple[str, str], StockSearchResult] = {}
         # Merge same symbol-market hits by highest score across providers.
         for item in rows:
@@ -96,7 +160,7 @@ class SymbolSearchService:
             return merged[:resolved_limit]
         # If all providers return empty, still provide predictable manual candidates.
         return self._heuristic_results(
-            query=normalized_query, market=market.upper(), limit=resolved_limit
+            query=normalized_query, market=resolved_market, limit=resolved_limit
         )
 
     def _resolve_provider_with_fallback(self, chosen_provider: str):
@@ -105,6 +169,121 @@ class SymbolSearchService:
             return self.registry.resolve(self.MODULE_NAME, provider_id)
         except Exception:
             return self.registry.resolve(self.MODULE_NAME, "composite")
+
+    @staticmethod
+    def _query_compatible_with_market(query: str, market: str) -> bool:
+        q = query.strip().upper()
+        if not q:
+            return False
+
+        has_cjk = re.search(r"[\u4e00-\u9fff]", query) is not None
+        if market == "US":
+            if has_cjk:
+                return False
+            return bool(re.search(r"[A-Z]", q))
+        if market == "HK":
+            if has_cjk:
+                return True
+            return bool(
+                re.fullmatch(r"\d{1,5}(\.HK)?", q)
+                or re.fullmatch(r"\^?[A-Z]{2,12}(\.HK)?", q)
+            )
+        if market == "CN":
+            if has_cjk:
+                return True
+            return bool(re.fullmatch(r"\^?\d{6}(\.(SH|SZ|SS|BJ))?", q))
+        return True
+
+    @staticmethod
+    def _index_alias_results(
+        query: str,
+        market: str,
+        limit: int,
+    ) -> List[StockSearchResult]:
+        target_market = market.upper()
+        if target_market not in {"ALL", "US"}:
+            return []
+        normalized = _normalize_alias_query(query)
+        if not normalized:
+            return []
+
+        rows: List[StockSearchResult] = []
+        for row in _US_INDEX_ALIAS_MAP:
+            aliases = [
+                _normalize_alias_query(alias)
+                for alias in row.get("aliases", "").split("|")
+            ]
+            aliases = [alias for alias in aliases if alias]
+
+            symbol_token = (
+                str(row.get("symbol", ""))
+                .strip()
+                .upper()
+                .replace("^", "")
+                .replace(".", "")
+            )
+            normalized_upper = normalized.upper()
+
+            exact_match = normalized_upper == symbol_token or normalized in aliases
+            fuzzy_match = any(
+                normalized in alias or alias in normalized for alias in aliases
+            )
+            if not exact_match and not fuzzy_match:
+                continue
+
+            rows.append(
+                StockSearchResult(
+                    symbol=str(row.get("symbol") or ""),
+                    market="US",
+                    name=str(row.get("name") or "US Index"),
+                    exchange=str(row.get("exchange") or "INDEX"),
+                    source="alias",
+                    score=0.99 if exact_match else 0.92,
+                )
+            )
+
+        rows.sort(key=lambda item: item.score, reverse=True)
+        return rows[:limit]
+
+    async def _search_fast_fallback(
+        self,
+        query: str,
+        market: str,
+        limit: int,
+    ) -> List[StockSearchResult]:
+        for provider_id in ("finnhub", "yfinance"):
+            try:
+                provider = self.registry.resolve(self.MODULE_NAME, provider_id)
+            except Exception:
+                continue
+            try:
+                rows = await provider.search(query=query, market=market, limit=limit)
+            except Exception:
+                continue
+            if rows:
+                return rows[:limit]
+        return []
+
+    @staticmethod
+    def _resolve_search_market(query: str, market: str) -> str:
+        market_upper = market.upper()
+        if market_upper != "ALL":
+            return market_upper
+
+        q = query.strip().upper()
+        if SymbolSearchService._index_alias_results(query=query, market="ALL", limit=1):
+            return "US"
+        if re.fullmatch(r"\d{1,5}(\.HK)?", q):
+            return "HK"
+        if re.fullmatch(r"\d{6}(\.(SH|SZ|SS|BJ))?", q):
+            return "CN"
+        if re.fullmatch(r"\^\d{6}(\.(SH|SZ|SS|BJ))?", q):
+            return "CN"
+        if q.endswith(".HK") or q in {"^HSI", "^HSCE", "^HSTECH"}:
+            return "HK"
+        if q.endswith(".US") or re.fullmatch(r"\^?[A-Z][A-Z0-9.\-]{0,14}", q):
+            return "US"
+        return "ALL"
 
     @staticmethod
     def _heuristic_results(
@@ -177,10 +356,12 @@ class CompositeSymbolSearchProvider:
     ) -> List[StockSearchResult]:
         merged: List[StockSearchResult] = []
         # Try multiple providers in priority order and keep partial results.
-        for provider in self._ordered(market=market):
+        for provider in self._ordered(market=market, query=query):
             try:
                 rows = await provider.search(query=query, market=market, limit=limit)
                 merged.extend(rows)
+                if len(merged) >= limit:
+                    break
             except Exception:
                 continue
         if not merged:
@@ -188,13 +369,20 @@ class CompositeSymbolSearchProvider:
         merged.sort(key=lambda item: item.score, reverse=True)
         return merged[:limit]
 
-    def _ordered(self, market: str):
+    def _ordered(self, market: str, query: str = ""):
         market = market.upper()
+        q = query.strip().upper()
         finnhub = self.providers.get("finnhub")
         yfinance = self.providers.get("yfinance")
         akshare = self.providers.get("akshare")
+        longbridge = self.providers.get("longbridge")
         if market in {"CN", "HK"}:
-            order = [akshare, finnhub, yfinance]
+            order = [longbridge, finnhub, yfinance, akshare]
+        elif market == "US":
+            order = [finnhub, yfinance, longbridge]
+        elif re.fullmatch(r"[A-Z][A-Z0-9.\-]{0,14}(\.US)?", q):
+            # ALL-market queries that look like US tickers should avoid slow AKShare scan.
+            order = [finnhub, yfinance, longbridge]
         else:
-            order = [finnhub, yfinance, akshare]
+            order = [finnhub, yfinance, longbridge, akshare]
         return [p for p in order if p is not None]

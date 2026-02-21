@@ -1,6 +1,7 @@
 import unittest
 
 from market_reporter.modules.market_data.symbol_mapper import (
+    looks_like_index_symbol,
     normalize_symbol,
     strip_market_suffix,
     to_longbridge_symbol,
@@ -30,6 +31,13 @@ class SymbolMapperTest(unittest.TestCase):
         self.assertEqual(strip_market_suffix("600519.SH"), "600519")
         self.assertEqual(strip_market_suffix("430047.BJ"), "430047")
         self.assertEqual(strip_market_suffix("0700.HK"), "0700")
+
+    def test_looks_like_index_symbol(self):
+        self.assertTrue(looks_like_index_symbol("^GSPC", "US"))
+        self.assertTrue(looks_like_index_symbol("^HSI", "HK"))
+        self.assertTrue(looks_like_index_symbol("000300.SH", "CN"))
+        self.assertFalse(looks_like_index_symbol("AAPL", "US"))
+        self.assertFalse(looks_like_index_symbol("600519.SH", "CN"))
 
     # ---- Longbridge symbol mapping ----
 

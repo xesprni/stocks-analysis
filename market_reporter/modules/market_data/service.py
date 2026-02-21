@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 from typing import List, Optional
 
@@ -26,6 +27,7 @@ class MarketDataService:
     def __init__(self, config: AppConfig, registry: ProviderRegistry) -> None:
         self.config = config
         self.registry = registry
+        self._provider_instances: dict[str, object] = {}
         self.registry.register(self.MODULE_NAME, "yfinance", self._build_yfinance)
         self.registry.register(self.MODULE_NAME, "akshare", self._build_akshare)
         self.registry.register(self.MODULE_NAME, "longbridge", self._build_longbridge)
@@ -57,11 +59,76 @@ class MarketDataService:
         target = (
             provider_id or self.config.modules.market_data.default_provider or ""
         ).strip() or "composite"
+        resolved_target = target
+        if not self.registry.has(self.MODULE_NAME, resolved_target):
+            resolved_target = "composite"
+        instance = self._provider_instances.get(resolved_target)
+        if instance is not None:
+            return instance
         try:
-            return self.registry.resolve(self.MODULE_NAME, target)
+            instance = self.registry.resolve(self.MODULE_NAME, resolved_target)
         except Exception:
             # Provider fallback guarantees read APIs remain available with degraded data quality.
-            return self.registry.resolve(self.MODULE_NAME, "composite")
+            resolved_target = "composite"
+            instance = self.registry.resolve(self.MODULE_NAME, resolved_target)
+        self._provider_instances[resolved_target] = instance
+        return instance
+
+    async def get_quotes(
+        self,
+        items: List[tuple[str, str]],
+        provider_id: Optional[str] = None,
+    ) -> List[Quote]:
+        if not items:
+            return []
+
+        normalized_items: List[tuple[str, str]] = [
+            (normalize_symbol(symbol, market), market.upper())
+            for symbol, market in items
+            if str(symbol or "").strip()
+            and str(market or "").strip().upper() in {"CN", "HK", "US"}
+        ]
+        if not normalized_items:
+            return []
+
+        provider = self._provider(provider_id=provider_id)
+        quotes_by_key: dict[tuple[str, str], Quote] = {}
+
+        if hasattr(provider, "get_quotes"):
+            try:
+                rows = await provider.get_quotes(normalized_items)
+                for row in rows:
+                    key = (normalize_symbol(row.symbol, row.market), row.market.upper())
+                    quotes_by_key[key] = row
+            except Exception:
+                quotes_by_key = {}
+
+        missing_items = [
+            (symbol, market)
+            for symbol, market in normalized_items
+            if (symbol, market) not in quotes_by_key
+        ]
+        if missing_items:
+            fallback_rows = await asyncio.gather(
+                *[
+                    self.get_quote(
+                        symbol=symbol, market=market, provider_id=provider_id
+                    )
+                    for symbol, market in missing_items
+                ]
+            )
+            for quote in fallback_rows:
+                key = (
+                    normalize_symbol(quote.symbol, quote.market),
+                    quote.market.upper(),
+                )
+                quotes_by_key[key] = quote
+
+        return [
+            quotes_by_key[(symbol, market)]
+            for symbol, market in normalized_items
+            if (symbol, market) in quotes_by_key
+        ]
 
     async def get_quote(
         self, symbol: str, market: str, provider_id: Optional[str] = None

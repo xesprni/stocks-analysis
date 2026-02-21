@@ -94,3 +94,39 @@ def strip_market_suffix(symbol: str) -> str:
         if raw.endswith(suffix):
             return raw[: -len(suffix)]
     return raw
+
+
+def looks_like_index_symbol(symbol: str, market: str) -> bool:
+    normalized = normalize_symbol(symbol, market)
+    market_upper = market.strip().upper()
+    if normalized.startswith("^"):
+        return True
+
+    code = strip_market_suffix(normalized).lstrip("^")
+    if market_upper == "CN":
+        return code in {
+            "000001",
+            "000016",
+            "000300",
+            "000688",
+            "000852",
+            "000905",
+            "399001",
+            "399006",
+        }
+    if market_upper == "HK":
+        return code in {
+            "HSI",
+            "HSCE",
+            "HSTECH",
+            "HSCCI",
+        }
+    if market_upper == "US":
+        return code in {
+            "GSPC",
+            "IXIC",
+            "DJI",
+            "RUT",
+            "VIX",
+        }
+    return False

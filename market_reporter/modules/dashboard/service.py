@@ -16,6 +16,7 @@ from market_reporter.modules.dashboard.schemas import (
     PaginationView,
 )
 from market_reporter.modules.market_data.service import MarketDataService
+from market_reporter.modules.market_data.symbol_mapper import normalize_symbol
 from market_reporter.modules.watchlist.schemas import WatchlistItem
 from market_reporter.modules.watchlist.service import WatchlistService
 
@@ -64,16 +65,7 @@ class DashboardService:
             if enabled_only
             else list(index_rows)
         )
-        index_metrics = await asyncio.gather(
-            *[
-                self._build_index_metric(
-                    symbol=item.symbol,
-                    market=item.market,
-                    alias=item.alias,
-                )
-                for item in selected_rows
-            ]
-        )
+        index_metrics = await self._build_index_metrics(selected_rows)
         return DashboardIndicesSnapshotView(
             generated_at=datetime.now(timezone.utc),
             auto_refresh_enabled=self.config.dashboard.auto_refresh_enabled,
@@ -97,9 +89,7 @@ class DashboardService:
         start = (page - 1) * page_size
         end = start + page_size
         page_items = watchlist_items[start:end]
-        watchlist_metrics = await asyncio.gather(
-            *[self._build_watchlist_metric(item) for item in page_items]
-        )
+        watchlist_metrics = await self._build_watchlist_metrics(page_items)
         return DashboardWatchlistSnapshotView(
             generated_at=datetime.now(timezone.utc),
             auto_refresh_enabled=self.config.dashboard.auto_refresh_enabled,
@@ -113,41 +103,88 @@ class DashboardService:
             ),
         )
 
-    async def _build_index_metric(
-        self, symbol: str, market: str, alias: Optional[str]
-    ) -> DashboardIndexMetricView:
-        quote = await self._safe_quote(symbol=symbol, market=market)
-        return DashboardIndexMetricView(
-            symbol=quote.symbol,
-            market=quote.market,
-            alias=alias,
-            ts=quote.ts,
-            price=quote.price,
-            change=quote.change,
-            change_percent=quote.change_percent,
-            volume=quote.volume,
-            currency=quote.currency,
-            source=quote.source,
-        )
+    async def _build_index_metrics(self, rows: list) -> List[DashboardIndexMetricView]:
+        if not rows:
+            return []
+        requests = [(item.symbol, item.market) for item in rows]
+        quotes = await self._safe_quotes(requests)
+        quote_by_key = {
+            (normalize_symbol(quote.symbol, quote.market), quote.market.upper()): quote
+            for quote in quotes
+        }
+        metrics: List[DashboardIndexMetricView] = []
+        for item in rows:
+            key = (normalize_symbol(item.symbol, item.market), item.market.upper())
+            quote = quote_by_key.get(key) or self._unavailable_quote(
+                symbol=item.symbol, market=item.market
+            )
+            metrics.append(
+                DashboardIndexMetricView(
+                    symbol=quote.symbol,
+                    market=quote.market,
+                    alias=item.alias,
+                    ts=quote.ts,
+                    price=quote.price,
+                    change=quote.change,
+                    change_percent=quote.change_percent,
+                    volume=quote.volume,
+                    currency=quote.currency,
+                    source=quote.source,
+                )
+            )
+        return metrics
 
-    async def _build_watchlist_metric(
-        self, item: WatchlistItem
-    ) -> DashboardWatchlistMetricView:
-        quote = await self._safe_quote(symbol=item.symbol, market=item.market)
-        return DashboardWatchlistMetricView(
-            id=item.id,
-            symbol=item.symbol,
-            market=item.market,
-            alias=item.alias,
-            display_name=item.display_name,
-            enabled=item.enabled,
-            ts=quote.ts,
-            price=quote.price,
-            change=quote.change,
-            change_percent=quote.change_percent,
-            volume=quote.volume,
-            currency=quote.currency,
-            source=quote.source,
+    async def _build_watchlist_metrics(
+        self, items: List[WatchlistItem]
+    ) -> List[DashboardWatchlistMetricView]:
+        if not items:
+            return []
+        requests = [(item.symbol, item.market) for item in items]
+        quotes = await self._safe_quotes(requests)
+        quote_by_key = {
+            (normalize_symbol(quote.symbol, quote.market), quote.market.upper()): quote
+            for quote in quotes
+        }
+
+        metrics: List[DashboardWatchlistMetricView] = []
+        for item in items:
+            key = (normalize_symbol(item.symbol, item.market), item.market.upper())
+            quote = quote_by_key.get(key) or self._unavailable_quote(
+                symbol=item.symbol, market=item.market
+            )
+            metrics.append(
+                DashboardWatchlistMetricView(
+                    id=item.id,
+                    symbol=item.symbol,
+                    market=item.market,
+                    alias=item.alias,
+                    display_name=item.display_name,
+                    enabled=item.enabled,
+                    ts=quote.ts,
+                    price=quote.price,
+                    change=quote.change,
+                    change_percent=quote.change_percent,
+                    volume=quote.volume,
+                    currency=quote.currency,
+                    source=quote.source,
+                )
+            )
+        return metrics
+
+    async def _safe_quotes(self, items: List[tuple[str, str]]) -> List[Quote]:
+        if not items:
+            return []
+        try:
+            rows = await self.market_data_service.get_quotes(items=items)
+            if rows:
+                return rows
+        except Exception:
+            pass
+        return await asyncio.gather(
+            *[
+                self._safe_quote(symbol=symbol, market=market)
+                for symbol, market in items
+            ]
         )
 
     async def _safe_quote(self, symbol: str, market: str) -> Quote:

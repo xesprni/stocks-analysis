@@ -4,7 +4,7 @@ from pathlib import Path
 
 from market_reporter.config import AppConfig
 from market_reporter.core.registry import ProviderRegistry
-from market_reporter.core.types import CurvePoint
+from market_reporter.core.types import CurvePoint, Quote
 from market_reporter.infra.db.repos import MarketDataRepo
 from market_reporter.infra.db.session import init_db, session_scope
 from market_reporter.modules.market_data.service import MarketDataService
@@ -15,10 +15,60 @@ class _FailQuoteProvider:
         raise RuntimeError("quote provider down")
 
 
+class _BatchPartialProvider:
+    def __init__(self) -> None:
+        self.batch_calls = 0
+        self.single_calls: list[tuple[str, str]] = []
+
+    async def get_quotes(self, items: list[tuple[str, str]]):
+        self.batch_calls += 1
+        if not items:
+            return []
+        symbol, market = items[0]
+        return [
+            Quote(
+                symbol=symbol,
+                market=market,
+                ts="2026-02-06T10:01:00+00:00",
+                price=101.0,
+                change=1.0,
+                change_percent=1.0,
+                volume=11.0,
+                currency="USD",
+                source="batch",
+            )
+        ]
+
+    async def get_quote(self, symbol: str, market: str):
+        self.single_calls.append((symbol, market))
+        return Quote(
+            symbol=symbol,
+            market=market,
+            ts="2026-02-06T10:01:00+00:00",
+            price=99.0,
+            change=None,
+            change_percent=None,
+            volume=None,
+            currency="USD",
+            source="single",
+        )
+
+
 class _ResolveFallbackRegistry(ProviderRegistry):
     def resolve(self, module: str, provider_id: str, **kwargs):  # type: ignore[override]
         if module == "market_data" and provider_id == "composite":
             return _FailQuoteProvider()
+        raise ValueError(f"provider missing: {provider_id}")
+
+
+class _FixedCompositeRegistry(ProviderRegistry):
+    def __init__(self, provider) -> None:
+        super().__init__()
+        self.provider = provider
+
+    def resolve(self, module: str, provider_id: str, **kwargs):  # type: ignore[override]
+        if module == "market_data" and provider_id == "composite":
+            return self.provider
         raise ValueError(f"provider missing: {provider_id}")
 
 
@@ -98,13 +148,40 @@ class MarketDataServiceQuoteFallbackTest(unittest.IsolatedAsyncioTestCase):
             )
             config.modules.market_data.default_provider = "broken-provider"
             init_db(config.database.url)
-            service = MarketDataService(config=config, registry=_ResolveFallbackRegistry())
+            service = MarketDataService(
+                config=config, registry=_ResolveFallbackRegistry()
+            )
 
             quote = await service.get_quote(symbol="AAPL", market="US")
             self.assertEqual(quote.symbol, "AAPL")
             self.assertEqual(quote.market, "US")
             self.assertEqual(quote.price, 0.0)
             self.assertEqual(quote.source, "unavailable")
+
+    async def test_batch_quote_uses_provider_batch_then_single_fallback(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            (root / "data").mkdir(parents=True, exist_ok=True)
+            db_url = f"sqlite:///{root / 'data' / 'market_reporter.db'}"
+            config = AppConfig(
+                output_root=root / "output",
+                config_file=root / "config" / "settings.yaml",
+                database={"url": db_url},
+            )
+            provider = _BatchPartialProvider()
+            service = MarketDataService(
+                config=config,
+                registry=_FixedCompositeRegistry(provider),
+            )
+
+            rows = await service.get_quotes(items=[("AAPL", "US"), ("TSLA", "US")])
+
+            self.assertEqual(len(rows), 2)
+            self.assertEqual(rows[0].source, "batch")
+            self.assertEqual(rows[1].symbol, "TSLA")
+            self.assertEqual(rows[1].source, "single")
+            self.assertEqual(provider.batch_calls, 1)
+            self.assertEqual(provider.single_calls, [("TSLA", "US")])
 
 
 if __name__ == "__main__":

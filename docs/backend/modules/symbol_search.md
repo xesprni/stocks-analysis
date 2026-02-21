@@ -12,6 +12,7 @@
   - `finnhub_search_provider.py`
   - `yfinance_search_provider.py`
   - `akshare_search_provider.py`
+  - `longbridge_search_provider.py`
 
 ## 3. 检索策略
 
@@ -19,6 +20,7 @@
 - provider 失败时回退 `composite`。
 - `composite` 聚合多源，按 score 排序。
 - `(symbol, market)` 维度去重，保留最高分。
+- `longbridge` 走 SDK，优先处理 ticker/code 形态查询（名称查询自动回退其他 provider）。
 
 ## 4. 启发式回退
 

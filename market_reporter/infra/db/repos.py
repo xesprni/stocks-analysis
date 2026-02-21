@@ -10,6 +10,7 @@ from market_reporter.infra.db.models import (
     AnalysisProviderAccountTable,
     AnalysisProviderAuthStateTable,
     AnalysisProviderSecretTable,
+    LongbridgeCredentialTable,
     NewsListenerRunTable,
     StockAnalysisRunTable,
     StockCurvePointTable,
@@ -24,7 +25,11 @@ class WatchlistRepo:
         self.session = session
 
     def list_all(self) -> List[WatchlistItemTable]:
-        return list(self.session.exec(select(WatchlistItemTable).order_by(WatchlistItemTable.id.desc())).all())
+        return list(
+            self.session.exec(
+                select(WatchlistItemTable).order_by(WatchlistItemTable.id.desc())
+            ).all()
+        )
 
     def list_enabled(self) -> List[WatchlistItemTable]:
         return list(
@@ -57,7 +62,9 @@ class WatchlistRepo:
         self.session.refresh(item)
         return item
 
-    def get_by_symbol_market(self, symbol: str, market: str) -> Optional[WatchlistItemTable]:
+    def get_by_symbol_market(
+        self, symbol: str, market: str
+    ) -> Optional[WatchlistItemTable]:
         return self.session.exec(
             select(WatchlistItemTable)
             .where(WatchlistItemTable.symbol == symbol)
@@ -134,7 +141,9 @@ class MarketDataRepo:
                 existing.source = bar.source
             self.session.add(existing)
 
-    def save_curve_points(self, points: List[CurvePoint], max_points: int = 2000) -> None:
+    def save_curve_points(
+        self, points: List[CurvePoint], max_points: int = 2000
+    ) -> None:
         for point in points:
             row = StockCurvePointTable(
                 symbol=point.symbol,
@@ -163,7 +172,9 @@ class MarketDataRepo:
         for stale in rows[max_points:]:
             self.session.delete(stale)
 
-    def list_curve_points(self, symbol: str, market: str, limit: int = 500) -> List[StockCurvePointTable]:
+    def list_curve_points(
+        self, symbol: str, market: str, limit: int = 500
+    ) -> List[StockCurvePointTable]:
         rows = list(
             self.session.exec(
                 select(StockCurvePointTable)
@@ -177,7 +188,9 @@ class MarketDataRepo:
         rows.reverse()
         return rows
 
-    def list_kline(self, symbol: str, market: str, interval: str, limit: int = 500) -> List[StockKLineBarTable]:
+    def list_kline(
+        self, symbol: str, market: str, interval: str, limit: int = 500
+    ) -> List[StockKLineBarTable]:
         rows = list(
             self.session.exec(
                 select(StockKLineBarTable)
@@ -197,9 +210,13 @@ class AnalysisProviderSecretRepo:
     def __init__(self, session: Session) -> None:
         self.session = session
 
-    def upsert(self, provider_id: str, ciphertext: str, nonce: str) -> AnalysisProviderSecretTable:
+    def upsert(
+        self, provider_id: str, ciphertext: str, nonce: str
+    ) -> AnalysisProviderSecretTable:
         row = self.session.exec(
-            select(AnalysisProviderSecretTable).where(AnalysisProviderSecretTable.provider_id == provider_id)
+            select(AnalysisProviderSecretTable).where(
+                AnalysisProviderSecretTable.provider_id == provider_id
+            )
         ).first()
         if row is None:
             row = AnalysisProviderSecretTable(
@@ -218,7 +235,9 @@ class AnalysisProviderSecretRepo:
 
     def get(self, provider_id: str) -> Optional[AnalysisProviderSecretTable]:
         return self.session.exec(
-            select(AnalysisProviderSecretTable).where(AnalysisProviderSecretTable.provider_id == provider_id)
+            select(AnalysisProviderSecretTable).where(
+                AnalysisProviderSecretTable.provider_id == provider_id
+            )
         ).first()
 
     def delete(self, provider_id: str) -> bool:
@@ -243,7 +262,9 @@ class AnalysisProviderAccountRepo:
         expires_at: Optional[datetime],
     ) -> AnalysisProviderAccountTable:
         row = self.session.exec(
-            select(AnalysisProviderAccountTable).where(AnalysisProviderAccountTable.provider_id == provider_id)
+            select(AnalysisProviderAccountTable).where(
+                AnalysisProviderAccountTable.provider_id == provider_id
+            )
         ).first()
         if row is None:
             row = AnalysisProviderAccountTable(
@@ -266,11 +287,51 @@ class AnalysisProviderAccountRepo:
 
     def get(self, provider_id: str) -> Optional[AnalysisProviderAccountTable]:
         return self.session.exec(
-            select(AnalysisProviderAccountTable).where(AnalysisProviderAccountTable.provider_id == provider_id)
+            select(AnalysisProviderAccountTable).where(
+                AnalysisProviderAccountTable.provider_id == provider_id
+            )
         ).first()
 
     def delete(self, provider_id: str) -> bool:
         row = self.get(provider_id)
+        if row is None:
+            return False
+        self.session.delete(row)
+        self.session.flush()
+        return True
+
+
+class LongbridgeCredentialRepo:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def upsert(
+        self, credential_ciphertext: str, nonce: str
+    ) -> LongbridgeCredentialTable:
+        row = self.get()
+        if row is None:
+            row = LongbridgeCredentialTable(
+                credential_ciphertext=credential_ciphertext,
+                nonce=nonce,
+            )
+        else:
+            row.credential_ciphertext = credential_ciphertext
+            row.nonce = nonce
+            row.updated_at = datetime.utcnow()
+        self.session.add(row)
+        self.session.flush()
+        self.session.refresh(row)
+        return row
+
+    def get(self) -> Optional[LongbridgeCredentialTable]:
+        return self.session.exec(
+            select(LongbridgeCredentialTable).order_by(
+                LongbridgeCredentialTable.id.desc()
+            )
+        ).first()
+
+    def delete(self) -> bool:
+        row = self.get()
         if row is None:
             return False
         self.session.delete(row)
@@ -301,7 +362,9 @@ class AnalysisProviderAuthStateRepo:
         self.session.refresh(row)
         return row
 
-    def get_valid(self, state: str, provider_id: str, now: datetime) -> Optional[AnalysisProviderAuthStateTable]:
+    def get_valid(
+        self, state: str, provider_id: str, now: datetime
+    ) -> Optional[AnalysisProviderAuthStateTable]:
         return self.session.exec(
             select(AnalysisProviderAuthStateTable)
             .where(AnalysisProviderAuthStateTable.state == state)
@@ -310,7 +373,9 @@ class AnalysisProviderAuthStateRepo:
             .where(AnalysisProviderAuthStateTable.expires_at >= now)
         ).first()
 
-    def mark_used(self, row: AnalysisProviderAuthStateTable) -> AnalysisProviderAuthStateTable:
+    def mark_used(
+        self, row: AnalysisProviderAuthStateTable
+    ) -> AnalysisProviderAuthStateTable:
         row.used = True
         self.session.add(row)
         self.session.flush()
@@ -321,7 +386,9 @@ class AnalysisProviderAuthStateRepo:
         # Bulk-delete in Python to keep behavior predictable on SQLite.
         expired_rows = list(
             self.session.exec(
-                select(AnalysisProviderAuthStateTable).where(AnalysisProviderAuthStateTable.expires_at < now)
+                select(AnalysisProviderAuthStateTable).where(
+                    AnalysisProviderAuthStateTable.expires_at < now
+                )
             ).all()
         )
         for row in expired_rows:
@@ -360,7 +427,9 @@ class StockAnalysisRunRepo:
         self.session.refresh(row)
         return row
 
-    def list_by_symbol(self, symbol: str, market: str, limit: int = 20) -> List[StockAnalysisRunTable]:
+    def list_by_symbol(
+        self, symbol: str, market: str, limit: int = 20
+    ) -> List[StockAnalysisRunTable]:
         return list(
             self.session.exec(
                 select(StockAnalysisRunTable)
@@ -428,7 +497,13 @@ class NewsListenerRunRepo:
         return row
 
     def list_recent(self, limit: int = 50) -> List[NewsListenerRunTable]:
-        return list(self.session.exec(select(NewsListenerRunTable).order_by(NewsListenerRunTable.id.desc()).limit(limit)).all())
+        return list(
+            self.session.exec(
+                select(NewsListenerRunTable)
+                .order_by(NewsListenerRunTable.id.desc())
+                .limit(limit)
+            ).all()
+        )
 
 
 class WatchlistNewsAlertRepo:
@@ -451,7 +526,11 @@ class WatchlistNewsAlertRepo:
         limit: int = 50,
     ) -> List[WatchlistNewsAlertTable]:
         # Build filters incrementally so callers can combine status/symbol/market constraints.
-        statement = select(WatchlistNewsAlertTable).order_by(WatchlistNewsAlertTable.id.desc()).limit(limit)
+        statement = (
+            select(WatchlistNewsAlertTable)
+            .order_by(WatchlistNewsAlertTable.id.desc())
+            .limit(limit)
+        )
         if status and status != "ALL":
             statement = statement.where(WatchlistNewsAlertTable.status == status)
         if symbol:
@@ -463,7 +542,9 @@ class WatchlistNewsAlertRepo:
     def get(self, alert_id: int) -> Optional[WatchlistNewsAlertTable]:
         return self.session.get(WatchlistNewsAlertTable, alert_id)
 
-    def update_status(self, row: WatchlistNewsAlertTable, status: str) -> WatchlistNewsAlertTable:
+    def update_status(
+        self, row: WatchlistNewsAlertTable, status: str
+    ) -> WatchlistNewsAlertTable:
         row.status = status
         self.session.add(row)
         self.session.flush()
@@ -473,7 +554,9 @@ class WatchlistNewsAlertRepo:
     def mark_all_read(self) -> int:
         rows = list(
             self.session.exec(
-                select(WatchlistNewsAlertTable).where(WatchlistNewsAlertTable.status == "UNREAD")
+                select(WatchlistNewsAlertTable).where(
+                    WatchlistNewsAlertTable.status == "UNREAD"
+                )
             ).all()
         )
         for row in rows:
