@@ -3,21 +3,28 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from market_reporter.config import AnalysisConfig, AnalysisProviderConfig, AppConfig
+from market_reporter.config import (
+    AnalysisConfig,
+    AnalysisProviderConfig,
+    AppConfig,
+    DatabaseConfig,
+)
 from market_reporter.core.types import AnalysisInput, AnalysisOutput
+from market_reporter.infra.db.session import init_db
 from market_reporter.modules.analysis.agent.schemas import (
     AgentFinalReport,
     AgentRunResult,
     RuntimeDraft,
 )
 from market_reporter.modules.analysis.agent.service import AgentService
+from market_reporter.modules.watchlist.service import WatchlistService
 from market_reporter.schemas import RunRequest
 from market_reporter.services.config_store import ConfigStore
 from market_reporter.services.report_service import ReportService
 
 
 class ReportServiceAgentModesTest(unittest.TestCase):
-    def test_run_report_supports_market_and_stock_modes(self):
+    def test_run_report_supports_market_stock_and_watchlist_modes(self):
         original_run = AgentService.run
         original_to_payload = AgentService.to_analysis_payload
 
@@ -26,6 +33,7 @@ class ReportServiceAgentModesTest(unittest.TestCase):
             markdown = (
                 "# Agent 分析报告\n\n"
                 f"- 模式: {request.mode}\n\n"
+                f"- 市场: {request.market or 'GLOBAL'}\n\n"
                 "## 结论摘要（3–6条）\n\n"
                 "- 结论一 [E1]\n"
             )
@@ -97,10 +105,12 @@ class ReportServiceAgentModesTest(unittest.TestCase):
                 output_root = root / "output"
                 output_root.mkdir(parents=True, exist_ok=True)
                 config_path = root / "config" / "settings.yaml"
+                db_path = root / "data" / "market_reporter.db"
                 store = ConfigStore(config_path=config_path)
                 config = AppConfig(
                     output_root=output_root,
                     config_file=config_path,
+                    database=DatabaseConfig(url=f"sqlite:///{db_path}"),
                     analysis=AnalysisConfig(
                         default_provider="mock",
                         default_model="market-default",
@@ -118,13 +128,29 @@ class ReportServiceAgentModesTest(unittest.TestCase):
                     ),
                 )
                 store.save(config)
+                init_db(config.database.url)
+                watchlist_service = WatchlistService(config=config)
+                watchlist_service.add_item(
+                    symbol="AAPL",
+                    market="US",
+                    alias="Apple",
+                )
+                watchlist_service.add_item(
+                    symbol="TSLA",
+                    market="US",
+                    alias="Tesla",
+                )
                 service = ReportService(config_store=store)
 
                 market_result = asyncio.run(
-                    service.run_report(RunRequest(mode="market"))
+                    service.run_report(RunRequest(mode="market", market="HK"))
                 )
                 self.assertIn(
                     "Agent 分析报告",
+                    market_result.summary.report_path.read_text(encoding="utf-8"),
+                )
+                self.assertIn(
+                    "市场: HK",
                     market_result.summary.report_path.read_text(encoding="utf-8"),
                 )
                 self.assertEqual(market_result.summary.news_total, 2)
@@ -142,6 +168,22 @@ class ReportServiceAgentModesTest(unittest.TestCase):
                     "模式: stock",
                     stock_result.summary.report_path.read_text(encoding="utf-8"),
                 )
+
+                watchlist_result = asyncio.run(
+                    service.run_report(
+                        RunRequest(
+                            mode="watchlist",
+                            watchlist_limit=2,
+                        )
+                    )
+                )
+                self.assertEqual(watchlist_result.summary.mode, "watchlist")
+                watchlist_markdown = watchlist_result.summary.report_path.read_text(
+                    encoding="utf-8"
+                )
+                self.assertIn("持仓报告 (Watchlist)", watchlist_markdown)
+                self.assertIn("AAPL", watchlist_markdown)
+                self.assertIn("TSLA", watchlist_markdown)
         finally:
             AgentService.run = original_run  # type: ignore[method-assign]
             AgentService.to_analysis_payload = original_to_payload  # type: ignore[method-assign]

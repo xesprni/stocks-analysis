@@ -19,7 +19,7 @@ modules:
   news_listener:
     default_provider: watchlist_listener
   symbol_search:
-    default_provider: composite
+    default_provider: longbridge
 analysis:
   default_provider: codex_app_server
   default_model: gpt-5.2
@@ -59,14 +59,14 @@ news_listener:
   analysis_provider: null
   analysis_model: null
 symbol_search:
-  default_provider: composite
+  default_provider: longbridge
   max_results: 20
 dashboard:
   indices:
   - symbol: 000001.SH
     market: CN
     alias: 上证指数
-    enabled: false
+    enabled: true
   - symbol: 399001.SZ
     market: CN
     alias: 深证成指

@@ -135,6 +135,9 @@ class MarketDataService:
     ) -> Quote:
         resolved_market = market.upper()
         normalized_symbol = normalize_symbol(symbol, market)
+        requested_provider_id = (
+            provider_id or self.config.modules.market_data.default_provider or ""
+        ).strip() or "composite"
         try:
             provider = self._provider(provider_id=provider_id)
             quote = await provider.get_quote(
@@ -142,6 +145,15 @@ class MarketDataService:
             )
             return quote
         except Exception:
+            if requested_provider_id != "composite":
+                try:
+                    fallback_provider = self._provider(provider_id="composite")
+                    return await fallback_provider.get_quote(
+                        symbol=normalized_symbol,
+                        market=resolved_market,
+                    )
+                except Exception:
+                    pass
             # On provider failure, first attempt to synthesize quote from cached market data.
             cached = self._quote_from_cache(
                 symbol=normalized_symbol, market=resolved_market
@@ -171,6 +183,9 @@ class MarketDataService:
         provider_id: Optional[str] = None,
     ) -> List[KLineBar]:
         normalized_symbol = normalize_symbol(symbol, market)
+        requested_provider_id = (
+            provider_id or self.config.modules.market_data.default_provider or ""
+        ).strip() or "composite"
         try:
             provider = self._provider(provider_id=provider_id)
             rows = await provider.get_kline(
@@ -185,6 +200,22 @@ class MarketDataService:
                 repo.upsert_kline(rows)
             return rows
         except Exception:
+            if requested_provider_id != "composite":
+                try:
+                    fallback_provider = self._provider(provider_id="composite")
+                    rows = await fallback_provider.get_kline(
+                        symbol=normalized_symbol,
+                        market=market.upper(),
+                        interval=interval,
+                        limit=limit,
+                    )
+                    if rows:
+                        with session_scope(self.config.database.url) as session:
+                            repo = MarketDataRepo(session)
+                            repo.upsert_kline(rows)
+                        return rows
+                except Exception:
+                    pass
             # Degrade to historical cache when upstream provider is unavailable.
             with session_scope(self.config.database.url) as session:
                 repo = MarketDataRepo(session)
@@ -215,6 +246,9 @@ class MarketDataService:
         provider_id: Optional[str] = None,
     ) -> List[CurvePoint]:
         normalized_symbol = normalize_symbol(symbol, market)
+        requested_provider_id = (
+            provider_id or self.config.modules.market_data.default_provider or ""
+        ).strip() or "composite"
         try:
             provider = self._provider(provider_id=provider_id)
             rows = await provider.get_curve(
@@ -226,6 +260,21 @@ class MarketDataService:
                 repo.save_curve_points(rows)
             return rows
         except Exception:
+            if requested_provider_id != "composite":
+                try:
+                    fallback_provider = self._provider(provider_id="composite")
+                    rows = await fallback_provider.get_curve(
+                        symbol=normalized_symbol,
+                        market=market.upper(),
+                        window=window,
+                    )
+                    if rows:
+                        with session_scope(self.config.database.url) as session:
+                            repo = MarketDataRepo(session)
+                            repo.save_curve_points(rows)
+                        return rows
+                except Exception:
+                    pass
             with session_scope(self.config.database.url) as session:
                 repo = MarketDataRepo(session)
                 cached = repo.list_curve_points(

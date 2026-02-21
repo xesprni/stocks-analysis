@@ -140,6 +140,14 @@ class SymbolSearchServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(rows[0].symbol, "^IXIC")
         self.assertEqual(rows[0].market, "US")
 
+    async def test_search_does_not_generate_invalid_cn_symbol_from_cjk_name(self):
+        config = AppConfig()
+        config.symbol_search.default_provider = "composite"
+        service = SymbolSearchService(config=config, registry=_AliasOnlyRegistry())
+
+        rows = await service.search(query="药明康德", market="CN", limit=5)
+        self.assertEqual(rows, [])
+
 
 if __name__ == "__main__":
     unittest.main()

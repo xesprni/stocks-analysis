@@ -329,19 +329,6 @@ class SymbolSearchService:
                     score=0.35,
                 )
             )
-
-        if not candidates:
-            fallback_market = market if market in {"CN", "HK", "US"} else "US"
-            candidates.append(
-                StockSearchResult(
-                    symbol=normalize_symbol(q, fallback_market),
-                    market=fallback_market,
-                    name=f"{q} (manual)",
-                    exchange=fallback_market,
-                    source="heuristic",
-                    score=0.2,
-                )
-            )
         return candidates[:limit]
 
 

@@ -90,8 +90,13 @@ export function StockTerminalPage({ defaultProvider, defaultModel, intervals, wa
     ema12: false,
     ema26: false,
     boll: false,
+    bbiboll: false,
     rsi: true,
     macd: true,
+    kdj: false,
+    wr: false,
+    cci: false,
+    atr: false,
   });
 
   const toggleIndicator = (key: keyof IndicatorVisibility) => {
@@ -378,6 +383,13 @@ export function StockTerminalPage({ defaultProvider, defaultModel, intervals, wa
                 BOLL
               </Button>
               <Button
+                variant={indicatorVisibility.bbiboll ? "default" : "outline"}
+                size="sm"
+                onClick={() => toggleIndicator("bbiboll")}
+              >
+                BBIBOLL
+              </Button>
+              <Button
                 variant={indicatorVisibility.rsi ? "default" : "outline"}
                 size="sm"
                 onClick={() => toggleIndicator("rsi")}
@@ -390,6 +402,34 @@ export function StockTerminalPage({ defaultProvider, defaultModel, intervals, wa
                 onClick={() => toggleIndicator("macd")}
               >
                 MACD
+              </Button>
+              <Button
+                variant={indicatorVisibility.kdj ? "default" : "outline"}
+                size="sm"
+                onClick={() => toggleIndicator("kdj")}
+              >
+                KDJ
+              </Button>
+              <Button
+                variant={indicatorVisibility.wr ? "default" : "outline"}
+                size="sm"
+                onClick={() => toggleIndicator("wr")}
+              >
+                WR
+              </Button>
+              <Button
+                variant={indicatorVisibility.cci ? "default" : "outline"}
+                size="sm"
+                onClick={() => toggleIndicator("cci")}
+              >
+                CCI
+              </Button>
+              <Button
+                variant={indicatorVisibility.atr ? "default" : "outline"}
+                size="sm"
+                onClick={() => toggleIndicator("atr")}
+              >
+                ATR
               </Button>
             </div>
             <CandlestickChart

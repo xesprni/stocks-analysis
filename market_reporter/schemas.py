@@ -36,11 +36,12 @@ class RunRequest(BaseModel):
     timezone: Optional[str] = None
     provider_id: Optional[str] = None
     model: Optional[str] = None
-    mode: str = Field(default="market", pattern="^(market|stock)$")
+    mode: str = Field(default="market", pattern="^(market|stock|watchlist)$")
     symbol: Optional[str] = None
     market: Optional[str] = Field(default=None, pattern="^(CN|HK|US)$")
     question: Optional[str] = None
     peer_list: Optional[List[str]] = None
+    watchlist_limit: Optional[int] = Field(default=None, ge=1, le=50)
 
 
 class RunResult(BaseModel):

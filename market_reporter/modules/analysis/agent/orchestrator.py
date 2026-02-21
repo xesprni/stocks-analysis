@@ -219,18 +219,24 @@ class AgentOrchestrator:
                 )
 
         else:
+            target_market = (request.market or "").strip().upper()
+            market_query = (
+                f"{target_market} market" if target_market else "macro market"
+            )
             news_result = await self.news_tools.search_news(
-                query="macro market",
+                query=market_query,
                 from_date=ranges["news_from"],
                 to_date=ranges["news_to"],
                 limit=80,
+                market=target_market,
             )
             tool_results["search_news"] = news_result.model_dump(mode="json")
             traces.append(
                 self._trace(
                     "search_news",
                     {
-                        "query": "macro market",
+                        "query": market_query,
+                        "market": target_market,
                         "from": ranges["news_from"],
                         "to": ranges["news_to"],
                     },
@@ -240,6 +246,7 @@ class AgentOrchestrator:
 
             macro_result = await self.macro_tools.get_macro_data(
                 periods=min(self.config.flow_periods, 20),
+                market=target_market or None,
             )
             tool_results["get_macro_data"] = macro_result.model_dump(mode="json")
             traces.append(
@@ -247,6 +254,7 @@ class AgentOrchestrator:
                     "get_macro_data",
                     {
                         "periods": min(self.config.flow_periods, 20),
+                        "market": target_market,
                     },
                     tool_results["get_macro_data"],
                 )
@@ -255,6 +263,7 @@ class AgentOrchestrator:
         runtime_context = {
             "question": question,
             "mode": mode,
+            "market": request.market,
             "tool_results": tool_results,
         }
 
@@ -459,10 +468,16 @@ class AgentOrchestrator:
             )
             return result.model_dump(mode="json")
         if name == "get_macro_data":
+            requested_market = arguments.get("market")
+            if requested_market is None and request.mode == "market":
+                requested_market = request.market
             result = await self.macro_tools.get_macro_data(
                 periods=int(
                     arguments.get("periods") or min(self.config.flow_periods, 20)
                 ),
+                market=str(requested_market).strip().upper()
+                if requested_market
+                else None,
             )
             return result.model_dump(mode="json")
         raise ValueError(f"Unsupported tool: {name}")
@@ -591,6 +606,8 @@ class AgentOrchestrator:
             return request.question.strip()
         if request.mode == "stock":
             return f"请分析 {request.symbol or ''} 的投资价值与风险。"
+        if request.market:
+            return f"请总结 {request.market} 市场当前的主要风险收益特征。"
         return "请总结当前市场的主要风险收益特征。"
 
     def _resolve_ranges(self, request: AgentRunRequest) -> Dict[str, str]:
@@ -749,6 +766,7 @@ class AgentOrchestrator:
                         "type": "object",
                         "properties": {
                             "periods": {"type": "integer"},
+                            "market": {"type": "string"},
                         },
                     },
                 },

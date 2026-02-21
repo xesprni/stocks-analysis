@@ -145,6 +145,67 @@ export function bollinger(
   return { mid, upper, lower };
 }
 
+export function bbiboll(
+  values: number[],
+  period = 10,
+  multiplier = 3
+): {
+  bbi: Array<number | null>;
+  upper: Array<number | null>;
+  lower: Array<number | null>;
+} {
+  const ma3 = sma(values, 3);
+  const ma6 = sma(values, 6);
+  const ma12 = sma(values, 12);
+  const ma24 = sma(values, 24);
+
+  const bbi: Array<number | null> = values.map((_, index) => {
+    const a = ma3[index];
+    const b = ma6[index];
+    const c = ma12[index];
+    const d = ma24[index];
+    if (a == null || b == null || c == null || d == null) {
+      return null;
+    }
+    return (a + b + c + d) / 4;
+  });
+
+  const upper: Array<number | null> = Array(values.length).fill(null);
+  const lower: Array<number | null> = Array(values.length).fill(null);
+  for (let i = 0; i < values.length; i++) {
+    const mid = bbi[i];
+    if (mid == null) {
+      continue;
+    }
+    const start = i - period + 1;
+    if (start < 0) {
+      continue;
+    }
+    const segment: number[] = [];
+    let valid = true;
+    for (let j = start; j <= i; j++) {
+      const value = bbi[j];
+      if (value == null || !Number.isFinite(value)) {
+        valid = false;
+        break;
+      }
+      segment.push(value);
+    }
+    if (!valid || segment.length < period) {
+      continue;
+    }
+    const mean = segment.reduce((sum, item) => sum + item, 0) / segment.length;
+    const variance =
+      segment.reduce((sum, item) => sum + (item - mean) ** 2, 0) /
+      segment.length;
+    const sd = Math.sqrt(variance);
+    upper[i] = mid + multiplier * sd;
+    lower[i] = mid - multiplier * sd;
+  }
+
+  return { bbi, upper, lower };
+}
+
 export function rsi(values: number[], period = 14): Array<number | null> {
   const output: Array<number | null> = Array(values.length).fill(null);
   if (period <= 0 || values.length <= period) {
@@ -229,6 +290,141 @@ export function macd(values: number[]): {
     return value - signal;
   });
   return { dif, dea, hist };
+}
+
+export function kdj(
+  candles: CandlePoint[],
+  period = 9
+): {
+  k: Array<number | null>;
+  d: Array<number | null>;
+  j: Array<number | null>;
+} {
+  const outputK: Array<number | null> = Array(candles.length).fill(null);
+  const outputD: Array<number | null> = Array(candles.length).fill(null);
+  const outputJ: Array<number | null> = Array(candles.length).fill(null);
+  if (period <= 0 || candles.length < period) {
+    return { k: outputK, d: outputD, j: outputJ };
+  }
+
+  let prevK = 50;
+  let prevD = 50;
+  for (let i = period - 1; i < candles.length; i++) {
+    let highN = Number.NEGATIVE_INFINITY;
+    let lowN = Number.POSITIVE_INFINITY;
+    for (let j = i - period + 1; j <= i; j++) {
+      highN = Math.max(highN, candles[j].high);
+      lowN = Math.min(lowN, candles[j].low);
+    }
+
+    const close = candles[i].close;
+    const rsv = highN === lowN ? 50 : ((close - lowN) / (highN - lowN)) * 100;
+    const nextK = (2 * prevK + rsv) / 3;
+    const nextD = (2 * prevD + nextK) / 3;
+    const nextJ = 3 * nextK - 2 * nextD;
+
+    outputK[i] = nextK;
+    outputD[i] = nextD;
+    outputJ[i] = nextJ;
+
+    prevK = nextK;
+    prevD = nextD;
+  }
+
+  return { k: outputK, d: outputD, j: outputJ };
+}
+
+export function williamsR(
+  candles: CandlePoint[],
+  period = 14
+): Array<number | null> {
+  const output: Array<number | null> = Array(candles.length).fill(null);
+  if (period <= 0 || candles.length < period) {
+    return output;
+  }
+
+  for (let i = period - 1; i < candles.length; i++) {
+    let highest = Number.NEGATIVE_INFINITY;
+    let lowest = Number.POSITIVE_INFINITY;
+    for (let j = i - period + 1; j <= i; j++) {
+      highest = Math.max(highest, candles[j].high);
+      lowest = Math.min(lowest, candles[j].low);
+    }
+    const span = highest - lowest;
+    if (span === 0) {
+      output[i] = -50;
+      continue;
+    }
+    output[i] = ((highest - candles[i].close) / span) * -100;
+  }
+  return output;
+}
+
+export function cci(
+  candles: CandlePoint[],
+  period = 20
+): Array<number | null> {
+  const output: Array<number | null> = Array(candles.length).fill(null);
+  if (period <= 0 || candles.length < period) {
+    return output;
+  }
+
+  const tp = candles.map((item) => (item.high + item.low + item.close) / 3);
+  const tpSma = sma(tp, period);
+  for (let i = period - 1; i < candles.length; i++) {
+    const ma = tpSma[i];
+    if (ma == null) {
+      continue;
+    }
+    let md = 0;
+    for (let j = i - period + 1; j <= i; j++) {
+      md += Math.abs(tp[j] - ma);
+    }
+    md /= period;
+    if (md === 0) {
+      output[i] = 0;
+      continue;
+    }
+    output[i] = (tp[i] - ma) / (0.015 * md);
+  }
+  return output;
+}
+
+export function atr(
+  candles: CandlePoint[],
+  period = 14
+): Array<number | null> {
+  const output: Array<number | null> = Array(candles.length).fill(null);
+  if (period <= 0 || candles.length < period) {
+    return output;
+  }
+
+  const tr: number[] = Array(candles.length).fill(0);
+  for (let i = 0; i < candles.length; i++) {
+    const current = candles[i];
+    if (i === 0) {
+      tr[i] = current.high - current.low;
+      continue;
+    }
+    const prevClose = candles[i - 1].close;
+    tr[i] = Math.max(
+      current.high - current.low,
+      Math.abs(current.high - prevClose),
+      Math.abs(current.low - prevClose)
+    );
+  }
+
+  let seed = 0;
+  for (let i = 0; i < period; i++) {
+    seed += tr[i];
+  }
+  let prevAtr = seed / period;
+  output[period - 1] = prevAtr;
+  for (let i = period; i < candles.length; i++) {
+    prevAtr = (prevAtr * (period - 1) + tr[i]) / period;
+    output[i] = prevAtr;
+  }
+  return output;
 }
 
 export function latestValue(values: Array<number | null>): number | null {

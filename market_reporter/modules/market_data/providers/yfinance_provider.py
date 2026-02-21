@@ -2,13 +2,30 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timezone
-from typing import List
+from typing import Any, List, Optional
 
 from market_reporter.core.types import CurvePoint, KLineBar, Quote
 from market_reporter.modules.market_data.symbol_mapper import (
     normalize_symbol,
     to_yfinance_symbol,
 )
+
+
+def _as_float(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except Exception:
+        return None
+
+
+def _to_iso_seconds(raw: Any) -> str:
+    if hasattr(raw, "to_pydatetime"):
+        return raw.to_pydatetime().isoformat(timespec="seconds")
+    if isinstance(raw, datetime):
+        return raw.isoformat(timespec="seconds")
+    return str(raw)
 
 
 class YahooFinanceMarketDataProvider:
@@ -67,18 +84,22 @@ class YahooFinanceMarketDataProvider:
                         return quote_from_history
                     raise ValueError(f"No quote data for symbol: {yf_symbol}")
                 now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-                price = float(
-                    info.get("last_price") or info.get("regular_market_price") or 0.0
+                price = _as_float(
+                    info.get("last_price") or info.get("regular_market_price")
                 )
-                prev = info.get("previous_close") or info.get(
-                    "regular_market_previous_close"
+                if price is None:
+                    raise ValueError(f"No quote data for symbol: {yf_symbol}")
+                prev = _as_float(
+                    info.get("previous_close")
+                    or info.get("regular_market_previous_close")
                 )
                 change = None
                 pct = None
                 if prev:
-                    change = price - float(prev)
-                    if float(prev) != 0:
-                        pct = change / float(prev) * 100
+                    change = price - prev
+                    if prev != 0:
+                        pct = change / prev * 100
+                volume = _as_float(info.get("last_volume"))
                 return Quote(
                     symbol=normalize_symbol(symbol, market),
                     market=market.upper(),
@@ -86,9 +107,7 @@ class YahooFinanceMarketDataProvider:
                     price=price,
                     change=change,
                     change_percent=pct,
-                    volume=float(info.get("last_volume"))
-                    if info.get("last_volume") is not None
-                    else None,
+                    volume=volume,
                     currency=str(info.get("currency") or ""),
                     source=self.provider_id,
                 )
@@ -114,8 +133,10 @@ class YahooFinanceMarketDataProvider:
         if closes.empty:
             return None
 
-        latest_close = float(closes.iloc[-1])
-        prev_close = float(closes.iloc[-2]) if len(closes) >= 2 else None
+        latest_close = _as_float(closes.iloc[-1])
+        if latest_close is None:
+            return None
+        prev_close = _as_float(closes.iloc[-2]) if len(closes) >= 2 else None
         change = None
         pct = None
         if prev_close and prev_close != 0:
@@ -124,9 +145,9 @@ class YahooFinanceMarketDataProvider:
 
         latest_row = hist.iloc[-1]
         ts_raw = closes.index[-1]
-        ts = ts_raw.to_pydatetime().isoformat(timespec="seconds")
+        ts = _to_iso_seconds(ts_raw)
         volume_value = latest_row.get("Volume") if hasattr(latest_row, "get") else None
-        volume = float(volume_value) if volume_value is not None else None
+        volume = _as_float(volume_value)
 
         return Quote(
             symbol=normalize_symbol(symbol, market),
@@ -159,20 +180,33 @@ class YahooFinanceMarketDataProvider:
 
             rows: List[KLineBar] = []
             for idx, row in hist.tail(limit).iterrows():
-                ts = idx.to_pydatetime().isoformat(timespec="seconds")
+                open_value = _as_float(row.get("Open") if hasattr(row, "get") else None)
+                high_value = _as_float(row.get("High") if hasattr(row, "get") else None)
+                low_value = _as_float(row.get("Low") if hasattr(row, "get") else None)
+                close_value = _as_float(
+                    row.get("Close") if hasattr(row, "get") else None
+                )
+                if (
+                    open_value is None
+                    or high_value is None
+                    or low_value is None
+                    or close_value is None
+                ):
+                    continue
+                ts = _to_iso_seconds(idx)
                 rows.append(
                     KLineBar(
                         symbol=normalized,
                         market=market.upper(),
                         interval=interval,
                         ts=ts,
-                        open=float(row["Open"]),
-                        high=float(row["High"]),
-                        low=float(row["Low"]),
-                        close=float(row["Close"]),
-                        volume=float(row["Volume"])
-                        if row.get("Volume") is not None
-                        else None,
+                        open=open_value,
+                        high=high_value,
+                        low=low_value,
+                        close=close_value,
+                        volume=_as_float(
+                            row.get("Volume") if hasattr(row, "get") else None
+                        ),
                         source=self.provider_id,
                     )
                 )
