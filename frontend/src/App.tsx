@@ -96,6 +96,12 @@ const emptyConfig: AppConfig = {
     default_filing_window_days: 365,
     default_price_window_days: 365,
   },
+  longbridge: {
+    enabled: false,
+    app_key: "",
+    app_secret: "",
+    access_token: "",
+  },
   database: { url: "sqlite:///data/market_reporter.db" },
 };
 
@@ -490,6 +496,28 @@ export default function App() {
             }}
             onSaveDashboard={() => {
               void saveConfigSection("dashboard");
+            }}
+            onSaveLongbridgeToken={async (payload) => {
+              try {
+                await api.updateLongbridgeToken(payload);
+                await queryClient.invalidateQueries({ queryKey: ["config"] });
+                notifier.success("Longbridge 凭证已保存");
+              } catch (error) {
+                const message = toErrorMessage(error);
+                setErrorMessage(message);
+                notifier.error("保存 Longbridge 凭证失败", message);
+              }
+            }}
+            onDeleteLongbridgeToken={async () => {
+              try {
+                await api.deleteLongbridgeToken();
+                await queryClient.invalidateQueries({ queryKey: ["config"] });
+                notifier.success("Longbridge 凭证已清除");
+              } catch (error) {
+                const message = toErrorMessage(error);
+                setErrorMessage(message);
+                notifier.error("清除 Longbridge 凭证失败", message);
+              }
             }}
             onReload={() => {
               void configQuery.refetch();

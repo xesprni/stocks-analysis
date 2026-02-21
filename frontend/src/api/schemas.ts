@@ -79,6 +79,12 @@ export const appConfigSchema = z.object({
     default_filing_window_days: z.number(),
     default_price_window_days: z.number(),
   }),
+  longbridge: z.object({
+    enabled: z.boolean(),
+    app_key: z.string(),
+    app_secret: z.string(),
+    access_token: z.string(),
+  }),
   database: z.object({ url: z.string() }),
 });
 

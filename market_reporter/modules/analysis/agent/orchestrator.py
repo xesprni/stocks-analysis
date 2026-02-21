@@ -38,8 +38,9 @@ class AgentOrchestrator:
     ) -> None:
         self.config = config
         self.registry = registry
-        self.market_tools = MarketTools()
-        self.fundamentals_tools = FundamentalsTools()
+        lb_config = config.longbridge
+        self.market_tools = MarketTools(lb_config=lb_config)
+        self.fundamentals_tools = FundamentalsTools(lb_config=lb_config)
         self.filings_tools = FilingsTools()
         self.news_tools = NewsTools(news_service=news_service)
         self.macro_tools = MacroTools(fund_flow_service=fund_flow_service)

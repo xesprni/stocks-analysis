@@ -69,6 +69,19 @@ export const api = {
       body: JSON.stringify(payload),
     }),
   getUiOptions: () => request("/options/ui", uiOptionsSchema),
+
+  // ---- longbridge ----
+  updateLongbridgeToken: (payload: { app_key: string; app_secret: string; access_token: string }) =>
+    request("/longbridge/token", z.object({ ok: z.boolean() }), {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
+  deleteLongbridgeToken: () =>
+    request("/longbridge/token", z.object({ ok: z.boolean() }), {
+      method: "DELETE",
+    }),
+
   getDashboardSnapshot: (page = 1, pageSize = 10, enabledOnly = true) =>
     request(
       `/dashboard/snapshot?page=${page}&page_size=${pageSize}&enabled_only=${enabledOnly ? "true" : "false"}`,

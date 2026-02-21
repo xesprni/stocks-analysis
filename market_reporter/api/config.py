@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request
+from pydantic import BaseModel
 
 from market_reporter.api.deps import get_config_store
-from market_reporter.config import AppConfig
+from market_reporter.config import AppConfig, LongbridgeConfig
 from market_reporter.infra.db.session import init_db
 from market_reporter.schemas import ConfigUpdateRequest
 from market_reporter.services.config_store import ConfigStore
@@ -17,7 +18,15 @@ router = APIRouter(prefix="/api", tags=["config"])
 async def get_config(
     config_store: ConfigStore = Depends(get_config_store),
 ) -> AppConfig:
-    return config_store.load()
+    cfg = config_store.load()
+    # Redact Longbridge secrets before sending to frontend.
+    redacted_lb = cfg.longbridge.model_copy(
+        update={
+            "app_secret": "***" if cfg.longbridge.app_secret else "",
+            "access_token": "***" if cfg.longbridge.access_token else "",
+        }
+    )
+    return cfg.model_copy(update={"longbridge": redacted_lb})
 
 
 @router.put("/config", response_model=AppConfig)
@@ -34,6 +43,57 @@ async def update_config(
     # Restart news listener scheduler if available
     _restart_listener_scheduler(request.app.state, saved)
     return saved
+
+
+class LongbridgeTokenRequest(BaseModel):
+    app_key: str
+    app_secret: str
+    access_token: str
+
+
+@router.get("/longbridge", response_model=LongbridgeConfig)
+async def get_longbridge_config(
+    config_store: ConfigStore = Depends(get_config_store),
+) -> LongbridgeConfig:
+    cfg = config_store.load()
+    return cfg.longbridge.model_copy(
+        update={
+            "app_secret": "***" if cfg.longbridge.app_secret else "",
+            "access_token": "***" if cfg.longbridge.access_token else "",
+        }
+    )
+
+
+@router.put("/longbridge/token")
+async def update_longbridge_token(
+    payload: LongbridgeTokenRequest,
+    config_store: ConfigStore = Depends(get_config_store),
+) -> dict:
+    current = config_store.load()
+    next_lb = current.longbridge.model_copy(
+        update={
+            "app_key": payload.app_key,
+            "app_secret": payload.app_secret,
+            "access_token": payload.access_token,
+            "enabled": bool(
+                payload.app_key and payload.app_secret and payload.access_token
+            ),
+        }
+    )
+    next_config = current.model_copy(update={"longbridge": next_lb})
+    config_store.save(next_config)
+    return {"ok": True}
+
+
+@router.delete("/longbridge/token")
+async def delete_longbridge_token(
+    config_store: ConfigStore = Depends(get_config_store),
+) -> dict:
+    current = config_store.load()
+    next_lb = LongbridgeConfig()  # Reset to defaults (disabled, empty credentials)
+    next_config = current.model_copy(update={"longbridge": next_lb})
+    config_store.save(next_config)
+    return {"ok": True}
 
 
 def _restart_listener_scheduler(app_state, config: AppConfig) -> None:

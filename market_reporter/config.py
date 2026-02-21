@@ -122,6 +122,13 @@ class AgentConfig(BaseModel):
     default_price_window_days: int = Field(default=365, ge=1, le=3650)
 
 
+class LongbridgeConfig(BaseModel):
+    enabled: bool = False
+    app_key: str = ""
+    app_secret: str = ""
+    access_token: str = ""
+
+
 class DatabaseConfig(BaseModel):
     url: str = "sqlite:///data/market_reporter.db"
 
@@ -243,6 +250,7 @@ class AppConfig(BaseModel):
     symbol_search: SymbolSearchConfig = Field(default_factory=SymbolSearchConfig)
     dashboard: DashboardConfig = Field(default_factory=DashboardConfig)
     agent: AgentConfig = Field(default_factory=AgentConfig)
+    longbridge: LongbridgeConfig = Field(default_factory=LongbridgeConfig)
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
 
     def ensure_output_root(self) -> Path:

@@ -44,6 +44,8 @@ type Props = {
   onSaveBasic: () => void;
   onSaveModuleDefaults: () => void;
   onSaveDashboard: () => void;
+  onSaveLongbridgeToken: (payload: { app_key: string; app_secret: string; access_token: string }) => Promise<void>;
+  onDeleteLongbridgeToken: () => Promise<void>;
   onReload: () => void;
   savingSection: "basic" | "module_defaults" | "dashboard" | null;
 };
@@ -78,6 +80,8 @@ export function ConfigPage({
   onSaveBasic,
   onSaveModuleDefaults,
   onSaveDashboard,
+  onSaveLongbridgeToken,
+  onDeleteLongbridgeToken,
   onReload,
   savingSection,
 }: Props) {
@@ -87,6 +91,17 @@ export function ConfigPage({
   const [newSourceCategory, setNewSourceCategory] = useState("finance");
   const [newSourceUrl, setNewSourceUrl] = useState("");
   const [newSourceEnabled, setNewSourceEnabled] = useState(true);
+
+  const [lbAppKey, setLbAppKey] = useState("");
+  const [lbAppSecret, setLbAppSecret] = useState("");
+  const [lbAccessToken, setLbAccessToken] = useState("");
+  const [lbSaving, setLbSaving] = useState(false);
+
+  useEffect(() => {
+    setLbAppKey(config.longbridge.app_key ?? "");
+    setLbAppSecret(config.longbridge.app_secret === "***" ? "" : (config.longbridge.app_secret ?? ""));
+    setLbAccessToken(config.longbridge.access_token === "***" ? "" : (config.longbridge.access_token ?? ""));
+  }, [config.longbridge.app_key, config.longbridge.app_secret, config.longbridge.access_token]);
 
   useEffect(() => {
     setSourceRows(
@@ -420,6 +435,94 @@ export function ConfigPage({
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Longbridge OpenAPI */}
+      <Card className="border-indigo-200/60 bg-gradient-to-br from-white to-indigo-50/40 dark:from-slate-900 dark:to-indigo-950/20">
+        <CardHeader className="flex flex-row items-start justify-between gap-3">
+          <div>
+            <CardTitle className="text-base">
+              Longbridge OpenAPI
+              {config.longbridge.enabled ? (
+                <Badge className="ml-2 bg-emerald-100 text-emerald-700" variant="secondary">已启用</Badge>
+              ) : (
+                <Badge className="ml-2" variant="secondary">未启用</Badge>
+              )}
+            </CardTitle>
+            <CardDescription>
+              配置 Longbridge 行情数据源凭证。保存后自动启用，用于行情、K 线、分时、基本面等数据获取。
+            </CardDescription>
+          </div>
+          <div className="flex gap-2">
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={!config.longbridge.enabled}
+              onClick={async () => {
+                setLbSaving(true);
+                try {
+                  await onDeleteLongbridgeToken();
+                } finally {
+                  setLbSaving(false);
+                }
+              }}
+            >
+              <Trash2 className="mr-1 h-3.5 w-3.5" />
+              清除凭证
+            </Button>
+            <Button
+              disabled={lbSaving || !lbAppKey.trim() || !lbAppSecret.trim() || !lbAccessToken.trim()}
+              onClick={async () => {
+                setLbSaving(true);
+                try {
+                  await onSaveLongbridgeToken({
+                    app_key: lbAppKey.trim(),
+                    app_secret: lbAppSecret.trim(),
+                    access_token: lbAccessToken.trim(),
+                  });
+                } finally {
+                  setLbSaving(false);
+                }
+              }}
+            >
+              <Save className="mr-2 h-4 w-4" />
+              {lbSaving ? "保存中..." : "保存凭证"}
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-3">
+            <div className="space-y-2">
+              <Label htmlFor="lb_app_key">App Key</Label>
+              <Input
+                id="lb_app_key"
+                value={lbAppKey}
+                placeholder="Longbridge App Key"
+                onChange={(e) => setLbAppKey(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="lb_app_secret">App Secret</Label>
+              <Input
+                id="lb_app_secret"
+                type="password"
+                value={lbAppSecret}
+                placeholder={config.longbridge.app_secret === "***" ? "已配置（留空不修改）" : "Longbridge App Secret"}
+                onChange={(e) => setLbAppSecret(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="lb_access_token">Access Token</Label>
+              <Input
+                id="lb_access_token"
+                type="password"
+                value={lbAccessToken}
+                placeholder={config.longbridge.access_token === "***" ? "已配置（留空不修改）" : "Longbridge Access Token"}
+                onChange={(e) => setLbAccessToken(e.target.value)}
+              />
             </div>
           </div>
         </CardContent>

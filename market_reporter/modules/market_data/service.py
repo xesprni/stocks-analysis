@@ -8,9 +8,15 @@ from market_reporter.core.registry import ProviderRegistry
 from market_reporter.core.types import CurvePoint, KLineBar, Quote
 from market_reporter.infra.db.repos import MarketDataRepo
 from market_reporter.infra.db.session import session_scope
-from market_reporter.modules.market_data.providers.akshare_provider import AkshareMarketDataProvider
-from market_reporter.modules.market_data.providers.composite_provider import CompositeMarketDataProvider
-from market_reporter.modules.market_data.providers.yfinance_provider import YahooFinanceMarketDataProvider
+from market_reporter.modules.market_data.providers.akshare_provider import (
+    AkshareMarketDataProvider,
+)
+from market_reporter.modules.market_data.providers.composite_provider import (
+    CompositeMarketDataProvider,
+)
+from market_reporter.modules.market_data.providers.yfinance_provider import (
+    YahooFinanceMarketDataProvider,
+)
 from market_reporter.modules.market_data.symbol_mapper import normalize_symbol
 
 
@@ -22,6 +28,7 @@ class MarketDataService:
         self.registry = registry
         self.registry.register(self.MODULE_NAME, "yfinance", self._build_yfinance)
         self.registry.register(self.MODULE_NAME, "akshare", self._build_akshare)
+        self.registry.register(self.MODULE_NAME, "longbridge", self._build_longbridge)
         self.registry.register(self.MODULE_NAME, "composite", self._build_composite)
 
     def _build_yfinance(self):
@@ -30,32 +37,48 @@ class MarketDataService:
     def _build_akshare(self):
         return AkshareMarketDataProvider()
 
-    def _build_composite(self):
-        return CompositeMarketDataProvider(
-            providers={
-                "yfinance": self._build_yfinance(),
-                "akshare": self._build_akshare(),
-            }
+    def _build_longbridge(self):
+        from market_reporter.modules.market_data.providers.longbridge_provider import (
+            LongbridgeMarketDataProvider,
         )
 
+        return LongbridgeMarketDataProvider(lb_config=self.config.longbridge)
+
+    def _build_composite(self):
+        providers = {
+            "yfinance": self._build_yfinance(),
+            "akshare": self._build_akshare(),
+        }
+        if self.config.longbridge.enabled:
+            providers["longbridge"] = self._build_longbridge()
+        return CompositeMarketDataProvider(providers=providers)
+
     def _provider(self, provider_id: Optional[str] = None):
-        target = (provider_id or self.config.modules.market_data.default_provider or "").strip() or "composite"
+        target = (
+            provider_id or self.config.modules.market_data.default_provider or ""
+        ).strip() or "composite"
         try:
             return self.registry.resolve(self.MODULE_NAME, target)
         except Exception:
             # Provider fallback guarantees read APIs remain available with degraded data quality.
             return self.registry.resolve(self.MODULE_NAME, "composite")
 
-    async def get_quote(self, symbol: str, market: str, provider_id: Optional[str] = None) -> Quote:
+    async def get_quote(
+        self, symbol: str, market: str, provider_id: Optional[str] = None
+    ) -> Quote:
         resolved_market = market.upper()
         normalized_symbol = normalize_symbol(symbol, market)
         try:
             provider = self._provider(provider_id=provider_id)
-            quote = await provider.get_quote(symbol=normalized_symbol, market=resolved_market)
+            quote = await provider.get_quote(
+                symbol=normalized_symbol, market=resolved_market
+            )
             return quote
         except Exception:
             # On provider failure, first attempt to synthesize quote from cached market data.
-            cached = self._quote_from_cache(symbol=normalized_symbol, market=resolved_market)
+            cached = self._quote_from_cache(
+                symbol=normalized_symbol, market=resolved_market
+            )
             if cached is not None:
                 return cached
             # Last-resort placeholder keeps API response schema stable.
@@ -98,7 +121,9 @@ class MarketDataService:
             # Degrade to historical cache when upstream provider is unavailable.
             with session_scope(self.config.database.url) as session:
                 repo = MarketDataRepo(session)
-                cached = repo.list_kline(normalized_symbol, market.upper(), interval, limit=limit)
+                cached = repo.list_kline(
+                    normalized_symbol, market.upper(), interval, limit=limit
+                )
                 return [
                     KLineBar(
                         symbol=row.symbol,
@@ -125,7 +150,9 @@ class MarketDataService:
         normalized_symbol = normalize_symbol(symbol, market)
         try:
             provider = self._provider(provider_id=provider_id)
-            rows = await provider.get_curve(symbol=normalized_symbol, market=market.upper(), window=window)
+            rows = await provider.get_curve(
+                symbol=normalized_symbol, market=market.upper(), window=window
+            )
             with session_scope(self.config.database.url) as session:
                 repo = MarketDataRepo(session)
                 # Persist latest intraday points for listener/report fallback.
@@ -134,7 +161,9 @@ class MarketDataService:
         except Exception:
             with session_scope(self.config.database.url) as session:
                 repo = MarketDataRepo(session)
-                cached = repo.list_curve_points(normalized_symbol, market.upper(), limit=500)
+                cached = repo.list_curve_points(
+                    normalized_symbol, market.upper(), limit=500
+                )
                 return [
                     CurvePoint(
                         symbol=row.symbol,
@@ -177,7 +206,9 @@ class MarketDataService:
 
             # Fallback to available kline intervals ordered by expected freshness.
             for interval in ("1m", "5m", "1d"):
-                bars = repo.list_kline(symbol=symbol, market=market, interval=interval, limit=2)
+                bars = repo.list_kline(
+                    symbol=symbol, market=market, interval=interval, limit=2
+                )
                 if not bars:
                     continue
                 latest_bar = bars[-1]

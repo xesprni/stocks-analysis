@@ -79,6 +79,7 @@ class ConfigUpdateRequest(BaseModel):
     symbol_search: Optional[Dict[str, Any]] = None
     dashboard: Optional[Dict[str, Any]] = None
     agent: Optional[Dict[str, Any]] = None
+    longbridge: Optional[Dict[str, Any]] = None
     database: Dict[str, Any]
 
     def to_config(self, current: AppConfig) -> AppConfig:
@@ -103,6 +104,8 @@ class ConfigUpdateRequest(BaseModel):
             patch_data["dashboard"] = self.dashboard
         if self.agent is not None:
             patch_data["agent"] = self.agent
+        if self.longbridge is not None:
+            patch_data["longbridge"] = self.longbridge
         payload.update(patch_data)
         return AppConfig.model_validate(payload)
 

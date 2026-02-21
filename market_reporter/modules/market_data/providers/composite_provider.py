@@ -1,49 +1,117 @@
 from __future__ import annotations
 
+import asyncio
+import logging
 from typing import Dict, List
 
 from market_reporter.core.types import CurvePoint, KLineBar, Quote
+
+logger = logging.getLogger(__name__)
+
+# Per-provider timeout in seconds.  If a single provider takes longer than
+# this, we skip it and try the next one in the failover chain.
+_PROVIDER_TIMEOUT = 15
 
 
 class CompositeMarketDataProvider:
     provider_id = "composite"
 
-    def __init__(self, providers: Dict[str, object]) -> None:
+    def __init__(
+        self,
+        providers: Dict[str, object],
+        *,
+        provider_timeout: float = _PROVIDER_TIMEOUT,
+    ) -> None:
         self.providers = providers
+        self._timeout = provider_timeout
 
     async def get_quote(self, symbol: str, market: str) -> Quote:
         # First successful provider wins; errors are intentionally swallowed for failover.
         for provider in self._ordered(market=market):
             try:
-                return await provider.get_quote(symbol=symbol, market=market)
+                return await asyncio.wait_for(
+                    provider.get_quote(symbol=symbol, market=market),
+                    timeout=self._timeout,
+                )
+            except asyncio.TimeoutError:
+                pid = getattr(provider, "provider_id", type(provider).__name__)
+                logger.warning(
+                    "Provider %s timed out (%.1fs) for quote %s:%s",
+                    pid,
+                    self._timeout,
+                    market,
+                    symbol,
+                )
+                continue
             except Exception:
                 continue
         raise ValueError(f"No available quote provider for {market}:{symbol}")
 
-    async def get_kline(self, symbol: str, market: str, interval: str, limit: int) -> List[KLineBar]:
+    async def get_kline(
+        self, symbol: str, market: str, interval: str, limit: int
+    ) -> List[KLineBar]:
         for provider in self._ordered(market=market):
             try:
-                rows = await provider.get_kline(symbol=symbol, market=market, interval=interval, limit=limit)
+                rows = await asyncio.wait_for(
+                    provider.get_kline(
+                        symbol=symbol, market=market, interval=interval, limit=limit
+                    ),
+                    timeout=self._timeout,
+                )
                 if rows:
                     return rows
+            except asyncio.TimeoutError:
+                pid = getattr(provider, "provider_id", type(provider).__name__)
+                logger.warning(
+                    "Provider %s timed out (%.1fs) for kline %s:%s",
+                    pid,
+                    self._timeout,
+                    market,
+                    symbol,
+                )
+                continue
             except Exception:
                 continue
-        raise ValueError(f"No available kline provider for {market}:{symbol}, interval={interval}")
+        raise ValueError(
+            f"No available kline provider for {market}:{symbol}, interval={interval}"
+        )
 
-    async def get_curve(self, symbol: str, market: str, window: str) -> List[CurvePoint]:
+    async def get_curve(
+        self, symbol: str, market: str, window: str
+    ) -> List[CurvePoint]:
         for provider in self._ordered(market=market):
             try:
-                rows = await provider.get_curve(symbol=symbol, market=market, window=window)
+                rows = await asyncio.wait_for(
+                    provider.get_curve(symbol=symbol, market=market, window=window),
+                    timeout=self._timeout,
+                )
                 if rows:
                     return rows
+            except asyncio.TimeoutError:
+                pid = getattr(provider, "provider_id", type(provider).__name__)
+                logger.warning(
+                    "Provider %s timed out (%.1fs) for curve %s:%s",
+                    pid,
+                    self._timeout,
+                    market,
+                    symbol,
+                )
+                continue
             except Exception:
                 continue
         raise ValueError(f"No available curve provider for {market}:{symbol}")
 
     def _ordered(self, market: str):
         market = market.upper()
+        lb = self.providers.get("longbridge")
         if market in {"CN", "HK"}:
-            # Prefer akshare for CN/HK where local endpoints are usually richer.
-            return [self.providers["akshare"], self.providers["yfinance"]]
-        # Prefer yfinance for US markets.
-        return [self.providers["yfinance"], self.providers["akshare"]]
+            # Prefer Longbridge for CN/HK when available, then akshare, then yfinance.
+            order = [self.providers["akshare"], self.providers["yfinance"]]
+            if lb is not None:
+                order.insert(0, lb)
+            return order
+        # US: prefer yfinance, then Longbridge, then akshare.
+        order = [self.providers["yfinance"], self.providers["akshare"]]
+        if lb is not None:
+            order.insert(1, lb)
+        return order
