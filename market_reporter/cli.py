@@ -66,16 +66,34 @@ def db_init() -> None:
 
 @app.command("run")
 def run(
-    news_limit: Optional[int] = typer.Option(None, help="Override news limit for this run."),
-    flow_periods: Optional[int] = typer.Option(None, help="Override flow periods for this run."),
-    timezone: Optional[str] = typer.Option(None, help="Override timezone for this run."),
-    provider_id: Optional[str] = typer.Option(None, help="Override analysis provider id."),
+    news_limit: Optional[int] = typer.Option(
+        None, help="Override news limit for this run."
+    ),
+    flow_periods: Optional[int] = typer.Option(
+        None, help="Override flow periods for this run."
+    ),
+    timezone: Optional[str] = typer.Option(
+        None, help="Override timezone for this run."
+    ),
+    provider_id: Optional[str] = typer.Option(
+        None, help="Override analysis provider id."
+    ),
     model: Optional[str] = typer.Option(None, help="Override analysis model."),
-    mode: str = typer.Option("market", help="Report mode: market|stock."),
+    mode: str = typer.Option("market", help="Report mode: market|stock|watchlist."),
+    skill_id: Optional[str] = typer.Option(None, help="Optional report skill id."),
     symbol: Optional[str] = typer.Option(None, help="Symbol for stock report mode."),
-    market: Optional[str] = typer.Option(None, help="Market for stock report mode (CN/HK/US)."),
-    question: Optional[str] = typer.Option(None, help="Optional custom analysis question."),
-    peer_list: Optional[str] = typer.Option(None, help="Optional peer list, comma separated."),
+    market: Optional[str] = typer.Option(
+        None, help="Market for stock report mode (CN/HK/US)."
+    ),
+    question: Optional[str] = typer.Option(
+        None, help="Optional custom analysis question."
+    ),
+    peer_list: Optional[str] = typer.Option(
+        None, help="Optional peer list, comma separated."
+    ),
+    watchlist_limit: Optional[int] = typer.Option(
+        None, help="Optional max watchlist symbols for watchlist mode."
+    ),
 ) -> None:
     store = _store()
     service = ReportService(config_store=store)
@@ -83,6 +101,7 @@ def run(
     if peer_list:
         peers = [item.strip() for item in peer_list.split(",") if item.strip()]
     payload = RunRequest(
+        skill_id=skill_id,
         news_limit=news_limit,
         flow_periods=flow_periods,
         timezone=timezone,
@@ -93,12 +112,15 @@ def run(
         market=market,
         question=question,
         peer_list=peers,
+        watchlist_limit=watchlist_limit,
     )
     result = asyncio.run(service.run_report(overrides=payload))
 
     console.print(f"[green]Report generated:[/green] {result.summary.report_path}")
     console.print(f"[green]Raw data:[/green] {result.summary.raw_data_path}")
-    console.print(f"[green]Analysis engine:[/green] {result.summary.provider_id} / {result.summary.model}")
+    console.print(
+        f"[green]Analysis engine:[/green] {result.summary.provider_id} / {result.summary.model}"
+    )
     if result.warnings:
         console.print("[yellow]Warnings:[/yellow]")
         for warning in result.warnings:
@@ -132,7 +154,9 @@ def watchlist_list() -> None:
     table.add_column("Alias")
     table.add_column("Enabled")
     for item in items:
-        table.add_row(str(item.id), item.symbol, item.market, item.alias or "", str(item.enabled))
+        table.add_row(
+            str(item.id), item.symbol, item.market, item.alias or "", str(item.enabled)
+        )
     console.print(table)
 
 
@@ -224,6 +248,7 @@ def providers_set_default(
 def analyze_stock(
     symbol: str = typer.Option(...),
     market: str = typer.Option(..., help="CN/HK/US"),
+    skill_id: Optional[str] = typer.Option(None, help="Optional agent skill id."),
     provider_id: Optional[str] = typer.Option(None),
     model: Optional[str] = typer.Option(None),
     interval: str = typer.Option("5m"),
@@ -238,7 +263,9 @@ def analyze_stock(
         ) as client:
             registry = ProviderRegistry()
             news_service = NewsService(config=config, client=client, registry=registry)
-            flow_service = FundFlowService(config=config, client=client, registry=registry)
+            flow_service = FundFlowService(
+                config=config, client=client, registry=registry
+            )
             market_data_service = MarketDataService(config=config, registry=registry)
             analysis_service = AnalysisService(
                 config=config,
@@ -250,6 +277,7 @@ def analyze_stock(
             result = await analysis_service.run_stock_analysis(
                 symbol=symbol,
                 market=market,
+                skill_id=skill_id,
                 provider_id=provider_id,
                 model=model,
                 interval=interval,
@@ -257,7 +285,11 @@ def analyze_stock(
             )
             console.print(f"[green]Analysis run id:[/green] {result.id}")
             console.print(result.markdown)
-            console.print(json.dumps(result.output.model_dump(mode='json'), ensure_ascii=False, indent=2))
+            console.print(
+                json.dumps(
+                    result.output.model_dump(mode="json"), ensure_ascii=False, indent=2
+                )
+            )
 
     asyncio.run(_run())
 

@@ -16,7 +16,12 @@ from market_reporter.modules.analysis.agent.schemas import (
     RuntimeDraft,
 )
 from market_reporter.modules.analysis.agent.service import AgentService
-from market_reporter.schemas import ReportRunSummary, ReportTaskStatus, RunResult
+from market_reporter.schemas import (
+    ReportRunSummary,
+    ReportTaskStatus,
+    RunRequest,
+    RunResult,
+)
 from market_reporter.services.config_store import ConfigStore
 from market_reporter.services.report_service import ReportService
 
@@ -398,6 +403,121 @@ class ReportServiceTest(unittest.TestCase):
             self.assertEqual(payload[0].get("confidence"), 0.88)
             self.assertEqual(payload[0].get("sentiment"), "bullish")
             self.assertEqual(payload[0].get("mode"), "market")
+
+    def test_run_report_supports_report_skill_override(self):
+        original_run = AgentService.run
+        original_to_payload = AgentService.to_analysis_payload
+
+        async def fake_run(self, request, provider_cfg, model, api_key, access_token):
+            del self, provider_cfg, model, api_key, access_token
+            markdown = f"# Agent 分析报告\n\n- 模式: {request.mode}\n"
+            return AgentRunResult(
+                analysis_input={
+                    "tool_results": {
+                        "search_news": {
+                            "items": [{"title": "news-1"}],
+                            "warnings": [],
+                        }
+                    }
+                },
+                runtime_draft=RuntimeDraft(
+                    summary="summary",
+                    sentiment="neutral",
+                    key_levels=[],
+                    risks=[],
+                    action_items=[],
+                    confidence=0.66,
+                    conclusions=["结论一 [E1]"],
+                    scenario_assumptions={"base": "b", "bull": "u", "bear": "d"},
+                    markdown=markdown,
+                    raw={},
+                ),
+                final_report=AgentFinalReport(
+                    mode=request.mode,
+                    question=request.question,
+                    conclusions=["结论一 [E1]"],
+                    market_technical="x",
+                    fundamentals="x",
+                    catalysts_risks="x",
+                    valuation_scenarios="x",
+                    data_sources=[],
+                    guardrail_issues=[],
+                    confidence=0.66,
+                    markdown=markdown,
+                    raw={},
+                ),
+                tool_calls=[],
+                guardrail_issues=[],
+                evidence_map=[],
+            )
+
+        def fake_to_payload(self, request, run_result):
+            del self, request
+            return (
+                AnalysisInput(symbol="AAPL", market="US"),
+                AnalysisOutput(
+                    summary="summary",
+                    sentiment="neutral",
+                    key_levels=[],
+                    risks=[],
+                    action_items=[],
+                    confidence=0.66,
+                    markdown=run_result.final_report.markdown,
+                    raw={},
+                ),
+            )
+
+        AgentService.run = fake_run  # type: ignore[method-assign]
+        AgentService.to_analysis_payload = fake_to_payload  # type: ignore[method-assign]
+
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                root = Path(tmpdir)
+                output_root = root / "output"
+                output_root.mkdir(parents=True, exist_ok=True)
+                config_path = root / "config" / "settings.yaml"
+                store = ConfigStore(config_path=config_path)
+                config = AppConfig(
+                    output_root=output_root,
+                    config_file=config_path,
+                    analysis=AnalysisConfig(
+                        default_provider="mock",
+                        default_model="market-default",
+                        providers=[
+                            AnalysisProviderConfig(
+                                provider_id="mock",
+                                type="mock",
+                                base_url="",
+                                models=["market-default"],
+                                timeout=5,
+                                enabled=True,
+                                auth_mode="none",
+                            )
+                        ],
+                    ),
+                )
+                store.save(config)
+
+                service = ReportService(config_store=store)
+                result = asyncio.run(
+                    service.run_report(
+                        RunRequest(
+                            mode="market",
+                            skill_id="stock_report",
+                            symbol="AAPL",
+                            market="US",
+                        )
+                    )
+                )
+
+                self.assertEqual(result.summary.mode, "stock")
+                raw_payload = json.loads(
+                    result.summary.raw_data_path.read_text(encoding="utf-8")
+                )
+                self.assertEqual(raw_payload.get("skill_id"), "stock_report")
+        finally:
+            AgentService.run = original_run  # type: ignore[method-assign]
+            AgentService.to_analysis_payload = original_to_payload  # type: ignore[method-assign]
 
 
 if __name__ == "__main__":

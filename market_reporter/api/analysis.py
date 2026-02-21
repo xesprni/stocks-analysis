@@ -57,6 +57,7 @@ async def _run_stock_analysis_once(
         return await analysis_service.run_stock_analysis(
             symbol=symbol,
             market=payload.market,
+            skill_id=payload.skill_id,
             provider_id=payload.provider_id,
             model=payload.model,
             interval=payload.interval,

@@ -439,6 +439,7 @@ class AnalysisService:
         self,
         symbol: str,
         market: str,
+        skill_id: Optional[str] = None,
         provider_id: Optional[str] = None,
         model: Optional[str] = None,
         interval: str = "5m",
@@ -470,6 +471,7 @@ class AnalysisService:
         )
         agent_request = AgentRunRequest(
             mode="stock",
+            skill_id=skill_id,
             symbol=normalized_symbol,
             market=market.upper(),
             question=question or "",

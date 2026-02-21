@@ -50,6 +50,8 @@
 3. 转换为 `AnalysisInput + AnalysisOutput`
 4. 持久化到 `stock_analysis_runs`
 
+`StockAnalysisRunRequest` 新增可选字段 `skill_id`，可显式指定 agent skill（兼容默认 `stock` 映射）。
+
 ### 5.2 监听批量告警
 
 `analyze_news_alert_batch(candidates)`

@@ -149,6 +149,7 @@ class AgentFinalReport(BaseModel):
 
 class AgentRunRequest(BaseModel):
     mode: Literal["stock", "market"]
+    skill_id: Optional[str] = None
     symbol: Optional[str] = None
     market: Optional[str] = None
     question: str = ""

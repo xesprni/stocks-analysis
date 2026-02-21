@@ -44,6 +44,14 @@ market 模式仅保留新闻 + 宏观数据工具。
 - `ActionJSONRuntime`：要求模型输出 `action_json_v1` 协议（call_tool/final）。
 - 失败时生成 fallback `RuntimeDraft`，保证输出可用。
 
+## 5.1 Skills（能力抽象）
+
+- Agent 运行入口已改为 skill 驱动，`AgentOrchestrator` 通过 `AgentSkillRegistry` 选择能力。
+- 内置 skill：
+  - `stock_analysis`（别名 `stock`）
+  - `market_overview`（别名 `market`）
+- `AgentRunRequest` 新增 `skill_id`（可选），用于在兼容 `mode` 的同时显式指定 skill。
+
 ## 6. 指标计算后端回退
 
 `compute_tools.ComputeTools`：

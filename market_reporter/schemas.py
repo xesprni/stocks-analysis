@@ -31,6 +31,7 @@ class ReportRunDetail(BaseModel):
 
 
 class RunRequest(BaseModel):
+    skill_id: Optional[str] = None
     news_limit: Optional[int] = Field(default=None, ge=1, le=100)
     flow_periods: Optional[int] = Field(default=None, ge=1, le=120)
     timezone: Optional[str] = None

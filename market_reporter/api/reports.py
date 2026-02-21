@@ -25,7 +25,10 @@ async def run_report(
     payload: Optional[RunRequest] = None,
     report_service: ReportService = Depends(get_report_service),
 ) -> RunResult:
-    return await report_service.run_report(overrides=payload)
+    try:
+        return await report_service.run_report(overrides=payload)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/reports/run/async", response_model=ReportRunTaskView)

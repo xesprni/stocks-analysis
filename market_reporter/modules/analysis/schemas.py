@@ -64,6 +64,7 @@ class ProviderModelsView(BaseModel):
 
 class StockAnalysisRunRequest(BaseModel):
     market: str = Field(pattern="^(CN|HK|US)$")
+    skill_id: Optional[str] = None
     provider_id: Optional[str] = None
     model: Optional[str] = None
     interval: str = Field(default="5m", pattern="^(1m|5m|1d)$")

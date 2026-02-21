@@ -213,6 +213,14 @@ UV_CACHE_DIR=.uv-cache uv run market-reporter db init
 
 ## Agent 行为说明（当前）
 
+### Skills 抽象
+
+1. Agent 与 Report 执行链已支持 skill 注册与分发，不再在主流程中硬编码 mode 分支。
+2. 兼容旧调用：未传 `skill_id` 时仍按 `mode` 自动映射。
+3. 可选显式字段：
+   - `RunRequest.skill_id`（报告 skill）
+   - `StockAnalysisRunRequest.skill_id` / `AgentRunRequest.skill_id`（agent skill）
+
 ### 技术指标后端自动回退
 
 1. 后端优先级固定：`ta-lib -> pandas-ta -> builtin`。

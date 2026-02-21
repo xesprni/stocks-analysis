@@ -21,12 +21,20 @@
 
 1. 读取配置并应用请求覆盖项（provider/model/timezone 等）。
 2. 构建 `NewsService/FundFlowService/AnalysisService/AgentService`。
-3. 执行 agent 分析（market 或 stock）。
+3. 通过 `ReportSkillRegistry` 选择并执行报告 skill（非硬编码分支）。
 4. 生成 `raw_payload` 与 markdown。
 5. 写入 `output/<run_id>/`：
    - `report.md`
    - `raw_data.json`
    - `meta.json`
+
+### 4.1 内置报告 Skills
+
+- `market_report`（别名 `market`）
+- `stock_report`（别名 `stock`）
+- `watchlist_report`（别名 `watchlist`）
+
+`RunRequest` 新增可选字段 `skill_id`，用于显式选择 skill；未传时仍按 `mode` 兼容映射。
 
 ## 5. 产物字段
 
