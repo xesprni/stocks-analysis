@@ -6,17 +6,8 @@ from typing import Any, Dict, List, Optional, Tuple
 from market_reporter.config import AppConfig
 from market_reporter.core.registry import ProviderRegistry
 from market_reporter.modules.market_data.symbol_mapper import normalize_symbol
-from market_reporter.modules.symbol_search.providers.akshare_search_provider import (
-    AkshareSearchProvider,
-)
-from market_reporter.modules.symbol_search.providers.finnhub_search_provider import (
-    FinnhubSearchProvider,
-)
 from market_reporter.modules.symbol_search.providers.longbridge_search_provider import (
     LongbridgeSearchProvider,
-)
-from market_reporter.modules.symbol_search.providers.yfinance_search_provider import (
-    YahooFinanceSearchProvider,
 )
 from market_reporter.modules.symbol_search.schemas import StockSearchResult
 
@@ -58,32 +49,16 @@ class SymbolSearchService:
     def __init__(self, config: AppConfig, registry: ProviderRegistry) -> None:
         self.config = config
         self.registry = registry
-        self.registry.register(self.MODULE_NAME, "yfinance", self._build_yfinance)
-        self.registry.register(self.MODULE_NAME, "akshare", self._build_akshare)
-        self.registry.register(self.MODULE_NAME, "finnhub", self._build_finnhub)
         self.registry.register(self.MODULE_NAME, "longbridge", self._build_longbridge)
         self.registry.register(self.MODULE_NAME, "composite", self._build_composite)
-
-    def _build_yfinance(self):
-        return YahooFinanceSearchProvider()
-
-    def _build_akshare(self):
-        return AkshareSearchProvider()
-
-    def _build_finnhub(self):
-        return FinnhubSearchProvider()
 
     def _build_longbridge(self):
         return LongbridgeSearchProvider(lb_config=self.config.longbridge)
 
     def _build_composite(self):
         providers = {
-            "finnhub": self._build_finnhub(),
-            "yfinance": self._build_yfinance(),
-            "akshare": self._build_akshare(),
+            "longbridge": self._build_longbridge(),
         }
-        if self.config.longbridge.enabled:
-            providers["longbridge"] = self._build_longbridge()
         return CompositeSymbolSearchProvider(providers=providers)
 
     async def search(
@@ -119,6 +94,7 @@ class SymbolSearchService:
             provider_id
             or self.config.symbol_search.default_provider
             or self.config.modules.symbol_search.default_provider
+            or "longbridge"
         )
         # Prefer requested/default provider first, then degrade to composite if it fails.
         provider = self._resolve_provider_with_fallback(chosen_provider=chosen_provider)
@@ -127,13 +103,7 @@ class SymbolSearchService:
                 query=normalized_query, market=resolved_market, limit=resolved_limit
             )
         except Exception:
-            if (chosen_provider or "").strip().lower() == "longbridge":
-                rows = await self._search_fast_fallback(
-                    query=normalized_query,
-                    market=resolved_market,
-                    limit=resolved_limit,
-                )
-            elif chosen_provider != "composite":
+            if (chosen_provider or "").strip().lower() != "composite":
                 fallback = self._resolve_provider_with_fallback(
                     chosen_provider="composite"
                 )
@@ -164,11 +134,14 @@ class SymbolSearchService:
         )
 
     def _resolve_provider_with_fallback(self, chosen_provider: str):
-        provider_id = (chosen_provider or "").strip() or "composite"
+        provider_id = (chosen_provider or "").strip() or "longbridge"
         try:
             return self.registry.resolve(self.MODULE_NAME, provider_id)
         except Exception:
-            return self.registry.resolve(self.MODULE_NAME, "composite")
+            try:
+                return self.registry.resolve(self.MODULE_NAME, "composite")
+            except Exception:
+                return self.registry.resolve(self.MODULE_NAME, "longbridge")
 
     @staticmethod
     def _query_compatible_with_market(query: str, market: str) -> bool:
@@ -244,25 +217,6 @@ class SymbolSearchService:
 
         rows.sort(key=lambda item: item.score, reverse=True)
         return rows[:limit]
-
-    async def _search_fast_fallback(
-        self,
-        query: str,
-        market: str,
-        limit: int,
-    ) -> List[StockSearchResult]:
-        for provider_id in ("finnhub", "yfinance"):
-            try:
-                provider = self.registry.resolve(self.MODULE_NAME, provider_id)
-            except Exception:
-                continue
-            try:
-                rows = await provider.search(query=query, market=market, limit=limit)
-            except Exception:
-                continue
-            if rows:
-                return rows[:limit]
-        return []
 
     @staticmethod
     def _resolve_search_market(query: str, market: str) -> str:
@@ -357,19 +311,7 @@ class CompositeSymbolSearchProvider:
         return merged[:limit]
 
     def _ordered(self, market: str, query: str = ""):
-        market = market.upper()
-        q = query.strip().upper()
-        finnhub = self.providers.get("finnhub")
-        yfinance = self.providers.get("yfinance")
-        akshare = self.providers.get("akshare")
+        del market, query
         longbridge = self.providers.get("longbridge")
-        if market in {"CN", "HK"}:
-            order = [longbridge, finnhub, yfinance, akshare]
-        elif market == "US":
-            order = [finnhub, yfinance, longbridge]
-        elif re.fullmatch(r"[A-Z][A-Z0-9.\-]{0,14}(\.US)?", q):
-            # ALL-market queries that look like US tickers should avoid slow AKShare scan.
-            order = [finnhub, yfinance, longbridge]
-        else:
-            order = [finnhub, yfinance, longbridge, akshare]
+        order = [longbridge]
         return [p for p in order if p is not None]

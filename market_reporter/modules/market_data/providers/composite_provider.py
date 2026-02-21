@@ -5,7 +5,10 @@ import logging
 from typing import Dict, List
 
 from market_reporter.core.types import CurvePoint, KLineBar, Quote
-from market_reporter.modules.market_data.symbol_mapper import looks_like_index_symbol
+from market_reporter.modules.market_data.symbol_mapper import (
+    looks_like_index_symbol,
+    normalize_symbol,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -44,9 +47,95 @@ class CompositeMarketDataProvider:
                     symbol,
                 )
                 continue
-            except Exception:
+            except Exception as exc:
+                pid = getattr(provider, "provider_id", type(provider).__name__)
+                logger.warning(
+                    "Provider %s failed for quote %s:%s – %s: %s",
+                    pid,
+                    market,
+                    symbol,
+                    type(exc).__name__,
+                    exc,
+                )
                 continue
         raise ValueError(f"No available quote provider for {market}:{symbol}")
+
+    async def get_quotes(self, items: List[tuple]) -> List[Quote]:
+        """Batch quote fetch.  Groups items by preferred provider to minimise
+        individual HTTP requests (e.g. yfinance ``download`` handles batches
+        in a single round-trip).
+        """
+        if not items:
+            return []
+
+        # Group items by first-choice provider that supports get_quotes.
+        provider_batches: Dict[str, List[tuple]] = {}
+        individual_items: List[tuple] = []
+
+        for symbol, market in items:
+            ordered = self._ordered(market=market, symbol=symbol)
+            batched = False
+            for provider in ordered:
+                if hasattr(provider, "get_quotes"):
+                    pid = getattr(provider, "provider_id", type(provider).__name__)
+                    provider_batches.setdefault(pid, []).append((symbol, market))
+                    batched = True
+                    break
+            if not batched:
+                individual_items.append((symbol, market))
+
+        results: List[Quote] = []
+
+        # Batch calls per provider.
+        for pid, batch_items in provider_batches.items():
+            provider = next(
+                (
+                    p
+                    for p in self.providers.values()
+                    if getattr(p, "provider_id", None) == pid
+                ),
+                None,
+            )
+            if provider is None:
+                individual_items.extend(batch_items)
+                continue
+            try:
+                rows = await asyncio.wait_for(
+                    provider.get_quotes(batch_items),
+                    timeout=self._timeout * max(1, len(batch_items)),
+                )
+                if rows:
+                    fetched_keys = {
+                        (normalize_symbol(q.symbol, q.market), q.market.upper())
+                        for q in rows
+                    }
+                    results.extend(rows)
+                    # Any items not returned by the batch call fall back to
+                    # individual fetch.
+                    for sym, mkt in batch_items:
+                        key = (normalize_symbol(sym, mkt), mkt.upper())
+                        if key not in fetched_keys:
+                            individual_items.append((sym, mkt))
+                else:
+                    individual_items.extend(batch_items)
+            except Exception as exc:
+                logger.warning(
+                    "Provider %s batch get_quotes failed – %s: %s",
+                    pid,
+                    type(exc).__name__,
+                    exc,
+                )
+                individual_items.extend(batch_items)
+
+        # Fall back to one-by-one for remaining items.
+        for symbol, market in individual_items:
+            try:
+                quote = await self.get_quote(symbol=symbol, market=market)
+                results.append(quote)
+            except Exception:
+                pass
+
+        return results
 
     async def get_kline(
         self, symbol: str, market: str, interval: str, limit: int
@@ -71,7 +160,16 @@ class CompositeMarketDataProvider:
                     symbol,
                 )
                 continue
-            except Exception:
+            except Exception as exc:
+                pid = getattr(provider, "provider_id", type(provider).__name__)
+                logger.warning(
+                    "Provider %s failed for kline %s:%s – %s: %s",
+                    pid,
+                    market,
+                    symbol,
+                    type(exc).__name__,
+                    exc,
+                )
                 continue
         raise ValueError(
             f"No available kline provider for {market}:{symbol}, interval={interval}"
@@ -98,7 +196,16 @@ class CompositeMarketDataProvider:
                     symbol,
                 )
                 continue
-            except Exception:
+            except Exception as exc:
+                pid = getattr(provider, "provider_id", type(provider).__name__)
+                logger.warning(
+                    "Provider %s failed for curve %s:%s – %s: %s",
+                    pid,
+                    market,
+                    symbol,
+                    type(exc).__name__,
+                    exc,
+                )
                 continue
         raise ValueError(f"No available curve provider for {market}:{symbol}")
 

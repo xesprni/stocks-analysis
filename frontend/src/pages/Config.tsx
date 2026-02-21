@@ -357,7 +357,7 @@ export function ConfigPage({
                   <SelectValue placeholder="搜索 Provider" />
                 </SelectTrigger>
                 <SelectContent>
-                  {["composite", "finnhub", "yfinance", "akshare", "longbridge"].map((entry) => (
+                  {["longbridge"].map((entry) => (
                     <SelectItem key={entry} value={entry}>
                       {entry}
                     </SelectItem>

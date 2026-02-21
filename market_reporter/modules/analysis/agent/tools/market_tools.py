@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -9,8 +10,9 @@ from market_reporter.modules.analysis.agent.schemas import PriceBar, PriceHistor
 from market_reporter.modules.market_data.symbol_mapper import (
     normalize_symbol,
     to_longbridge_symbol,
-    to_yfinance_symbol,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def infer_market_from_symbol(symbol: str, fallback: str = "US") -> str:
@@ -26,15 +28,6 @@ class MarketTools:
     def __init__(self, lb_config: Optional[LongbridgeConfig] = None) -> None:
         self._lb_config = lb_config
 
-    @property
-    def _use_longbridge(self) -> bool:
-        return (
-            self._lb_config is not None
-            and self._lb_config.enabled
-            and bool(self._lb_config.app_key)
-            and bool(self._lb_config.access_token)
-        )
-
     async def get_price_history(
         self,
         symbol: str,
@@ -44,81 +37,14 @@ class MarketTools:
         adjusted: bool,
         market: Optional[str] = None,
     ) -> PriceHistoryResult:
-        if self._use_longbridge:
-            return await asyncio.to_thread(
-                self._get_price_history_longbridge,
-                symbol,
-                start,
-                end,
-                interval,
-                adjusted,
-                market,
-            )
         return await asyncio.to_thread(
-            self._get_price_history_sync,
+            self._get_price_history_longbridge,
             symbol,
             start,
             end,
             interval,
             adjusted,
             market,
-        )
-
-    # ------------------------------------------------------------------
-    # yfinance implementation (original)
-    # ------------------------------------------------------------------
-
-    def _get_price_history_sync(
-        self,
-        symbol: str,
-        start: str,
-        end: str,
-        interval: str,
-        adjusted: bool,
-        market: Optional[str],
-    ) -> PriceHistoryResult:
-        import yfinance as yf
-
-        resolved_market = infer_market_from_symbol(symbol, fallback=market or "US")
-        normalized_symbol = normalize_symbol(symbol, resolved_market)
-        yf_symbol = to_yfinance_symbol(normalized_symbol, resolved_market)
-
-        ticker = yf.Ticker(yf_symbol)
-        hist = ticker.history(
-            start=start,
-            end=end,
-            interval=interval,
-            auto_adjust=bool(adjusted),
-        )
-
-        bars = []
-        if hist is not None and not hist.empty:
-            for idx, row in hist.iterrows():
-                bars.append(
-                    PriceBar(
-                        ts=idx.to_pydatetime().isoformat(timespec="seconds"),
-                        open=float(row.get("Open") or 0.0),
-                        high=float(row.get("High") or 0.0),
-                        low=float(row.get("Low") or 0.0),
-                        close=float(row.get("Close") or 0.0),
-                        volume=float(row.get("Volume"))
-                        if row.get("Volume") is not None
-                        else None,
-                    )
-                )
-
-        retrieved_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
-        as_of = bars[-1].ts if bars else retrieved_at
-        return PriceHistoryResult(
-            symbol=normalized_symbol,
-            market=resolved_market,
-            interval=interval,
-            adjusted=bool(adjusted),
-            bars=bars,
-            as_of=as_of,
-            source="yfinance",
-            retrieved_at=retrieved_at,
-            warnings=[] if bars else ["empty_price_history"],
         )
 
     # ------------------------------------------------------------------

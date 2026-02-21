@@ -46,9 +46,9 @@ const emptyConfig: AppConfig = {
   modules: {
     news: { default_provider: "rss" },
     fund_flow: { providers: ["eastmoney", "fred"] },
-    market_data: { default_provider: "composite", poll_seconds: 5 },
+    market_data: { default_provider: "longbridge", poll_seconds: 5 },
     news_listener: { default_provider: "watchlist_listener" },
-    symbol_search: { default_provider: "composite" },
+    symbol_search: { default_provider: "longbridge" },
   },
   analysis: {
     default_provider: "mock",
@@ -68,7 +68,7 @@ const emptyConfig: AppConfig = {
     analysis_model: null,
   },
   symbol_search: {
-    default_provider: "composite",
+    default_provider: "longbridge",
     max_results: 20,
   },
   dashboard: {

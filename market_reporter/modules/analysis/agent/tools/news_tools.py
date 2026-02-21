@@ -1,25 +1,39 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 from datetime import datetime, time, timezone
 from email.utils import parsedate_to_datetime
 from typing import Dict, List, Optional, Tuple
 
+from market_reporter.config import LongbridgeConfig
 from market_reporter.core.types import NewsItem
-from market_reporter.modules.analysis.agent.schemas import NewsSearchItem, NewsSearchResult
-from market_reporter.modules.analysis.agent.tools.market_tools import infer_market_from_symbol
+from market_reporter.modules.analysis.agent.schemas import (
+    NewsSearchItem,
+    NewsSearchResult,
+)
+from market_reporter.modules.analysis.agent.tools.market_tools import (
+    infer_market_from_symbol,
+)
 from market_reporter.modules.market_data.symbol_mapper import (
     normalize_symbol,
     strip_market_suffix,
-    to_yfinance_symbol,
+    to_longbridge_symbol,
 )
 from market_reporter.modules.news.service import NewsService
 
+logger = logging.getLogger(__name__)
+
 
 class NewsTools:
-    def __init__(self, news_service: NewsService) -> None:
+    def __init__(
+        self,
+        news_service: NewsService,
+        lb_config: Optional[LongbridgeConfig] = None,
+    ) -> None:
         self.news_service = news_service
+        self._lb_config = lb_config
         self._alias_cache: Dict[str, List[str]] = {}
 
     async def search_news(
@@ -52,9 +66,7 @@ class NewsTools:
         else:
             words = [token for token in (query or "").lower().split() if token]
             selected_rows = [
-                row
-                for row, _ in filtered
-                if self._match_query_words(row, words)
+                row for row, _ in filtered if self._match_query_words(row, words)
             ]
             selected = self._to_search_items(rows=selected_rows, limit=limit)
             extra_warnings = list(warnings)
@@ -113,7 +125,9 @@ class NewsTools:
             fallback=market or "US",
         )
         normalized_symbol = (
-            normalize_symbol(resolved_symbol, resolved_market) if resolved_symbol else ""
+            normalize_symbol(resolved_symbol, resolved_market)
+            if resolved_symbol
+            else ""
         )
         stripped_symbol = strip_market_suffix(normalized_symbol)
 
@@ -154,34 +168,52 @@ class NewsTools:
         if cached is not None:
             return list(cached)
 
-        aliases = await asyncio.to_thread(
-            self._load_company_aliases_sync,
-            normalized_symbol,
-            resolved_market,
-        )
+        try:
+            aliases = await asyncio.to_thread(
+                self._load_company_aliases_longbridge,
+                normalized_symbol,
+                resolved_market,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Longbridge company aliases failed for %s: %s",
+                normalized_symbol,
+                exc,
+            )
+            aliases = []
+
         self._alias_cache[cache_key] = list(aliases)
         return aliases
 
-    @staticmethod
-    def _load_company_aliases_sync(symbol: str, market: str) -> List[str]:
-        try:
-            import yfinance as yf
-        except Exception:
-            return []
+    def _load_company_aliases_longbridge(self, symbol: str, market: str) -> List[str]:
+        """Resolve company name aliases via Longbridge static_info API."""
+        from longbridge.openapi import Config, QuoteContext
 
-        try:
-            yf_symbol = to_yfinance_symbol(symbol, market)
-            info = yf.Ticker(yf_symbol).info or {}
-        except Exception:
+        assert self._lb_config is not None
+        config = Config(
+            app_key=self._lb_config.app_key,
+            app_secret=self._lb_config.app_secret,
+            access_token=self._lb_config.access_token,
+        )
+        ctx = QuoteContext(config)
+
+        lb_symbol = to_longbridge_symbol(symbol, market)
+        static_list = ctx.static_info([lb_symbol])
+        if not static_list:
             return []
 
         aliases: List[str] = []
-        for key in ("shortName", "longName", "displayName"):
-            value = info.get(key)
+        si = static_list[0]
+        for attr in ("name_cn", "name_en", "name_hk"):
+            value = getattr(si, attr, None)
             if isinstance(value, str) and value.strip():
                 aliases.append(value.strip())
+        return NewsTools._dedup_aliases(aliases)
+
+    @staticmethod
+    def _dedup_aliases(aliases: List[str]) -> List[str]:
         dedup: List[str] = []
-        seen = set()
+        seen: set[str] = set()
         for alias in aliases:
             token = alias.lower()
             if token in seen:

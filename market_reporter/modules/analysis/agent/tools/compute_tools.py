@@ -133,6 +133,7 @@ class ComputeTools:
 
         rows: List[PeerCompareRow] = []
         warnings: List[str] = []
+        data_source = "computed"
         if not peer_list:
             warnings.append("peer_list_missing")
 
@@ -143,6 +144,8 @@ class ComputeTools:
                     symbol=ticker,
                     market=market,
                 )
+                if data_source == "computed":
+                    data_source = f"{result.source}/computed"
                 metrics_payload: Dict[str, Optional[float]] = {}
                 for key in resolved_metrics:
                     if key == "net_margin":
@@ -165,7 +168,7 @@ class ComputeTools:
             symbol=symbol,
             rows=rows,
             as_of=retrieved_at,
-            source="yfinance/computed",
+            source=data_source,
             retrieved_at=retrieved_at,
             warnings=warnings,
         )

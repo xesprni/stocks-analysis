@@ -9,15 +9,6 @@ from market_reporter.core.registry import ProviderRegistry
 from market_reporter.core.types import CurvePoint, KLineBar, Quote
 from market_reporter.infra.db.repos import MarketDataRepo
 from market_reporter.infra.db.session import session_scope
-from market_reporter.modules.market_data.providers.akshare_provider import (
-    AkshareMarketDataProvider,
-)
-from market_reporter.modules.market_data.providers.composite_provider import (
-    CompositeMarketDataProvider,
-)
-from market_reporter.modules.market_data.providers.yfinance_provider import (
-    YahooFinanceMarketDataProvider,
-)
 from market_reporter.modules.market_data.symbol_mapper import normalize_symbol
 
 
@@ -28,16 +19,8 @@ class MarketDataService:
         self.config = config
         self.registry = registry
         self._provider_instances: dict[str, object] = {}
-        self.registry.register(self.MODULE_NAME, "yfinance", self._build_yfinance)
-        self.registry.register(self.MODULE_NAME, "akshare", self._build_akshare)
         self.registry.register(self.MODULE_NAME, "longbridge", self._build_longbridge)
         self.registry.register(self.MODULE_NAME, "composite", self._build_composite)
-
-    def _build_yfinance(self):
-        return YahooFinanceMarketDataProvider()
-
-    def _build_akshare(self):
-        return AkshareMarketDataProvider()
 
     def _build_longbridge(self):
         from market_reporter.modules.market_data.providers.longbridge_provider import (
@@ -47,21 +30,20 @@ class MarketDataService:
         return LongbridgeMarketDataProvider(lb_config=self.config.longbridge)
 
     def _build_composite(self):
-        providers = {
-            "yfinance": self._build_yfinance(),
-            "akshare": self._build_akshare(),
-        }
-        if self.config.longbridge.enabled:
-            providers["longbridge"] = self._build_longbridge()
-        return CompositeMarketDataProvider(providers=providers)
+        # Longbridge-only mode: keep legacy provider_id compatibility.
+        return self._build_longbridge()
 
     def _provider(self, provider_id: Optional[str] = None):
         target = (
             provider_id or self.config.modules.market_data.default_provider or ""
-        ).strip() or "composite"
+        ).strip() or "longbridge"
         resolved_target = target
         if not self.registry.has(self.MODULE_NAME, resolved_target):
-            resolved_target = "composite"
+            resolved_target = (
+                "longbridge"
+                if self.registry.has(self.MODULE_NAME, "longbridge")
+                else "composite"
+            )
         instance = self._provider_instances.get(resolved_target)
         if instance is not None:
             return instance
@@ -69,8 +51,12 @@ class MarketDataService:
             instance = self.registry.resolve(self.MODULE_NAME, resolved_target)
         except Exception:
             # Provider fallback guarantees read APIs remain available with degraded data quality.
-            resolved_target = "composite"
-            instance = self.registry.resolve(self.MODULE_NAME, resolved_target)
+            if self.registry.has(self.MODULE_NAME, "longbridge"):
+                resolved_target = "longbridge"
+                instance = self.registry.resolve(self.MODULE_NAME, resolved_target)
+            else:
+                resolved_target = "composite"
+                instance = self.registry.resolve(self.MODULE_NAME, resolved_target)
         self._provider_instances[resolved_target] = instance
         return instance
 
@@ -137,7 +123,7 @@ class MarketDataService:
         normalized_symbol = normalize_symbol(symbol, market)
         requested_provider_id = (
             provider_id or self.config.modules.market_data.default_provider or ""
-        ).strip() or "composite"
+        ).strip() or "longbridge"
         try:
             provider = self._provider(provider_id=provider_id)
             quote = await provider.get_quote(
@@ -185,7 +171,7 @@ class MarketDataService:
         normalized_symbol = normalize_symbol(symbol, market)
         requested_provider_id = (
             provider_id or self.config.modules.market_data.default_provider or ""
-        ).strip() or "composite"
+        ).strip() or "longbridge"
         try:
             provider = self._provider(provider_id=provider_id)
             rows = await provider.get_kline(
@@ -248,7 +234,7 @@ class MarketDataService:
         normalized_symbol = normalize_symbol(symbol, market)
         requested_provider_id = (
             provider_id or self.config.modules.market_data.default_provider or ""
-        ).strip() or "composite"
+        ).strip() or "longbridge"
         try:
             provider = self._provider(provider_id=provider_id)
             rows = await provider.get_curve(

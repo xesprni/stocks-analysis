@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import datetime, timezone
 from typing import List, Optional
+
+logger = logging.getLogger(__name__)
 
 from market_reporter.config import AppConfig
 from market_reporter.core.registry import ProviderRegistry
@@ -178,8 +181,13 @@ class DashboardService:
             rows = await self.market_data_service.get_quotes(items=items)
             if rows:
                 return rows
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning(
+                "Batch get_quotes failed for %d items – %s: %s",
+                len(items),
+                type(exc).__name__,
+                exc,
+            )
         return await asyncio.gather(
             *[
                 self._safe_quote(symbol=symbol, market=market)
@@ -200,7 +208,14 @@ class DashboardService:
             return await self.market_data_service.get_quote(
                 symbol=cleaned_symbol, market=cleaned_market
             )
-        except Exception:
+        except Exception as exc:
+            logger.warning(
+                "get_quote failed for %s:%s – %s: %s",
+                cleaned_market,
+                cleaned_symbol,
+                type(exc).__name__,
+                exc,
+            )
             return self._unavailable_quote(symbol=cleaned_symbol, market=cleaned_market)
 
     @staticmethod

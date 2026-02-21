@@ -221,6 +221,7 @@ class MarketDataServiceQuoteFallbackTest(unittest.IsolatedAsyncioTestCase):
                 config_file=root / "config" / "settings.yaml",
                 database=DatabaseConfig(url=db_url),
             )
+            config.modules.market_data.default_provider = "composite"
             provider = _BatchPartialProvider()
             service = MarketDataService(
                 config=config,

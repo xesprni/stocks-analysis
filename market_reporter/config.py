@@ -32,7 +32,7 @@ class ModuleFundFlowConfig(BaseModel):
 
 
 class ModuleMarketDataConfig(BaseModel):
-    default_provider: str = "composite"
+    default_provider: str = "longbridge"
     poll_seconds: int = Field(default=5, ge=3, le=30)
 
 
@@ -41,7 +41,7 @@ class ModuleNewsListenerConfig(BaseModel):
 
 
 class ModuleSymbolSearchConfig(BaseModel):
-    default_provider: str = "composite"
+    default_provider: str = "longbridge"
 
 
 class ModulesConfig(BaseModel):
@@ -89,7 +89,7 @@ class NewsListenerConfig(BaseModel):
 
 
 class SymbolSearchConfig(BaseModel):
-    default_provider: str = "composite"
+    default_provider: str = "longbridge"
     max_results: int = Field(default=20, ge=5, le=100)
 
 

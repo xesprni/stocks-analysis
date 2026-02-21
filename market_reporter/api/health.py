@@ -36,7 +36,7 @@ async def ui_options(
         ],
         news_providers=["rss"],
         fund_flow_providers=["eastmoney", "fred"],
-        market_data_providers=["composite", "akshare", "yfinance"],
+        market_data_providers=["longbridge"],
         analysis_providers=analysis_provider_ids,
         analysis_models_by_provider={},
         listener_threshold_presets=[1.0, 1.5, 2.0, 3.0, 5.0],

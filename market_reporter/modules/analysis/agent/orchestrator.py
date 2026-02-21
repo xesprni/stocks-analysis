@@ -42,7 +42,7 @@ class AgentOrchestrator:
         self.market_tools = MarketTools(lb_config=lb_config)
         self.fundamentals_tools = FundamentalsTools(lb_config=lb_config)
         self.filings_tools = FilingsTools()
-        self.news_tools = NewsTools(news_service=news_service)
+        self.news_tools = NewsTools(news_service=news_service, lb_config=lb_config)
         self.macro_tools = MacroTools(fund_flow_service=fund_flow_service)
         self.compute_tools = ComputeTools(fundamentals_tools=self.fundamentals_tools)
         self.guardrails = AgentGuardrails()

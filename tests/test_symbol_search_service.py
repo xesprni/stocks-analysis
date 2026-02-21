@@ -75,8 +75,8 @@ class SymbolSearchServiceTest(unittest.IsolatedAsyncioTestCase):
     async def test_composite_fallback(self):
         provider = CompositeSymbolSearchProvider(
             providers={
+                "longbridge": _OkProvider(),
                 "finnhub": _FailProvider(),
-                "yfinance": _OkProvider(),
             }
         )
         rows = await provider.search(query="AAPL", market="US", limit=5)
@@ -86,8 +86,7 @@ class SymbolSearchServiceTest(unittest.IsolatedAsyncioTestCase):
     async def test_composite_all_failed_returns_empty(self):
         provider = CompositeSymbolSearchProvider(
             providers={
-                "yfinance": _FailProvider(),
-                "akshare": _FailProvider(),
+                "longbridge": _FailProvider(),
             }
         )
         rows = await provider.search(query="AAPL", market="US", limit=5)

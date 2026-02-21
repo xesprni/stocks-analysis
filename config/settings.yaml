@@ -14,7 +14,7 @@ modules:
     - eastmoney
     - fred
   market_data:
-    default_provider: composite
+    default_provider: longbridge
     poll_seconds: 5
   news_listener:
     default_provider: watchlist_listener
@@ -91,15 +91,15 @@ dashboard:
     market: HK
     alias: 恒生科技
     enabled: true
-  - symbol: ^GSPC
+  - symbol: .SPX
     market: US
     alias: S&P 500
     enabled: true
-  - symbol: ^IXIC
+  - symbol: .IXIC
     market: US
     alias: NASDAQ
     enabled: true
-  - symbol: ^DJI
+  - symbol: .DJI
     market: US
     alias: Dow Jones
     enabled: true
