@@ -478,15 +478,39 @@ class AgentReportFormatter:
     def _build_fundamentals(mode: str, tool_results: Dict[str, Dict[str, Any]]) -> str:
         if mode != "stock":
             return "N/A（市场模式聚合宏观与新闻，不输出单个公司财务拆解）"
-        fundamentals = tool_results.get("get_fundamentals", {})
+        fundamentals = tool_results.get("get_fundamentals_info")
+        if not isinstance(fundamentals, dict):
+            fundamentals = tool_results.get("get_fundamentals", {})
         metrics = fundamentals.get("metrics") if isinstance(fundamentals, dict) else {}
-        if not isinstance(metrics, dict) or not metrics:
+        if not isinstance(metrics, dict):
+            metrics = {}
+
+        reports_payload = tool_results.get("get_financial_reports")
+        latest_metrics = (
+            reports_payload.get("latest_metrics")
+            if isinstance(reports_payload, dict)
+            else {}
+        )
+        if not isinstance(latest_metrics, dict):
+            latest_metrics = {}
+
+        merged = dict(metrics)
+        for key, value in latest_metrics.items():
+            if value is not None:
+                merged[key] = value
+
+        if not merged:
             return "基本面数据不足。"
+
+        def value_of(name: str) -> Any:
+            return merged.get(name)
+
         return (
-            f"营收: {metrics.get('revenue')}; 净利润: {metrics.get('net_income')}; "
-            f"经营现金流: {metrics.get('operating_cash_flow')}; 自由现金流: {metrics.get('free_cash_flow')}; "
-            f"总资产: {metrics.get('total_assets')}; 总负债: {metrics.get('total_liabilities')}; "
-            f"股东权益: {metrics.get('shareholder_equity')}。"
+            f"营收: {value_of('revenue')}; 净利润: {value_of('net_income')}; "
+            f"经营现金流: {value_of('operating_cash_flow')}; 自由现金流: {value_of('free_cash_flow')}; "
+            f"总资产: {value_of('total_assets')}; 总负债: {value_of('total_liabilities')}; "
+            f"股东权益: {value_of('shareholder_equity')}; "
+            f"TTM PE: {value_of('trailing_pe')}; PB: {value_of('pb_ratio')}。"
         )
 
     @staticmethod
@@ -497,9 +521,16 @@ class AgentReportFormatter:
     ) -> str:
         news = tool_results.get("search_news", {})
         items = news.get("items") if isinstance(news, dict) else []
+        web_search = tool_results.get("search_web", {})
+        web_items = web_search.get("items") if isinstance(web_search, dict) else []
         top_news = []
         if isinstance(items, list):
             for row in items[:3]:
+                if not isinstance(row, dict):
+                    continue
+                top_news.append(f"{row.get('published_at', '')} {row.get('title', '')}")
+        if not top_news and isinstance(web_items, list):
+            for row in web_items[:3]:
                 if not isinstance(row, dict):
                     continue
                 top_news.append(f"{row.get('published_at', '')} {row.get('title', '')}")

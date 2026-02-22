@@ -35,18 +35,18 @@ class FundamentalsResult(ToolEnvelope):
     metrics: Dict[str, Optional[float]] = Field(default_factory=dict)
 
 
-class FilingItem(BaseModel):
-    form_type: str
-    filed_at: str = ""
-    title: str = ""
-    link: str = ""
-    content: str = ""
+class FinancialReportItem(BaseModel):
+    report_date: str = ""
+    statement_type: str = ""
+    period_type: str = ""
+    metrics: Dict[str, Optional[float]] = Field(default_factory=dict)
 
 
-class FilingsResult(ToolEnvelope):
-    symbol_or_cik: str
-    form_type: str
-    filings: List[FilingItem] = Field(default_factory=list)
+class FinancialReportsResult(ToolEnvelope):
+    symbol: str
+    market: str
+    reports: List[FinancialReportItem] = Field(default_factory=list)
+    latest_metrics: Dict[str, Optional[float]] = Field(default_factory=dict)
 
 
 class NewsSearchItem(BaseModel):
@@ -60,6 +60,19 @@ class NewsSearchItem(BaseModel):
 class NewsSearchResult(ToolEnvelope):
     query: str
     items: List[NewsSearchItem] = Field(default_factory=list)
+
+
+class WebSearchItem(BaseModel):
+    title: str
+    source: str = ""
+    link: str = ""
+    published_at: str = ""
+    snippet: str = ""
+
+
+class WebSearchResult(ToolEnvelope):
+    query: str
+    items: List[WebSearchItem] = Field(default_factory=list)
 
 
 class MacroSeriesItem(BaseModel):

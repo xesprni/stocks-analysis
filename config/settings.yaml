@@ -103,7 +103,7 @@ dashboard:
     market: US
     alias: Dow Jones
     enabled: true
-  auto_refresh_enabled: false
+  auto_refresh_enabled: true
   auto_refresh_seconds: 60
 agent:
   enabled: true

@@ -32,7 +32,7 @@ market_reporter/
     fund_flow/               # 资金流模块
     watchlist/               # watchlist 服务
     analysis/                # 统一分析模块（含 agent 子包）
-      agent/                 # agent 工具链（价格/新闻/指标/宏观/filings）
+      agent/                 # agent 工具链（价格/基本面/财报/新闻/联网检索/指标/宏观）
     reports/                 # 报告生成与任务管理
   infra/
     db/                      # SQLModel + repository

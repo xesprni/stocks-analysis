@@ -9,13 +9,14 @@ from market_reporter.core.registry import ProviderRegistry
 from market_reporter.modules.analysis.agent.orchestrator import AgentOrchestrator
 from market_reporter.modules.analysis.agent.schemas import (
     AgentRunRequest,
-    FilingsResult,
+    FinancialReportsResult,
     FundamentalsResult,
     IndicatorsResult,
     NewsSearchResult,
     PriceBar,
     PriceHistoryResult,
     RuntimeDraft,
+    WebSearchResult,
 )
 
 
@@ -93,16 +94,28 @@ class AgentOrchestratorTimeframesTest(unittest.TestCase):
                 warnings=[],
             )
 
-        async def fake_filings(**kwargs):
+        async def fake_financial_reports(**kwargs):
             del kwargs
-            return FilingsResult(
-                symbol_or_cik="AAPL",
-                form_type="10-K",
-                filings=[],
+            return FinancialReportsResult(
+                symbol="AAPL",
+                market="US",
+                reports=[],
+                latest_metrics={},
                 as_of="2026-02-12",
-                source="sec",
+                source="yfinance_financials",
                 retrieved_at="2026-02-13T00:00:00+00:00",
-                warnings=["no_filings_found"],
+                warnings=["empty_financial_reports"],
+            )
+
+        async def fake_web_search(**kwargs):
+            del kwargs
+            return WebSearchResult(
+                query="AAPL",
+                items=[],
+                as_of="2026-02-12",
+                source="bing_rss",
+                retrieved_at="2026-02-13T00:00:00+00:00",
+                warnings=[],
             )
 
         def fake_compute(price_df, indicators, symbol, indicator_profile):
@@ -149,9 +162,12 @@ class AgentOrchestratorTimeframesTest(unittest.TestCase):
             )
 
         orchestrator.market_tools.get_price_history = fake_price  # type: ignore[method-assign]
-        orchestrator.fundamentals_tools.get_fundamentals = fake_fundamentals  # type: ignore[method-assign]
+        orchestrator.fundamentals_tools.get_fundamentals_info = fake_fundamentals  # type: ignore[method-assign]
         orchestrator.news_tools.search_news = fake_news  # type: ignore[method-assign]
-        orchestrator.filings_tools.get_filings = fake_filings  # type: ignore[method-assign]
+        orchestrator.financial_reports_tools.get_financial_reports = (
+            fake_financial_reports  # type: ignore[method-assign]
+        )
+        orchestrator.web_search_tools.search_web = fake_web_search  # type: ignore[method-assign]
         orchestrator.compute_tools.compute_indicators = fake_compute  # type: ignore[method-assign]
         orchestrator._run_runtime = fake_runtime  # type: ignore[method-assign]
 

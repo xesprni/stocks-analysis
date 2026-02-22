@@ -11,11 +11,12 @@ from market_reporter.modules.analysis.agent.schemas import (
 )
 from market_reporter.modules.analysis.agent.tools import (
     ComputeTools,
-    FilingsTools,
+    FinancialReportsTools,
     FundamentalsTools,
     MacroTools,
     MarketTools,
     NewsTools,
+    WebSearchTools,
 )
 
 TraceBuilder = Callable[[str, Dict[str, Any], Dict[str, Any]], ToolCallTrace]
@@ -54,14 +55,16 @@ class StockAnalysisSkill:
         self,
         market_tools: MarketTools,
         fundamentals_tools: FundamentalsTools,
-        filings_tools: FilingsTools,
+        financial_reports_tools: FinancialReportsTools,
         news_tools: NewsTools,
+        web_search_tools: WebSearchTools,
         compute_tools: ComputeTools,
     ) -> None:
         self.market_tools = market_tools
         self.fundamentals_tools = fundamentals_tools
-        self.filings_tools = filings_tools
+        self.financial_reports_tools = financial_reports_tools
         self.news_tools = news_tools
+        self.web_search_tools = web_search_tools
         self.compute_tools = compute_tools
 
     async def prepare(
@@ -120,16 +123,18 @@ class StockAnalysisSkill:
             "warnings": list(dict.fromkeys(price_warnings)),
         }
 
-        fundamentals_result = await self.fundamentals_tools.get_fundamentals(
+        fundamentals_result = await self.fundamentals_tools.get_fundamentals_info(
             symbol=symbol,
             market=market,
         )
-        tool_results["get_fundamentals"] = fundamentals_result.model_dump(mode="json")
+        tool_results["get_fundamentals_info"] = fundamentals_result.model_dump(
+            mode="json"
+        )
         traces.append(
             trace_builder(
-                "get_fundamentals",
+                "get_fundamentals_info",
                 {"symbol": symbol},
-                tool_results["get_fundamentals"],
+                tool_results["get_fundamentals_info"],
             )
         )
 
@@ -151,6 +156,47 @@ class StockAnalysisSkill:
                     "to": ranges["news_to"],
                 },
                 tool_results["search_news"],
+            )
+        )
+
+        web_query = f"{symbol} {request.question}".strip()
+        web_result = await self.web_search_tools.search_web(
+            query=web_query,
+            limit=12,
+            from_date=ranges["news_from"],
+            to_date=ranges["news_to"],
+        )
+        tool_results["search_web"] = web_result.model_dump(mode="json")
+        traces.append(
+            trace_builder(
+                "search_web",
+                {
+                    "query": web_query,
+                    "limit": 12,
+                    "from": ranges["news_from"],
+                    "to": ranges["news_to"],
+                },
+                tool_results["search_web"],
+            )
+        )
+
+        financial_reports = await self.financial_reports_tools.get_financial_reports(
+            symbol=symbol,
+            market=market,
+            limit=6,
+        )
+        tool_results["get_financial_reports"] = financial_reports.model_dump(
+            mode="json"
+        )
+        traces.append(
+            trace_builder(
+                "get_financial_reports",
+                {
+                    "symbol": symbol,
+                    "market": market,
+                    "limit": 6,
+                },
+                tool_results["get_financial_reports"],
             )
         )
 
@@ -178,28 +224,6 @@ class StockAnalysisSkill:
                 tool_results["compute_indicators"],
             )
         )
-
-        if market == "US":
-            filings_result = await self.filings_tools.get_filings(
-                symbol_or_cik=symbol,
-                form_type="10-K",
-                from_date=ranges["filing_from"],
-                to_date=ranges["filing_to"],
-                market=market,
-            )
-            tool_results["get_filings"] = filings_result.model_dump(mode="json")
-            traces.append(
-                trace_builder(
-                    "get_filings",
-                    {
-                        "symbol_or_cik": symbol,
-                        "form_type": "10-K",
-                        "from": ranges["filing_from"],
-                        "to": ranges["filing_to"],
-                    },
-                    tool_results["get_filings"],
-                )
-            )
 
         if request.peer_list:
             peer_result = await self.compute_tools.peer_compare(
@@ -237,11 +261,16 @@ class MarketOverviewSkill:
     aliases = ("market",)
 
     def __init__(
-        self, config: AppConfig, news_tools: NewsTools, macro_tools: MacroTools
+        self,
+        config: AppConfig,
+        news_tools: NewsTools,
+        macro_tools: MacroTools,
+        web_search_tools: WebSearchTools,
     ):
         self.config = config
         self.news_tools = news_tools
         self.macro_tools = macro_tools
+        self.web_search_tools = web_search_tools
 
     async def prepare(
         self,
@@ -273,6 +302,26 @@ class MarketOverviewSkill:
                     "to": ranges["news_to"],
                 },
                 tool_results["search_news"],
+            )
+        )
+
+        web_result = await self.web_search_tools.search_web(
+            query=market_query,
+            limit=12,
+            from_date=ranges["news_from"],
+            to_date=ranges["news_to"],
+        )
+        tool_results["search_web"] = web_result.model_dump(mode="json")
+        traces.append(
+            trace_builder(
+                "search_web",
+                {
+                    "query": market_query,
+                    "limit": 12,
+                    "from": ranges["news_from"],
+                    "to": ranges["news_to"],
+                },
+                tool_results["search_web"],
             )
         )
 
@@ -362,7 +411,8 @@ def _market_tool_specs() -> List[Dict[str, Any]]:
     return [
         item
         for item in _base_tool_specs()
-        if item.get("function", {}).get("name") in {"search_news", "get_macro_data"}
+        if item.get("function", {}).get("name")
+        in {"search_news", "search_web", "get_macro_data"}
     ]
 
 
@@ -389,8 +439,8 @@ def _base_tool_specs() -> List[Dict[str, Any]]:
         {
             "type": "function",
             "function": {
-                "name": "get_fundamentals",
-                "description": "Get fundamentals for one symbol",
+                "name": "get_fundamentals_info",
+                "description": "Get company fundamentals via Longbridge SDK",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -403,16 +453,14 @@ def _base_tool_specs() -> List[Dict[str, Any]]:
         {
             "type": "function",
             "function": {
-                "name": "get_filings",
-                "description": "Get US filings",
+                "name": "get_financial_reports",
+                "description": "Get company financial statements",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "symbol_or_cik": {"type": "string"},
+                        "symbol": {"type": "string"},
                         "market": {"type": "string"},
-                        "form_type": {"type": "string"},
-                        "from": {"type": "string"},
-                        "to": {"type": "string"},
+                        "limit": {"type": "integer"},
                     },
                 },
             },
@@ -431,6 +479,22 @@ def _base_tool_specs() -> List[Dict[str, Any]]:
                         "from": {"type": "string"},
                         "to": {"type": "string"},
                         "limit": {"type": "integer"},
+                    },
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "search_web",
+                "description": "Search web results from internet sources",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string"},
+                        "limit": {"type": "integer"},
+                        "from": {"type": "string"},
+                        "to": {"type": "string"},
                     },
                 },
             },

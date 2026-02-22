@@ -161,7 +161,7 @@ class ActionJSONRuntime:
     @staticmethod
     def _preview_result(result: Dict[str, Any]) -> Dict[str, Any]:
         preview = dict(result)
-        for key in ("bars", "items", "points", "rows", "filings"):
+        for key in ("bars", "items", "points", "rows", "reports"):
             value = preview.get(key)
             if isinstance(value, list) and len(value) > 3:
                 preview[key] = value[:3]

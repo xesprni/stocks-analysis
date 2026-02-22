@@ -21,15 +21,46 @@ logger = logging.getLogger(__name__)
 class FundamentalsTools:
     def __init__(self, lb_config: Optional[LongbridgeConfig] = None) -> None:
         self._lb_config = lb_config
+        self._use_longbridge = bool(
+            lb_config
+            and lb_config.enabled
+            and lb_config.app_key
+            and lb_config.app_secret
+            and lb_config.access_token
+        )
+
+    async def get_fundamentals_info(
+        self,
+        symbol: str,
+        market: Optional[str] = None,
+    ) -> FundamentalsResult:
+        if self._use_longbridge:
+            try:
+                return await asyncio.to_thread(
+                    self._get_fundamentals_longbridge,
+                    symbol,
+                    market,
+                )
+            except Exception:
+                fallback = await asyncio.to_thread(
+                    self._get_fundamentals_sync,
+                    symbol,
+                    market,
+                )
+                fallback.warnings.append("longbridge_failed_fallback_yfinance")
+                return fallback
+        return await asyncio.to_thread(
+            self._get_fundamentals_sync,
+            symbol,
+            market,
+        )
 
     async def get_fundamentals(
         self,
         symbol: str,
         market: Optional[str] = None,
     ) -> FundamentalsResult:
-        return await asyncio.to_thread(
-            self._get_fundamentals_longbridge, symbol, market
-        )
+        return await self.get_fundamentals_info(symbol=symbol, market=market)
 
     # ------------------------------------------------------------------
     # Longbridge implementation
@@ -40,10 +71,24 @@ class FundamentalsTools:
         symbol: str,
         market: Optional[str],
     ) -> FundamentalsResult:
-        from longbridge.openapi import CalcIndex, Config, QuoteContext
-
         resolved_market = infer_market_from_symbol(symbol, fallback=market or "US")
         normalized_symbol = normalize_symbol(symbol, resolved_market)
+        if not self._use_longbridge:
+            return self._empty_result(
+                symbol=normalized_symbol,
+                market=resolved_market,
+                warnings=["longbridge_not_configured"],
+            )
+
+        try:
+            from longbridge.openapi import CalcIndex, Config, QuoteContext
+        except Exception:
+            return self._empty_result(
+                symbol=normalized_symbol,
+                market=resolved_market,
+                warnings=["longbridge_sdk_unavailable"],
+            )
+
         lb_symbol = to_longbridge_symbol(normalized_symbol, resolved_market)
 
         assert self._lb_config is not None
@@ -123,6 +168,89 @@ class FundamentalsTools:
         )
 
     # ------------------------------------------------------------------
+    # yfinance fallback implementation
+    # ------------------------------------------------------------------
+
+    def _get_fundamentals_sync(
+        self,
+        symbol: str,
+        market: Optional[str],
+    ) -> FundamentalsResult:
+        import yfinance as yf
+
+        resolved_market = infer_market_from_symbol(symbol, fallback=market or "US")
+        normalized_symbol = normalize_symbol(symbol, resolved_market)
+        retrieved_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        warnings: list[str] = []
+
+        metrics: Dict[str, Optional[float]] = {}
+        try:
+            ticker = yf.Ticker(normalized_symbol)
+            info = getattr(ticker, "info", {}) or {}
+            metrics["trailing_pe"] = self._safe_float(info.get("trailingPE"))
+            metrics["pb_ratio"] = self._safe_float(info.get("priceToBook"))
+            metrics["market_cap"] = self._safe_float(info.get("marketCap"))
+            metrics["dividend_yield"] = self._safe_float(info.get("dividendYield"))
+            metrics["eps_ttm"] = self._safe_float(info.get("trailingEps"))
+            metrics["revenue"] = self._safe_float(info.get("totalRevenue"))
+            metrics["net_income"] = self._safe_float(info.get("netIncomeToCommon"))
+
+            cashflow = getattr(ticker, "cashflow", None)
+            if hasattr(cashflow, "columns") and len(getattr(cashflow, "columns", [])):
+                latest_col = cashflow.columns[0]
+                metrics["operating_cash_flow"] = self._pick_metric(
+                    cashflow,
+                    [
+                        "Operating Cash Flow",
+                        "Total Cash From Operating Activities",
+                    ],
+                    latest_col,
+                )
+                metrics["free_cash_flow"] = self._pick_metric(
+                    cashflow,
+                    ["Free Cash Flow"],
+                    latest_col,
+                )
+
+            balance = getattr(ticker, "balance_sheet", None)
+            if hasattr(balance, "columns") and len(getattr(balance, "columns", [])):
+                latest_col = balance.columns[0]
+                metrics["total_assets"] = self._pick_metric(
+                    balance,
+                    ["Total Assets"],
+                    latest_col,
+                )
+                metrics["total_liabilities"] = self._pick_metric(
+                    balance,
+                    [
+                        "Total Liabilities Net Minority Interest",
+                        "Total Liab",
+                        "Total Liabilities",
+                    ],
+                    latest_col,
+                )
+                metrics["shareholder_equity"] = self._pick_metric(
+                    balance,
+                    ["Stockholders Equity", "Total Stockholder Equity"],
+                    latest_col,
+                )
+        except Exception as exc:
+            warnings.append(f"yfinance_fundamentals_failed:{exc}")
+
+        if not any(value is not None for value in metrics.values()):
+            warnings.append("empty_fundamentals")
+
+        return FundamentalsResult(
+            symbol=normalized_symbol,
+            market=resolved_market,
+            metrics=metrics,
+            as_of=retrieved_at,
+            source="yfinance",
+            retrieved_at=retrieved_at,
+            warnings=warnings,
+        )
+
+    # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
 
@@ -135,3 +263,33 @@ class FundamentalsTools:
             return f if f == f else None  # filter NaN
         except (TypeError, ValueError):
             return None
+
+    @staticmethod
+    def _pick_metric(frame: Any, candidates: list[str], column: Any) -> Optional[float]:
+        for name in candidates:
+            try:
+                if name not in frame.index:
+                    continue
+                return FundamentalsTools._safe_float(frame.at[name, column])
+            except Exception:
+                continue
+        return None
+
+    def _empty_result(
+        self,
+        symbol: str,
+        market: Optional[str],
+        warnings: list[str],
+    ) -> FundamentalsResult:
+        resolved_market = infer_market_from_symbol(symbol, fallback=market or "US")
+        normalized_symbol = normalize_symbol(symbol, resolved_market)
+        retrieved_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        return FundamentalsResult(
+            symbol=normalized_symbol,
+            market=resolved_market,
+            metrics={},
+            as_of=retrieved_at,
+            source="longbridge",
+            retrieved_at=retrieved_at,
+            warnings=warnings,
+        )

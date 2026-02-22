@@ -19,9 +19,10 @@
 ## 3. 工具清单
 
 - `get_price_history`（行情历史）
-- `get_fundamentals`（基本面）
-- `get_filings`（US 文档）
+- `get_fundamentals_info`（基本面，基于 Longbridge SDK）
+- `get_financial_reports`（财报信息）
 - `search_news`（新闻检索，支持 ticker/别名匹配）
+- `search_web`（联网检索）
 - `compute_indicators`（技术指标/策略打分/信号时间线）
 - `peer_compare`（同行对比）
 - `get_macro_data`（宏观资金流）
@@ -30,7 +31,7 @@
 
 1. 解析问题与时间范围（news/filing/price）。
 2. 采集多周期行情（1d/5m/1m 可配置）。
-3. 采集基本面、新闻、可选 filings、可选 peer compare。
+3. 采集基本面、财报、新闻、联网检索、可选 peer compare。
 4. `compute_indicators` 生成趋势/动量/量价/形态/支撑阻力/策略评分。
 5. 进入 runtime（OpenAI tools 或 Action-JSON）生成草稿。
 6. 护栏校验证据完整性与关键一致性（如 PE 一致性）。

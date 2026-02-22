@@ -80,7 +80,9 @@ class AgentGuardrails:
         tool_results: Dict[str, Dict[str, Any]],
         tolerance: float,
     ) -> Optional[GuardrailIssue]:
-        fundamentals = tool_results.get("get_fundamentals")
+        fundamentals = tool_results.get("get_fundamentals_info")
+        if not isinstance(fundamentals, dict):
+            fundamentals = tool_results.get("get_fundamentals")
         if not isinstance(fundamentals, dict):
             return None
         metrics = fundamentals.get("metrics")

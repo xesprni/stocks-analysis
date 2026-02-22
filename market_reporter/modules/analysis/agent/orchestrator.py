@@ -23,11 +23,12 @@ from market_reporter.modules.analysis.agent.skills import (
 )
 from market_reporter.modules.analysis.agent.tools import (
     ComputeTools,
-    FilingsTools,
+    FinancialReportsTools,
     FundamentalsTools,
     MacroTools,
     MarketTools,
     NewsTools,
+    WebSearchTools,
 )
 from market_reporter.modules.fund_flow.service import FundFlowService
 from market_reporter.modules.news.service import NewsService
@@ -46,8 +47,9 @@ class AgentOrchestrator:
         lb_config = config.longbridge
         self.market_tools = MarketTools(lb_config=lb_config)
         self.fundamentals_tools = FundamentalsTools(lb_config=lb_config)
-        self.filings_tools = FilingsTools()
+        self.financial_reports_tools = FinancialReportsTools()
         self.news_tools = NewsTools(news_service=news_service, lb_config=lb_config)
+        self.web_search_tools = WebSearchTools()
         self.macro_tools = MacroTools(fund_flow_service=fund_flow_service)
         self.compute_tools = ComputeTools(fundamentals_tools=self.fundamentals_tools)
         self.guardrails = AgentGuardrails()
@@ -57,14 +59,16 @@ class AgentOrchestrator:
                 StockAnalysisSkill(
                     market_tools=self.market_tools,
                     fundamentals_tools=self.fundamentals_tools,
-                    filings_tools=self.filings_tools,
+                    financial_reports_tools=self.financial_reports_tools,
                     news_tools=self.news_tools,
+                    web_search_tools=self.web_search_tools,
                     compute_tools=self.compute_tools,
                 ),
                 MarketOverviewSkill(
                     config=self.config,
                     news_tools=self.news_tools,
                     macro_tools=self.macro_tools,
+                    web_search_tools=self.web_search_tools,
                 ),
             ]
         )
@@ -251,19 +255,17 @@ class AgentOrchestrator:
                 adjusted=bool(arguments.get("adjusted", True)),
             )
             return result.model_dump(mode="json")
-        if name == "get_fundamentals":
-            result = await self.fundamentals_tools.get_fundamentals(
+        if name in {"get_fundamentals_info", "get_fundamentals"}:
+            result = await self.fundamentals_tools.get_fundamentals_info(
                 symbol=str(arguments.get("symbol") or fallback_symbol),
                 market=str(arguments.get("market") or fallback_market),
             )
             return result.model_dump(mode="json")
-        if name == "get_filings":
-            result = await self.filings_tools.get_filings(
-                symbol_or_cik=str(arguments.get("symbol_or_cik") or fallback_symbol),
-                form_type=str(arguments.get("form_type") or "10-K"),
-                from_date=str(arguments.get("from") or ranges["filing_from"]),
-                to_date=str(arguments.get("to") or ranges["filing_to"]),
+        if name == "get_financial_reports":
+            result = await self.financial_reports_tools.get_financial_reports(
+                symbol=str(arguments.get("symbol") or fallback_symbol),
                 market=str(arguments.get("market") or fallback_market),
+                limit=int(arguments.get("limit") or 6),
             )
             return result.model_dump(mode="json")
         if name == "search_news":
@@ -278,6 +280,16 @@ class AgentOrchestrator:
                 limit=int(arguments.get("limit") or 50),
                 symbol=resolved_symbol,
                 market=resolved_market,
+            )
+            return result.model_dump(mode="json")
+        if name == "search_web":
+            result = await self.web_search_tools.search_web(
+                query=str(
+                    arguments.get("query") or request.question or fallback_symbol
+                ),
+                limit=int(arguments.get("limit") or 10),
+                from_date=str(arguments.get("from") or ranges["news_from"]),
+                to_date=str(arguments.get("to") or ranges["news_to"]),
             )
             return result.model_dump(mode="json")
         if name == "compute_indicators":
@@ -402,16 +414,20 @@ class AgentOrchestrator:
                 parts.append(f"{key}:{count}")
             joined = ", ".join(parts) if parts else "N/A"
             return f"多周期行情样本 {joined}"
-        if tool_name == "get_fundamentals":
+        if tool_name in {"get_fundamentals_info", "get_fundamentals"}:
             return "财务核心字段（营收/利润/现金流/资产负债）"
+        if tool_name == "get_financial_reports":
+            reports = payload.get("reports")
+            count = len(reports) if isinstance(reports, list) else 0
+            return f"财报样本 {count} 条"
         if tool_name == "search_news":
             items = payload.get("items")
             count = len(items) if isinstance(items, list) else 0
             return f"新闻样本 {count} 条"
-        if tool_name == "get_filings":
-            filings = payload.get("filings")
-            count = len(filings) if isinstance(filings, list) else 0
-            return f"公司文档样本 {count} 条"
+        if tool_name == "search_web":
+            items = payload.get("items")
+            count = len(items) if isinstance(items, list) else 0
+            return f"联网检索样本 {count} 条"
         if tool_name == "compute_indicators":
             strategy = payload.get("strategy")
             if isinstance(strategy, dict):
@@ -435,7 +451,7 @@ class AgentOrchestrator:
         tool: str, arguments: Dict[str, Any], result: Dict[str, Any]
     ) -> ToolCallTrace:
         preview = dict(result)
-        for key in ("bars", "items", "points", "rows", "filings"):
+        for key in ("bars", "items", "points", "rows", "reports"):
             value = preview.get(key)
             if isinstance(value, list) and len(value) > 3:
                 preview[key] = value[:3]

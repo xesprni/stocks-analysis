@@ -9,6 +9,7 @@ from market_reporter.modules.analysis.agent.schemas import (
     MacroResult,
     NewsSearchResult,
     RuntimeDraft,
+    WebSearchResult,
 )
 
 
@@ -56,6 +57,17 @@ class AgentOrchestratorMarketModeTest(unittest.TestCase):
                 warnings=[],
             )
 
+        async def fake_web_search(**kwargs):
+            captured["web"] = dict(kwargs)
+            return WebSearchResult(
+                query=str(kwargs.get("query") or ""),
+                items=[],
+                as_of="2026-02-21",
+                source="bing_rss",
+                retrieved_at="2026-02-21T00:00:00+00:00",
+                warnings=[],
+            )
+
         async def fake_runtime(**kwargs):
             captured["runtime"] = {
                 "question": kwargs.get("question"),
@@ -75,6 +87,7 @@ class AgentOrchestratorMarketModeTest(unittest.TestCase):
 
         orchestrator.news_tools.search_news = fake_news  # type: ignore[method-assign]
         orchestrator.macro_tools.get_macro_data = fake_macro  # type: ignore[method-assign]
+        orchestrator.web_search_tools.search_web = fake_web_search  # type: ignore[method-assign]
         orchestrator._run_runtime = fake_runtime  # type: ignore[method-assign]
 
         provider_cfg = AnalysisProviderConfig(
@@ -104,6 +117,7 @@ class AgentOrchestratorMarketModeTest(unittest.TestCase):
         self.assertEqual(result.analysis_input.get("market"), "HK")
         tool_results = result.analysis_input.get("tool_results", {})
         self.assertIn("search_news", tool_results)
+        self.assertIn("search_web", tool_results)
         self.assertIn("get_macro_data", tool_results)
 
 
