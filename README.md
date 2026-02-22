@@ -1,18 +1,18 @@
 # Market Reporter Pro
 
-面向股票研究与资讯跟踪的本地化系统，提供行情、新闻、监听告警、LLM 分析与报告工作流。
+面向股票研究与资讯跟踪的本地化系统，提供行情、新闻、LLM 分析与报告工作流。
 
 ## 当前状态（2026-02-13）
 
 1. Agent 指标计算改为 `ta-lib -> pandas-ta -> builtin` 自动回退，不因环境缺少 TA 库中断。
 2. Agent 新闻检索升级为扩展词匹配，且支持无命中时返回近期财经新闻兜底。
-3. Stock Terminal 任务状态与结果独立到 `Stock Results` 页面，结果使用 Markdown 报告展示（非 JSON 直出）。
+3. Stock Terminal 仅保留盘中行情图表，个股分析入口统一收敛到 `Run Reports` 的 `stock` 模式。
 4. Config 页面改为分区保存（基础配置 / 模块默认配置 / Dashboard 配置），不再顶部“一键全局保存”。
 5. Dashboard 监控总览拆分为异步并发加载（指标与 watchlist 分离渲染）。
 
 ## 核心能力
 
-1. 新闻源管理、新闻聚合、监听告警与告警中心。
+1. 新闻源管理与新闻聚合。
 2. A/H/US 行情能力：搜索、单股报价、批量报价、K 线、分时曲线。
 3. Watchlist 管理（含 alias / display_name / keywords）。
 4. 多 Provider / 多 Model 分析引擎（mock / openai_compatible / codex_app_server）。
@@ -42,7 +42,7 @@ market_reporter/
   cli.py                     # Typer CLI
 
 frontend/
-  src/pages/                 # Dashboard / Run Reports / Config / NewsFeed / Watchlist / StockTerminal / StockResults / AlertCenter / Reports
+  src/pages/                 # Dashboard / Run Reports / Config / NewsFeed / Watchlist / StockTerminal / Reports
   src/components/charts/     # CandlestickChart / TradeCurveChart / Report charts
 ```
 
@@ -206,10 +206,8 @@ UV_CACHE_DIR=.uv-cache uv run market-reporter db init
 3. `Config`：基础配置、模块默认配置、Dashboard 配置、新闻源与 Provider 管理。
 4. `News Feed`：新闻聚合浏览。
 5. `Watchlist`：股票列表维护与检索。
-6. `Stock Terminal`：盘中图表 + 异步发起个股分析。
-7. `Stock Results`：查看个股分析任务状态与 Markdown 报告。
-8. `Alert Center`：监听运行记录、告警处理。
-9. `Reports`：市场报告任务状态、历史与详情。
+6. `Stock Terminal`：盘中图表（报价/K 线/分时曲线）。
+7. `Reports`：市场报告任务状态、历史与详情。
 
 ## Agent 行为说明（当前）
 
@@ -263,7 +261,7 @@ UV_CACHE_DIR=.uv-cache uv run market-reporter db init
 7. `GET /api/reports/{run_id}/markdown`
 8. `DELETE /api/reports/{run_id}`
 
-### 个股分析（Stock Terminal / Stock Results）
+### 个股分析（API / CLI）
 
 1. `POST /api/analysis/stocks/{symbol}/run`
 2. `POST /api/analysis/stocks/{symbol}/run/async`

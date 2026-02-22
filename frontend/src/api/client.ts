@@ -9,10 +9,8 @@ import {
   dashboardWatchlistSnapshotSchema,
   klineSchema,
   curvePointSchema,
-  newsAlertSchema,
   newsFeedResponseSchema,
   newsFeedSourceOptionSchema,
-  newsListenerRunSchema,
   newsSourceSchema,
   providerAuthStartSchema,
   providerAuthStatusSchema,
@@ -21,9 +19,6 @@ import {
   reportDetailSchema,
   reportSummarySchema,
   reportTaskSchema,
-  stockAnalysisRunSchema,
-  stockAnalysisHistoryItemSchema,
-  stockAnalysisTaskSchema,
   stockSearchResultSchema,
   uiOptionsSchema,
   watchlistItemSchema,
@@ -205,72 +200,6 @@ export const api = {
     }),
   listAnalysisProviderModels: (providerId: string) =>
     request(`/providers/analysis/${providerId}/models`, providerModelsSchema),
-
-  // ---- stock analysis ----
-  runStockAnalysis: (symbol: string, payload: Record<string, unknown>) =>
-    request(`/analysis/stocks/${encodeURIComponent(symbol)}/run`, stockAnalysisRunSchema, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    }),
-  runStockAnalysisAsync: (symbol: string, payload: Record<string, unknown>) =>
-    request(`/analysis/stocks/${encodeURIComponent(symbol)}/run/async`, stockAnalysisTaskSchema, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    }),
-  getStockAnalysisTask: (taskId: string) =>
-    request(`/analysis/stocks/tasks/${encodeURIComponent(taskId)}`, stockAnalysisTaskSchema),
-  listStockAnalysisTasks: () =>
-    request("/analysis/stocks/tasks", z.array(stockAnalysisTaskSchema)),
-  listStockAnalysisRuns: (params?: { symbol?: string; market?: string; limit?: number }) => {
-    const search = new URLSearchParams();
-    search.set("limit", String(params?.limit ?? 50));
-    if (params?.symbol) {
-      search.set("symbol", params.symbol);
-    }
-    if (params?.market) {
-      search.set("market", params.market);
-    }
-    return request(`/analysis/stocks/runs?${search.toString()}`, z.array(stockAnalysisHistoryItemSchema));
-  },
-  getStockAnalysisRun: (runId: number) =>
-    request(`/analysis/stocks/runs/${runId}`, stockAnalysisHistoryItemSchema),
-  deleteStockAnalysisRun: (runId: number) =>
-    request(`/analysis/stocks/runs/${runId}`, z.object({ deleted: z.boolean() }), {
-      method: "DELETE",
-    }),
-  listStockAnalysisHistory: (symbol: string, market: string, limit = 20) =>
-    request(
-      `/analysis/stocks/${encodeURIComponent(symbol)}/history?market=${market}&limit=${limit}`,
-      z.array(stockAnalysisHistoryItemSchema)
-    ),
-
-  // ---- news listener ----
-  runNewsListener: () => request("/news-listener/run", newsListenerRunSchema, { method: "POST" }),
-  listNewsListenerRuns: (limit = 50) =>
-    request(`/news-listener/runs?limit=${limit}`, z.array(newsListenerRunSchema)),
-
-  // ---- news alerts ----
-  listNewsAlerts: (params: { status?: string; symbol?: string; market?: string; limit?: number }) => {
-    const search = new URLSearchParams({
-      status: params.status ?? "UNREAD",
-      symbol: params.symbol ?? "",
-      market: params.market ?? "",
-      limit: String(params.limit ?? 50),
-    });
-    return request(`/news-alerts?${search.toString()}`, z.array(newsAlertSchema));
-  },
-  updateNewsAlert: (alertId: number, status: "READ" | "DISMISSED") =>
-    request(`/news-alerts/${alertId}`, newsAlertSchema, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status }),
-    }),
-  markAllNewsAlertsRead: () =>
-    request("/news-alerts/mark-all-read", z.object({ updated: z.number() }), {
-      method: "POST",
-    }),
 
   // ---- news sources ----
   listNewsSources: () => request("/news-sources", z.array(newsSourceSchema)),

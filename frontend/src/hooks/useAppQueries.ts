@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { api, type AppConfig, type ReportSummary, type UIOptions } from "@/api/client";
@@ -27,16 +27,10 @@ function toErrorMessage(error: unknown): string {
 export { toErrorMessage };
 
 export function useAppQueries(
-  configDraft: AppConfig,
   setConfigDraft: React.Dispatch<React.SetStateAction<AppConfig>>,
   selectedRunId: string,
   setSelectedRunId: React.Dispatch<React.SetStateAction<string>>,
-  selectedStockRunId: string,
-  setSelectedStockRunId: React.Dispatch<React.SetStateAction<string>>,
   setErrorMessage: React.Dispatch<React.SetStateAction<string>>,
-  alertStatus: string,
-  alertMarket: string,
-  alertSymbol: string,
   activeTab: string = "dashboard",
 ) {
   const notifier = useNotifier();
@@ -62,48 +56,10 @@ export function useAppQueries(
   const watchlistQuery = useQuery({ queryKey: ["watchlist"], queryFn: api.listWatchlist });
   const newsSourcesQuery = useQuery({ queryKey: ["news-sources"], queryFn: api.listNewsSources });
   const providersQuery = useQuery({ queryKey: ["providers"], queryFn: api.listAnalysisProviders });
-  const listenerRunsQuery = useQuery({
-    queryKey: ["news-listener-runs"],
-    queryFn: () => api.listNewsListenerRuns(50),
-    refetchInterval: activeTab === "alerts" ? 15000 : false,
-  });
-  const alertsQuery = useQuery({
-    queryKey: ["news-alerts", alertStatus, alertMarket, alertSymbol],
-    queryFn: () =>
-      api.listNewsAlerts({
-        status: alertStatus,
-        market: alertMarket === "ALL" ? "" : alertMarket,
-        symbol: alertSymbol,
-        limit: 50,
-      }),
-    refetchInterval: activeTab === "alerts" ? 15000 : false,
-  });
   const detailQuery = useQuery({
     queryKey: ["report-detail", selectedRunId],
     queryFn: () => api.getReport(selectedRunId),
     enabled: Boolean(selectedRunId),
-  });
-  const stockRunsQuery = useQuery({
-    queryKey: ["stock-analysis-runs"],
-    queryFn: () => api.listStockAnalysisRuns({ limit: 100 }),
-  });
-  const stockTasksQuery = useQuery({
-    queryKey: ["stock-analysis-tasks"],
-    queryFn: api.listStockAnalysisTasks,
-    refetchInterval: (query) => {
-      // Poll while stock tasks are active and the user is on terminal or results pages.
-      if (activeTab !== "terminal" && activeTab !== "stock-results") return false;
-      const data = query.state.data;
-      if (data?.some((t) => t.status === "PENDING" || t.status === "RUNNING")) {
-        return 2000;
-      }
-      return 30000;
-    },
-  });
-  const stockDetailQuery = useQuery({
-    queryKey: ["stock-analysis-run", selectedStockRunId],
-    queryFn: () => api.getStockAnalysisRun(Number(selectedStockRunId)),
-    enabled: Boolean(selectedStockRunId),
   });
 
   // ---- error notification helper ----
@@ -146,18 +102,6 @@ export function useAppQueries(
   }, [detailQuery.error, notifyQueryError]);
 
   useEffect(() => {
-    notifyQueryError("stock-analysis-runs", "加载 Stock 分析历史失败", stockRunsQuery.error);
-  }, [stockRunsQuery.error, notifyQueryError]);
-
-  useEffect(() => {
-    notifyQueryError("stock-analysis-tasks", "加载 Stock 分析任务失败", stockTasksQuery.error);
-  }, [stockTasksQuery.error, notifyQueryError]);
-
-  useEffect(() => {
-    notifyQueryError("stock-analysis-detail", "加载 Stock 分析详情失败", stockDetailQuery.error);
-  }, [stockDetailQuery.error, notifyQueryError]);
-
-  useEffect(() => {
     notifyQueryError("watchlist", "加载 Watchlist 失败", watchlistQuery.error);
   }, [watchlistQuery.error, notifyQueryError]);
 
@@ -168,14 +112,6 @@ export function useAppQueries(
   useEffect(() => {
     notifyQueryError("providers", "加载 Provider 列表失败", providersQuery.error);
   }, [providersQuery.error, notifyQueryError]);
-
-  useEffect(() => {
-    notifyQueryError("listener-runs", "加载监听运行记录失败", listenerRunsQuery.error);
-  }, [listenerRunsQuery.error, notifyQueryError]);
-
-  useEffect(() => {
-    notifyQueryError("alerts", "加载告警列表失败", alertsQuery.error);
-  }, [alertsQuery.error, notifyQueryError]);
 
   // ---- sync config from server into draft ----
   useEffect(() => {
@@ -188,10 +124,6 @@ export function useAppQueries(
   const sortedReports = useMemo(
     () => [...(reportsQuery.data ?? [])].sort((a: ReportSummary, b: ReportSummary) => b.run_id.localeCompare(a.run_id)),
     [reportsQuery.data]
-  );
-  const sortedStockRuns = useMemo(
-    () => [...(stockRunsQuery.data ?? [])].sort((a, b) => b.id - a.id),
-    [stockRunsQuery.data]
   );
   const options = uiOptionsQuery.data ?? emptyOptions;
 
@@ -209,35 +141,16 @@ export function useAppQueries(
     }
   }, [sortedReports, selectedRunId, setSelectedRunId]);
 
-  useEffect(() => {
-    if (!sortedStockRuns.length) {
-      if (selectedStockRunId) {
-        setSelectedStockRunId("");
-      }
-      return;
-    }
-    const exists = sortedStockRuns.some((item) => String(item.id) === selectedStockRunId);
-    if (!exists) {
-      setSelectedStockRunId(String(sortedStockRuns[0].id));
-    }
-  }, [sortedStockRuns, selectedStockRunId, setSelectedStockRunId]);
-
   return {
     configQuery,
     uiOptionsQuery,
     reportsQuery,
     reportTasksQuery,
-    stockRunsQuery,
-    stockTasksQuery,
-    stockDetailQuery,
     watchlistQuery,
     newsSourcesQuery,
     providersQuery,
-    listenerRunsQuery,
-    alertsQuery,
     detailQuery,
     sortedReports,
-    sortedStockRuns,
     options,
   };
 }

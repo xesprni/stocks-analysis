@@ -1,7 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  BellRing,
   ChartCandlestick,
   ClipboardList,
   LayoutDashboard,
@@ -31,8 +30,6 @@ const ConfigPage = lazy(() => import("@/pages/Config").then((m) => ({ default: m
 const NewsFeedPage = lazy(() => import("@/pages/NewsFeed").then((m) => ({ default: m.NewsFeedPage })));
 const WatchlistPage = lazy(() => import("@/pages/Watchlist").then((m) => ({ default: m.WatchlistPage })));
 const StockTerminalPage = lazy(() => import("@/pages/StockTerminal").then((m) => ({ default: m.StockTerminalPage })));
-const StockResultsPage = lazy(() => import("@/pages/StockResults").then((m) => ({ default: m.StockResultsPage })));
-const AlertCenterPage = lazy(() => import("@/pages/AlertCenter").then((m) => ({ default: m.AlertCenterPage })));
 const ReportsPage = lazy(() => import("@/pages/Reports").then((m) => ({ default: m.ReportsPage })));
 
 const emptyConfig: AppConfig = {
@@ -122,13 +119,9 @@ export default function App() {
   const [activeTab, setActiveTab] = useState("dashboard");
   const [configDraft, setConfigDraft] = useState<AppConfig>(emptyConfig);
   const [selectedRunId, setSelectedRunId] = useState<string>("");
-  const [selectedStockRunId, setSelectedStockRunId] = useState<string>("");
   const [savingConfigSection, setSavingConfigSection] = useState<ConfigSaveSection | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
   const [warningMessage, setWarningMessage] = useState("");
-  const [alertStatus, setAlertStatus] = useState("UNREAD");
-  const [alertMarket, setAlertMarket] = useState("ALL");
-  const [alertSymbol, setAlertSymbol] = useState("");
   const [dark, setDark] = useState(() => {
     if (typeof window !== "undefined") {
       const stored = localStorage.getItem("theme");
@@ -148,29 +141,17 @@ export default function App() {
     configQuery,
     reportsQuery,
     reportTasksQuery,
-    stockRunsQuery,
-    stockTasksQuery,
-    stockDetailQuery,
     watchlistQuery,
     newsSourcesQuery,
     providersQuery,
-    listenerRunsQuery,
-    alertsQuery,
     detailQuery,
     sortedReports,
-    sortedStockRuns,
     options,
   } = useAppQueries(
-    configDraft,
     setConfigDraft,
     selectedRunId,
     setSelectedRunId,
-    selectedStockRunId,
-    setSelectedStockRunId,
     setErrorMessage,
-    alertStatus,
-    alertMarket,
-    alertSymbol,
     activeTab,
   );
 
@@ -285,8 +266,6 @@ export default function App() {
     { key: "news-feed", label: "News Feed", icon: Newspaper },
     { key: "watchlist", label: "Watchlist", icon: ListChecks },
     { key: "terminal", label: "Stock Terminal", icon: ChartCandlestick },
-    { key: "stock-results", label: "Stock Results", icon: ClipboardList },
-    { key: "alerts", label: "Alert Center", icon: BellRing },
     { key: "reports", label: "Reports", icon: ClipboardList },
   ];
 
@@ -296,7 +275,7 @@ export default function App() {
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <h1 className="text-3xl font-semibold tracking-tight text-foreground">Market Reporter Pro Console</h1>
-            <p className="mt-2 text-sm text-muted-foreground">模块化多实现、watchlist、实时曲线、K线与多模型分析。</p>
+            <p className="mt-2 text-sm text-muted-foreground">模块化多实现、watchlist、实时曲线与 K 线洞察。</p>
           </div>
           <div className="flex items-center gap-2">
             <Badge variant="secondary">FastAPI</Badge>
@@ -574,107 +553,9 @@ export default function App() {
         <TabsContent value="terminal" className="mt-0">
           <Suspense fallback={<TabFallback />}>
             <StockTerminalPage
-              defaultProvider={configDraft.analysis.default_provider}
-              defaultModel={configDraft.analysis.default_model}
               intervals={options.intervals}
               watchlistItems={watchlistQuery.data ?? []}
             />
-          </Suspense>
-        </TabsContent>
-
-        <TabsContent value="stock-results" className="mt-0">
-          <Suspense fallback={<TabFallback />}>
-            <StockResultsPage
-              runs={sortedStockRuns}
-              tasks={stockTasksQuery.data ?? []}
-              selectedRunId={selectedStockRunId}
-              detail={stockDetailQuery.data ?? null}
-              refreshing={stockRunsQuery.isFetching || stockTasksQuery.isFetching}
-              onRefresh={() => {
-                void stockRunsQuery.refetch();
-                void stockTasksQuery.refetch();
-              }}
-              onSelect={(runId) => setSelectedStockRunId(String(runId))}
-              onDelete={async (runId) => {
-                try {
-                  if (!window.confirm(`确认删除 Stock 分析记录 #${runId} ?`)) {
-                    return;
-                  }
-                  const payload = await api.deleteStockAnalysisRun(runId);
-                  if (!payload.deleted) {
-                    notifier.warning("记录不存在或已删除", `#${runId}`);
-                    return;
-                  }
-                  if (selectedStockRunId === String(runId)) {
-                    setSelectedStockRunId("");
-                  }
-                  await queryClient.invalidateQueries({ queryKey: ["stock-analysis-runs"] });
-                  notifier.success("Stock 分析记录已删除", `#${runId}`);
-                } catch (error) {
-                  const message = toErrorMessage(error);
-                  setErrorMessage(message);
-                  notifier.error("删除 Stock 分析记录失败", message);
-                }
-              }}
-            />
-          </Suspense>
-        </TabsContent>
-
-        <TabsContent value="alerts" className="mt-0">
-          <Suspense fallback={<TabFallback />}>
-            <AlertCenterPage
-            alerts={alertsQuery.data ?? []}
-            runs={listenerRunsQuery.data ?? []}
-            status={alertStatus}
-            setStatus={setAlertStatus}
-            market={alertMarket}
-            setMarket={setAlertMarket}
-            symbol={alertSymbol}
-            setSymbol={setAlertSymbol}
-            onRunNow={async () => {
-              try {
-                await api.runNewsListener();
-                await queryClient.invalidateQueries({ queryKey: ["news-alerts"] });
-                await queryClient.invalidateQueries({ queryKey: ["news-listener-runs"] });
-                notifier.success("监听任务已执行");
-              } catch (error) {
-                const message = toErrorMessage(error);
-                setErrorMessage(message);
-                notifier.error("执行新闻监听失败", message);
-              }
-            }}
-            onMarkAllRead={async () => {
-              try {
-                await api.markAllNewsAlertsRead();
-                await queryClient.invalidateQueries({ queryKey: ["news-alerts"] });
-                notifier.success("已全部标记为已读");
-              } catch (error) {
-                const message = toErrorMessage(error);
-                setErrorMessage(message);
-                notifier.error("批量已读失败", message);
-              }
-            }}
-            onMarkAlert={async (id, status) => {
-              try {
-                await api.updateNewsAlert(id, status);
-                await queryClient.invalidateQueries({ queryKey: ["news-alerts"] });
-              } catch (error) {
-                const message = toErrorMessage(error);
-                setErrorMessage(message);
-                notifier.error("更新告警状态失败", message);
-              }
-            }}
-            onRefresh={async () => {
-              try {
-                await alertsQuery.refetch();
-                await listenerRunsQuery.refetch();
-              } catch (error) {
-                const message = toErrorMessage(error);
-                setErrorMessage(message);
-                notifier.error("刷新告警失败", message);
-              }
-            }}
-          />
           </Suspense>
         </TabsContent>
 
