@@ -143,8 +143,10 @@ class ReportServiceTest(unittest.TestCase):
 
             final_state = asyncio.run(scenario())
             self.assertEqual(final_state.status, ReportTaskStatus.SUCCEEDED)
-            self.assertIsNotNone(final_state.result)
-            self.assertEqual(final_state.result.summary.provider_id, "mock")
+            result = final_state.result
+            self.assertIsNotNone(result)
+            assert result is not None
+            self.assertEqual(result.summary.provider_id, "mock")
 
     def test_async_report_task_failed(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -180,8 +182,10 @@ class ReportServiceTest(unittest.TestCase):
 
             final_state = asyncio.run(scenario())
             self.assertEqual(final_state.status, ReportTaskStatus.FAILED)
-            self.assertIsNotNone(final_state.error_message)
-            self.assertIn("provider timeout", final_state.error_message)
+            error_message = final_state.error_message
+            self.assertIsNotNone(error_message)
+            assert error_message is not None
+            self.assertIn("provider timeout", error_message)
 
     def test_run_report_writes_extended_summary_fields(self):
         original_run = AgentService.run
@@ -518,6 +522,59 @@ class ReportServiceTest(unittest.TestCase):
         finally:
             AgentService.run = original_run  # type: ignore[method-assign]
             AgentService.to_analysis_payload = original_to_payload  # type: ignore[method-assign]
+
+    def test_run_report_notifies_failure_for_unhandled_exception(self):
+        class FakeTelegramNotifier:
+            def __init__(self) -> None:
+                self.failed = []
+
+            async def notify_report_succeeded(self, result):
+                del result
+                return True
+
+            async def notify_report_failed(self, *, error, mode, skill_id=None):
+                self.failed.append(
+                    {
+                        "error": error,
+                        "mode": mode,
+                        "skill_id": skill_id,
+                    }
+                )
+                return True
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            output_root = root / "output"
+            output_root.mkdir(parents=True, exist_ok=True)
+            config_path = root / "config" / "settings.yaml"
+            store = ConfigStore(config_path=config_path)
+            config = AppConfig(output_root=output_root, config_file=config_path)
+            store.save(config)
+
+            notifier = FakeTelegramNotifier()
+            service = ReportService(
+                config_store=store,
+                telegram_notifier=notifier,  # type: ignore[arg-type]
+            )
+
+            def fail_build_runtime_config(*, overrides=None):
+                del overrides
+                raise RuntimeError("runtime config unavailable")
+
+            service._build_runtime_config = fail_build_runtime_config  # type: ignore[method-assign]
+
+            with self.assertRaises(RuntimeError):
+                asyncio.run(
+                    service.run_report(
+                        RunRequest(mode="stock", skill_id="stock_report")
+                    )
+                )
+
+            self.assertEqual(len(notifier.failed), 1)
+            self.assertEqual(notifier.failed[0]["mode"], "stock")
+            self.assertEqual(notifier.failed[0]["skill_id"], "stock_report")
+            error_text = str(notifier.failed[0]["error"])
+            self.assertIn("runtime config unavailable", error_text)
 
 
 if __name__ == "__main__":

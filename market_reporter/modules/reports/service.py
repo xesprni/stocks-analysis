@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
@@ -32,11 +33,19 @@ from market_reporter.schemas import (
     RunResult,
 )
 from market_reporter.services.config_store import ConfigStore
+from market_reporter.services.telegram_notifier import TelegramNotifier
+
+logger = logging.getLogger(__name__)
 
 
 class ReportService:
-    def __init__(self, config_store: ConfigStore) -> None:
+    def __init__(
+        self,
+        config_store: ConfigStore,
+        telegram_notifier: Optional[TelegramNotifier] = None,
+    ) -> None:
         self.config_store = config_store
+        self.telegram_notifier = telegram_notifier
         self._task_lock = asyncio.Lock()
         self._tasks: Dict[str, ReportRunTaskView] = {}
         self._task_handles: Dict[str, asyncio.Task[None]] = {}
@@ -135,146 +144,197 @@ class ReportService:
                 update_payload["result"] = result
             self._tasks[task_id] = task.model_copy(update=update_payload)
 
-    async def run_report(self, overrides: Optional[RunRequest] = None) -> RunResult:
-        config = self._build_runtime_config(overrides=overrides)
-        config.ensure_output_root()
-        config.ensure_data_root()
-        generated_at = self._now_iso8601(config.timezone)
+    def _resolve_telegram_notifier(self) -> Optional[TelegramNotifier]:
+        if self.telegram_notifier is not None:
+            return self.telegram_notifier
+        try:
+            config = self.config_store.load()
+            return TelegramNotifier.from_config(config.telegram)
+        except Exception as exc:
+            logger.warning("resolve telegram notifier failed: %s", exc)
+            return None
 
-        warnings: List[str] = []
+    async def _notify_report_succeeded(self, result: RunResult) -> None:
+        notifier = self._resolve_telegram_notifier()
+        if notifier is None:
+            return
+        try:
+            await notifier.notify_report_succeeded(result=result)
+        except Exception as exc:
+            logger.warning("telegram success notify failed: %s", exc)
+
+    async def _notify_report_failed(
+        self,
+        *,
+        error: str,
+        mode: str,
+        skill_id: Optional[str],
+    ) -> None:
+        notifier = self._resolve_telegram_notifier()
+        if notifier is None:
+            return
+        try:
+            await notifier.notify_report_failed(
+                error=error,
+                mode=mode,
+                skill_id=skill_id,
+            )
+        except Exception as exc:
+            logger.warning("telegram failure notify failed: %s", exc)
+
+    async def run_report(self, overrides: Optional[RunRequest] = None) -> RunResult:
         requested_mode = (
             (overrides.mode if overrides else "market") or "market"
         ).lower()
         requested_skill_id = overrides.skill_id if overrides else None
-        resolved_skill = self.skill_registry.resolve(
-            skill_id=requested_skill_id,
-            mode=requested_mode,
-        )
-        agent_mode = resolved_skill.mode
-        report_skill_id = resolved_skill.skill_id
-        news_total = 0
-        provider_id = ""
-        model = ""
-        analysis_payload: Dict[str, object] = {}
-        markdown = ""
-        async with HttpClient(
-            timeout_seconds=config.request_timeout_seconds,
-            user_agent=config.user_agent,
-        ) as client:
-            registry = ProviderRegistry()
-            news_service = NewsService(config=config, client=client, registry=registry)
-            fund_flow_service = FundFlowService(
-                config=config, client=client, registry=registry
-            )
-            analysis_service = AnalysisService(
-                config=config,
-                registry=registry,
-                news_service=news_service,
-                fund_flow_service=fund_flow_service,
-            )
-            try:
-                provider_cfg, selected_model, api_key, access_token = (
-                    analysis_service.resolve_credentials(
-                        provider_id=None,
-                        model=None,
-                    )
-                )
-                provider_id = provider_cfg.provider_id
-                model = selected_model
 
-                agent_service = AgentService(
+        try:
+            config = self._build_runtime_config(overrides=overrides)
+            config.ensure_output_root()
+            config.ensure_data_root()
+            generated_at = self._now_iso8601(config.timezone)
+
+            warnings: List[str] = []
+            resolved_skill = self.skill_registry.resolve(
+                skill_id=requested_skill_id,
+                mode=requested_mode,
+            )
+            agent_mode = resolved_skill.mode
+            report_skill_id = resolved_skill.skill_id
+            news_total = 0
+            provider_id = ""
+            model = ""
+            analysis_payload: Dict[str, object] = {}
+            markdown = ""
+            async with HttpClient(
+                timeout_seconds=config.request_timeout_seconds,
+                user_agent=config.user_agent,
+            ) as client:
+                registry = ProviderRegistry()
+                news_service = NewsService(
+                    config=config, client=client, registry=registry
+                )
+                fund_flow_service = FundFlowService(
+                    config=config, client=client, registry=registry
+                )
+                analysis_service = AnalysisService(
                     config=config,
                     registry=registry,
                     news_service=news_service,
                     fund_flow_service=fund_flow_service,
                 )
-                skill_result = await resolved_skill.run(
-                    ReportSkillContext(
-                        config=config,
-                        overrides=overrides,
-                        generated_at=generated_at,
-                        agent_service=agent_service,
-                        provider_cfg=provider_cfg,
-                        selected_model=selected_model,
-                        api_key=api_key,
-                        access_token=access_token,
+                try:
+                    provider_cfg, selected_model, api_key, access_token = (
+                        analysis_service.resolve_credentials(
+                            provider_id=None,
+                            model=None,
+                        )
                     )
-                )
-                markdown = skill_result.markdown
-                analysis_payload = skill_result.analysis_payload
-                news_total = skill_result.news_total
-                warnings.extend(skill_result.warnings)
-                agent_mode = skill_result.mode
-                report_skill_id = skill_result.skill_id
-            except Exception as exc:
-                provider_id = provider_id or "fallback-local"
-                model = model or "n/a"
-                warnings.append(f"agent_report_fallback: {exc}")
-                markdown = (
-                    "# Agent 分析报告\n\n"
-                    "- 模式: fallback\n"
-                    f"- 生成时间: {generated_at}\n\n"
-                    "模型执行失败，已生成降级占位报告。\n"
-                )
-                analysis_payload = {
-                    "summary": "模型执行失败，报告已降级。",
-                    "sentiment": "neutral",
-                    "key_levels": [],
-                    "risks": ["agent runtime unavailable"],
-                    "action_items": ["检查 provider 配置和鉴权状态"],
-                    "confidence": 0.2,
-                    "markdown": markdown,
-                    "raw": {"error": str(exc)},
-                }
-                report_skill_id = report_skill_id or "fallback"
+                    provider_id = provider_cfg.provider_id
+                    model = selected_model
 
-        run_dir = self._build_run_dir(output_root=config.output_root)
-        report_path = run_dir / "report.md"
-        raw_path = run_dir / "raw_data.json"
-        meta_path = run_dir / "meta.json"
+                    agent_service = AgentService(
+                        config=config,
+                        registry=registry,
+                        news_service=news_service,
+                        fund_flow_service=fund_flow_service,
+                    )
+                    skill_result = await resolved_skill.run(
+                        ReportSkillContext(
+                            config=config,
+                            overrides=overrides,
+                            generated_at=generated_at,
+                            agent_service=agent_service,
+                            provider_cfg=provider_cfg,
+                            selected_model=selected_model,
+                            api_key=api_key,
+                            access_token=access_token,
+                        )
+                    )
+                    markdown = skill_result.markdown
+                    analysis_payload = skill_result.analysis_payload
+                    news_total = skill_result.news_total
+                    warnings.extend(skill_result.warnings)
+                    agent_mode = skill_result.mode
+                    report_skill_id = skill_result.skill_id
+                except Exception as exc:
+                    provider_id = provider_id or "fallback-local"
+                    model = model or "n/a"
+                    warnings.append(f"agent_report_fallback: {exc}")
+                    markdown = (
+                        "# Agent 分析报告\n\n"
+                        "- 模式: fallback\n"
+                        f"- 生成时间: {generated_at}\n\n"
+                        "模型执行失败，已生成降级占位报告。\n"
+                    )
+                    analysis_payload = {
+                        "summary": "模型执行失败，报告已降级。",
+                        "sentiment": "neutral",
+                        "key_levels": [],
+                        "risks": ["agent runtime unavailable"],
+                        "action_items": ["检查 provider 配置和鉴权状态"],
+                        "confidence": 0.2,
+                        "markdown": markdown,
+                        "raw": {"error": str(exc)},
+                    }
+                    report_skill_id = report_skill_id or "fallback"
 
-        report_path.write_text(markdown, encoding="utf-8")
+            run_dir = self._build_run_dir(output_root=config.output_root)
+            report_path = run_dir / "report.md"
+            raw_path = run_dir / "raw_data.json"
+            meta_path = run_dir / "meta.json"
 
-        raw_payload = {
-            "generated_at": generated_at,
-            "mode": agent_mode,
-            "skill_id": report_skill_id,
-            "provider_id": provider_id,
-            "model": model,
-            "analysis": analysis_payload,
-            "warnings": warnings,
-        }
-        summary_fields = self._extract_summary_fields(raw_payload)
-        # Persist raw inputs/outputs for reproducibility and debugging.
-        raw_path.write_text(
-            json.dumps(raw_payload, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
+            report_path.write_text(markdown, encoding="utf-8")
 
-        summary = ReportRunSummary(
-            run_id=run_dir.name,
-            generated_at=generated_at,
-            report_path=report_path.resolve(),
-            raw_data_path=raw_path.resolve(),
-            warnings_count=len(warnings),
-            news_total=news_total,
-            provider_id=provider_id,
-            model=model,
-            confidence=summary_fields["confidence"],
-            sentiment=summary_fields["sentiment"],
-            mode=summary_fields["mode"],
-        )
-        meta_path.write_text(
-            json.dumps(
-                {
-                    "summary": summary.model_dump(mode="json"),
-                    "warnings": warnings,
-                },
-                ensure_ascii=False,
-                indent=2,
-            ),
-            encoding="utf-8",
-        )
-        return RunResult(summary=summary, warnings=warnings)
+            raw_payload = {
+                "generated_at": generated_at,
+                "mode": agent_mode,
+                "skill_id": report_skill_id,
+                "provider_id": provider_id,
+                "model": model,
+                "analysis": analysis_payload,
+                "warnings": warnings,
+            }
+            summary_fields = self._extract_summary_fields(raw_payload)
+            raw_path.write_text(
+                json.dumps(raw_payload, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+
+            summary = ReportRunSummary(
+                run_id=run_dir.name,
+                generated_at=generated_at,
+                report_path=report_path.resolve(),
+                raw_data_path=raw_path.resolve(),
+                warnings_count=len(warnings),
+                news_total=news_total,
+                provider_id=provider_id,
+                model=model,
+                confidence=summary_fields["confidence"],
+                sentiment=summary_fields["sentiment"],
+                mode=summary_fields["mode"],
+            )
+            meta_path.write_text(
+                json.dumps(
+                    {
+                        "summary": summary.model_dump(mode="json"),
+                        "warnings": warnings,
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+            result = RunResult(summary=summary, warnings=warnings)
+            await self._notify_report_succeeded(result=result)
+            return result
+        except Exception as exc:
+            await self._notify_report_failed(
+                error=str(exc),
+                mode=requested_mode,
+                skill_id=requested_skill_id,
+            )
+            raise
 
     def list_reports(self) -> List[ReportRunSummary]:
         config = self.config_store.load()

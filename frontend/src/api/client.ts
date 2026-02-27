@@ -20,6 +20,7 @@ import {
   reportSummarySchema,
   reportTaskSchema,
   stockSearchResultSchema,
+  telegramConfigSchema,
   uiOptionsSchema,
   watchlistItemSchema,
 } from "./schemas";
@@ -74,6 +75,22 @@ export const api = {
     }),
   deleteLongbridgeToken: () =>
     request("/longbridge/token", z.object({ ok: z.boolean() }), {
+      method: "DELETE",
+    }),
+  getTelegramConfig: () => request("/telegram", telegramConfigSchema),
+  updateTelegramConfig: (payload: {
+    enabled: boolean;
+    chat_id: string;
+    bot_token: string;
+    timeout_seconds: number;
+  }) =>
+    request("/telegram", z.object({ ok: z.boolean() }), {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
+  deleteTelegramConfig: () =>
+    request("/telegram", z.object({ ok: z.boolean() }), {
       method: "DELETE",
     }),
 

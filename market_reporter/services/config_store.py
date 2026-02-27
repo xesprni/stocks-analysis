@@ -7,11 +7,13 @@ import yaml
 
 from market_reporter.config import (
     AppConfig,
+    TelegramConfig,
     default_analysis_providers,
     default_app_config,
 )
 from market_reporter.infra.db.session import init_db
 from market_reporter.services.longbridge_credentials import LongbridgeCredentialService
+from market_reporter.services.telegram_config import TelegramConfigService
 
 
 class ConfigStore:
@@ -42,7 +44,9 @@ class ConfigStore:
             or self._should_rewrite_longbridge(raw)
         ):
             return self.save(config)
-        return self._hydrate_longbridge_credentials(config)
+        return self._hydrate_telegram_config(
+            self._hydrate_longbridge_credentials(config)
+        )
 
     def save(self, config: AppConfig) -> AppConfig:
         normalized = config.model_copy(
@@ -50,13 +54,15 @@ class ConfigStore:
         ).normalized()
         normalized.ensure_data_root()
         normalized = self._persist_longbridge_credentials(config=normalized)
+        normalized = self._persist_telegram_config(config=normalized)
         self.config_path.parent.mkdir(parents=True, exist_ok=True)
         payload = normalized.model_dump(mode="json")
         self.config_path.write_text(
             yaml.safe_dump(payload, allow_unicode=True, sort_keys=False),
             encoding="utf-8",
         )
-        return self._hydrate_longbridge_credentials(normalized)
+        hydrated = self._hydrate_longbridge_credentials(normalized)
+        return self._hydrate_telegram_config(hydrated)
 
     def patch(self, patch_data: Dict[str, Any]) -> AppConfig:
         current = self.load()
@@ -284,3 +290,37 @@ class ConfigStore:
             }
         )
         return config.model_copy(update={"longbridge": hydrated_longbridge})
+
+    def _persist_telegram_config(self, config: AppConfig) -> AppConfig:
+        telegram = config.telegram
+        enabled = bool(telegram.enabled)
+        chat_id = str(telegram.chat_id or "").strip()
+        bot_token = str(telegram.bot_token or "").strip()
+        timeout_seconds = int(telegram.timeout_seconds)
+        timeout_seconds = min(60, max(3, timeout_seconds))
+
+        try:
+            init_db(config.database.url)
+            service = TelegramConfigService(database_url=config.database.url)
+            if not enabled and not chat_id and not bot_token:
+                service.delete()
+            else:
+                service.upsert(
+                    enabled=bool(enabled and chat_id and bot_token),
+                    chat_id=chat_id,
+                    bot_token=bot_token,
+                    timeout_seconds=timeout_seconds,
+                )
+        except Exception:
+            pass
+
+        return config.model_copy(update={"telegram": TelegramConfig()})
+
+    def _hydrate_telegram_config(self, config: AppConfig) -> AppConfig:
+        try:
+            init_db(config.database.url)
+            service = TelegramConfigService(database_url=config.database.url)
+            telegram = service.get()
+        except Exception:
+            telegram = TelegramConfig()
+        return config.model_copy(update={"telegram": telegram})

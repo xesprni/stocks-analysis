@@ -17,6 +17,7 @@
 3. Watchlist 管理（含 alias / display_name / keywords）。
 4. 多 Provider / 多 Model 分析引擎（mock / openai_compatible / codex_app_server）。
 5. 报告生成与历史回看（市场报告 + 个股分析，均支持异步任务）。
+6. 可选 Telegram 报告完成推送（成功/失败）。
 
 ## 架构
 
@@ -93,6 +94,21 @@ npm run build
 ```
 
 构建产物默认在 `frontend/dist`，后端会自动挂载静态文件。
+
+### 6) Telegram 报告推送（可选）
+
+在前端 `Config` 页面填写并保存：
+
+1. `Chat ID`
+2. `Bot Token`
+3. `请求超时(秒)`
+4. `启用推送`
+
+说明：
+
+1. 当前仅接入报告完成通知（成功/失败）。
+2. Telegram 配置存储在数据库中（加密保存），不写入 `config/settings.yaml`。
+3. 未开启或缺少 token/chat_id 时会自动跳过推送，不影响主流程。
 
 ## Docker Compose 部署
 

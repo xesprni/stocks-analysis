@@ -15,6 +15,7 @@ from market_reporter.infra.db.models import (
     StockAnalysisRunTable,
     StockCurvePointTable,
     StockKLineBarTable,
+    TelegramConfigTable,
     WatchlistNewsAlertTable,
     WatchlistItemTable,
 )
@@ -328,6 +329,40 @@ class LongbridgeCredentialRepo:
             select(LongbridgeCredentialTable).order_by(
                 LongbridgeCredentialTable.id.desc()
             )
+        ).first()
+
+    def delete(self) -> bool:
+        row = self.get()
+        if row is None:
+            return False
+        self.session.delete(row)
+        self.session.flush()
+        return True
+
+
+class TelegramConfigRepo:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def upsert(self, config_ciphertext: str, nonce: str) -> TelegramConfigTable:
+        row = self.get()
+        if row is None:
+            row = TelegramConfigTable(
+                config_ciphertext=config_ciphertext,
+                nonce=nonce,
+            )
+        else:
+            row.config_ciphertext = config_ciphertext
+            row.nonce = nonce
+            row.updated_at = datetime.utcnow()
+        self.session.add(row)
+        self.session.flush()
+        self.session.refresh(row)
+        return row
+
+    def get(self) -> Optional[TelegramConfigTable]:
+        return self.session.exec(
+            select(TelegramConfigTable).order_by(TelegramConfigTable.id.desc())
         ).first()
 
     def delete(self) -> bool:

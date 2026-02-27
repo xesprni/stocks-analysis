@@ -129,6 +129,13 @@ class LongbridgeConfig(BaseModel):
     access_token: str = ""
 
 
+class TelegramConfig(BaseModel):
+    enabled: bool = False
+    chat_id: str = ""
+    bot_token: str = ""
+    timeout_seconds: int = Field(default=10, ge=3, le=60)
+
+
 class DatabaseConfig(BaseModel):
     url: str = "sqlite:///data/market_reporter.db"
 
@@ -251,6 +258,7 @@ class AppConfig(BaseModel):
     dashboard: DashboardConfig = Field(default_factory=DashboardConfig)
     agent: AgentConfig = Field(default_factory=AgentConfig)
     longbridge: LongbridgeConfig = Field(default_factory=LongbridgeConfig)
+    telegram: TelegramConfig = Field(default_factory=TelegramConfig)
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
 
     def ensure_output_root(self) -> Path:

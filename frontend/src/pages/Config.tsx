@@ -46,6 +46,13 @@ type Props = {
   onSaveDashboard: () => void;
   onSaveLongbridgeToken: (payload: { app_key: string; app_secret: string; access_token: string }) => Promise<void>;
   onDeleteLongbridgeToken: () => Promise<void>;
+  onSaveTelegramConfig: (payload: {
+    enabled: boolean;
+    chat_id: string;
+    bot_token: string;
+    timeout_seconds: number;
+  }) => Promise<void>;
+  onDeleteTelegramConfig: () => Promise<void>;
   onReload: () => void;
   savingSection: "basic" | "module_defaults" | "dashboard" | null;
 };
@@ -82,6 +89,8 @@ export function ConfigPage({
   onSaveDashboard,
   onSaveLongbridgeToken,
   onDeleteLongbridgeToken,
+  onSaveTelegramConfig,
+  onDeleteTelegramConfig,
   onReload,
   savingSection,
 }: Props) {
@@ -97,11 +106,24 @@ export function ConfigPage({
   const [lbAccessToken, setLbAccessToken] = useState("");
   const [lbSaving, setLbSaving] = useState(false);
 
+  const [tgEnabled, setTgEnabled] = useState(false);
+  const [tgChatId, setTgChatId] = useState("");
+  const [tgBotToken, setTgBotToken] = useState("");
+  const [tgTimeoutSeconds, setTgTimeoutSeconds] = useState(10);
+  const [tgSaving, setTgSaving] = useState(false);
+
   useEffect(() => {
     setLbAppKey(config.longbridge.app_key ?? "");
     setLbAppSecret(config.longbridge.app_secret === "***" ? "" : (config.longbridge.app_secret ?? ""));
     setLbAccessToken(config.longbridge.access_token === "***" ? "" : (config.longbridge.access_token ?? ""));
   }, [config.longbridge.app_key, config.longbridge.app_secret, config.longbridge.access_token]);
+
+  useEffect(() => {
+    setTgEnabled(Boolean(config.telegram.enabled));
+    setTgChatId(config.telegram.chat_id ?? "");
+    setTgBotToken(config.telegram.bot_token === "***" ? "" : (config.telegram.bot_token ?? ""));
+    setTgTimeoutSeconds(config.telegram.timeout_seconds ?? 10);
+  }, [config.telegram.enabled, config.telegram.chat_id, config.telegram.bot_token, config.telegram.timeout_seconds]);
 
   useEffect(() => {
     setSourceRows(
@@ -118,6 +140,7 @@ export function ConfigPage({
   }, [newsSources]);
 
   const dashboardIndices = useMemo(() => config.dashboard.indices ?? [], [config.dashboard.indices]);
+  const hasTelegramTokenConfigured = config.telegram.bot_token === "***";
 
   const updateDashboard = (patch: Partial<AppConfig["dashboard"]>) => {
     setConfig({
@@ -522,6 +545,112 @@ export function ConfigPage({
                 value={lbAccessToken}
                 placeholder={config.longbridge.access_token === "***" ? "已配置（留空不修改）" : "Longbridge Access Token"}
                 onChange={(e) => setLbAccessToken(e.target.value)}
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Telegram */}
+      <Card className="border-emerald-200/60 bg-gradient-to-br from-white to-emerald-50/40 dark:from-slate-900 dark:to-emerald-950/20">
+        <CardHeader className="flex flex-row items-start justify-between gap-3">
+          <div>
+            <CardTitle className="text-base">
+              Telegram 报告推送
+              {config.telegram.enabled ? (
+                <Badge className="ml-2 bg-emerald-100 text-emerald-700" variant="secondary">已启用</Badge>
+              ) : (
+                <Badge className="ml-2" variant="secondary">未启用</Badge>
+              )}
+            </CardTitle>
+            <CardDescription>
+              报告任务完成后发送 Telegram 通知。配置存储在数据库中（加密保存）。
+            </CardDescription>
+          </div>
+          <div className="flex gap-2">
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={tgSaving || (!hasTelegramTokenConfigured && !tgChatId.trim())}
+              onClick={async () => {
+                setTgSaving(true);
+                try {
+                  await onDeleteTelegramConfig();
+                  setTgEnabled(false);
+                  setTgChatId("");
+                  setTgBotToken("");
+                  setTgTimeoutSeconds(10);
+                } finally {
+                  setTgSaving(false);
+                }
+              }}
+            >
+              <Trash2 className="mr-1 h-3.5 w-3.5" />
+              清空配置
+            </Button>
+            <Button
+              disabled={tgSaving || !tgChatId.trim() || (!tgBotToken.trim() && !hasTelegramTokenConfigured)}
+              onClick={async () => {
+                setTgSaving(true);
+                try {
+                  await onSaveTelegramConfig({
+                    enabled: tgEnabled,
+                    chat_id: tgChatId.trim(),
+                    bot_token: tgBotToken.trim() || "***",
+                    timeout_seconds: Math.min(60, Math.max(3, Number(tgTimeoutSeconds || 10))),
+                  });
+                } finally {
+                  setTgSaving(false);
+                }
+              }}
+            >
+              <Save className="mr-2 h-4 w-4" />
+              {tgSaving ? "保存中..." : "保存 Telegram 配置"}
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-4">
+            <div className="space-y-2">
+              <Label htmlFor="tg_enabled">启用推送</Label>
+              <Select value={tgEnabled ? "true" : "false"} onValueChange={(value) => setTgEnabled(value === "true")}>
+                <SelectTrigger id="tg_enabled">
+                  <SelectValue placeholder="启用状态" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="true">enabled</SelectItem>
+                  <SelectItem value="false">disabled</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="tg_chat_id">Chat ID</Label>
+              <Input
+                id="tg_chat_id"
+                value={tgChatId}
+                placeholder="例如：-100123456789"
+                onChange={(event) => setTgChatId(event.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="tg_bot_token">Bot Token</Label>
+              <Input
+                id="tg_bot_token"
+                type="password"
+                value={tgBotToken}
+                placeholder={hasTelegramTokenConfigured ? "已配置（留空保持不变）" : "123456:ABC-DEF..."}
+                onChange={(event) => setTgBotToken(event.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="tg_timeout">请求超时(秒)</Label>
+              <Input
+                id="tg_timeout"
+                type="number"
+                min={3}
+                max={60}
+                value={tgTimeoutSeconds}
+                onChange={(event) => setTgTimeoutSeconds(Math.min(60, Math.max(3, Number(event.target.value || 10))))}
               />
             </div>
           </div>

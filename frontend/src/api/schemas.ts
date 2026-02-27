@@ -85,7 +85,20 @@ export const appConfigSchema = z.object({
     app_secret: z.string(),
     access_token: z.string(),
   }),
+  telegram: z.object({
+    enabled: z.boolean(),
+    chat_id: z.string(),
+    bot_token: z.string(),
+    timeout_seconds: z.number(),
+  }),
   database: z.object({ url: z.string() }),
+});
+
+export const telegramConfigSchema = z.object({
+  enabled: z.boolean(),
+  chat_id: z.string(),
+  bot_token: z.string(),
+  timeout_seconds: z.number(),
 });
 
 export const watchlistItemSchema = z.object({
@@ -430,3 +443,4 @@ export type NewsFeedResponse = z.infer<typeof newsFeedResponseSchema>;
 export type ProviderAuthStart = z.infer<typeof providerAuthStartSchema>;
 export type ProviderAuthStatus = z.infer<typeof providerAuthStatusSchema>;
 export type ProviderModels = z.infer<typeof providerModelsSchema>;
+export type TelegramConfig = z.infer<typeof telegramConfigSchema>;

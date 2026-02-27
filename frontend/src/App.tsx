@@ -99,6 +99,12 @@ const emptyConfig: AppConfig = {
     app_secret: "",
     access_token: "",
   },
+  telegram: {
+    enabled: false,
+    chat_id: "",
+    bot_token: "",
+    timeout_seconds: 10,
+  },
   database: { url: "sqlite:///data/market_reporter.db" },
 };
 
@@ -496,6 +502,28 @@ export default function App() {
                 const message = toErrorMessage(error);
                 setErrorMessage(message);
                 notifier.error("清除 Longbridge 凭证失败", message);
+              }
+            }}
+            onSaveTelegramConfig={async (payload) => {
+              try {
+                await api.updateTelegramConfig(payload);
+                await queryClient.invalidateQueries({ queryKey: ["config"] });
+                notifier.success("Telegram 配置已保存");
+              } catch (error) {
+                const message = toErrorMessage(error);
+                setErrorMessage(message);
+                notifier.error("保存 Telegram 配置失败", message);
+              }
+            }}
+            onDeleteTelegramConfig={async () => {
+              try {
+                await api.deleteTelegramConfig();
+                await queryClient.invalidateQueries({ queryKey: ["config"] });
+                notifier.success("Telegram 配置已清除");
+              } catch (error) {
+                const message = toErrorMessage(error);
+                setErrorMessage(message);
+                notifier.error("清除 Telegram 配置失败", message);
               }
             }}
             onReload={() => {

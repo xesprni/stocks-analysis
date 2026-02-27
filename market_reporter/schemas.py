@@ -82,6 +82,7 @@ class ConfigUpdateRequest(BaseModel):
     dashboard: Optional[Dict[str, Any]] = None
     agent: Optional[Dict[str, Any]] = None
     longbridge: Optional[Dict[str, Any]] = None
+    telegram: Optional[Dict[str, Any]] = None
     database: Dict[str, Any]
 
     def to_config(self, current: AppConfig) -> AppConfig:
@@ -118,6 +119,17 @@ class ConfigUpdateRequest(BaseModel):
             access_token = str(next_lb.get("access_token") or "").strip()
             next_lb["enabled"] = bool(app_key and app_secret and access_token)
             patch_data["longbridge"] = next_lb
+        if self.telegram is not None:
+            next_tg = dict(self.telegram)
+            current_tg = current.telegram
+            if str(next_tg.get("bot_token") or "").strip() == "***":
+                next_tg["bot_token"] = current_tg.bot_token
+            chat_id = str(next_tg.get("chat_id") or "").strip()
+            bot_token = str(next_tg.get("bot_token") or "").strip()
+            next_tg["chat_id"] = chat_id
+            next_tg["bot_token"] = bot_token
+            next_tg["enabled"] = bool(next_tg.get("enabled") and chat_id and bot_token)
+            patch_data["telegram"] = next_tg
         payload.update(patch_data)
         return AppConfig.model_validate(payload)
 
