@@ -23,11 +23,49 @@ import {
   telegramConfigSchema,
   uiOptionsSchema,
   watchlistItemSchema,
+  loginRequestSchema,
+  loginResponseSchema,
+  refreshRequestSchema,
+  currentUserSchema,
+  userViewSchema,
+  createUserRequestSchema,
+  updateUserRequestSchema,
+  changePasswordRequestSchema,
+  resetPasswordRequestSchema,
 } from "./schemas";
 
 // Re-export all types and schemas so existing `import { ... } from "@/api/client"`
 // statements continue to work without changes.
 export * from "./schemas";
+
+// ---------------------------------------------------------------------------
+// Auth token management
+// ---------------------------------------------------------------------------
+
+const TOKEN_KEY = "market_reporter_token";
+const REFRESH_TOKEN_KEY = "market_reporter_refresh_token";
+
+export function getStoredToken(): string | null {
+  return localStorage.getItem(TOKEN_KEY);
+}
+
+export function getStoredRefreshToken(): string | null {
+  return localStorage.getItem(REFRESH_TOKEN_KEY);
+}
+
+export function setTokens(accessToken: string, refreshToken: string): void {
+  localStorage.setItem(TOKEN_KEY, accessToken);
+  localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
+}
+
+export function clearTokens(): void {
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(REFRESH_TOKEN_KEY);
+}
+
+export function isAuthenticated(): boolean {
+  return !!getStoredToken();
+}
 
 // ---------------------------------------------------------------------------
 // HTTP helpers
@@ -36,7 +74,51 @@ export * from "./schemas";
 const apiBase = import.meta.env.VITE_API_BASE_URL ?? "/api";
 
 async function request<S extends z.ZodTypeAny>(path: string, schema: S, init?: RequestInit): Promise<z.output<S>> {
-  const response = await fetch(`${apiBase}${path}`, init);
+  const token = getStoredToken();
+  const headers: HeadersInit = {
+    ...init?.headers,
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+
+  const response = await fetch(`${apiBase}${path}`, {
+    ...init,
+    headers,
+  });
+
+  if (response.status === 401) {
+    const refreshToken = getStoredRefreshToken();
+    if (refreshToken && path !== "/auth/refresh") {
+      try {
+        const refreshResponse = await fetch(`${apiBase}/auth/refresh`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ refresh_token: refreshToken }),
+        });
+        if (refreshResponse.ok) {
+          const data = await refreshResponse.json();
+          setTokens(data.access_token, data.refresh_token);
+          const retryResponse = await fetch(`${apiBase}${path}`, {
+            ...init,
+            headers: {
+              ...init?.headers,
+              Authorization: `Bearer ${data.access_token}`,
+            },
+          });
+          if (!retryResponse.ok) {
+            throw new Error(`HTTP ${retryResponse.status}: ${await retryResponse.text()}`);
+          }
+          const payload = await retryResponse.json();
+          return schema.parse(payload);
+        }
+      } catch {
+        clearTokens();
+        window.location.href = "/";
+      }
+    }
+    clearTokens();
+    window.location.href = "/";
+  }
+
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}: ${await response.text()}`);
   }
@@ -45,7 +127,14 @@ async function request<S extends z.ZodTypeAny>(path: string, schema: S, init?: R
 }
 
 async function requestVoid(path: string, init?: RequestInit): Promise<void> {
-  const response = await fetch(`${apiBase}${path}`, init);
+  const token = getStoredToken();
+  const response = await fetch(`${apiBase}${path}`, {
+    ...init,
+    headers: {
+      ...init?.headers,
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  });
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}: ${await response.text()}`);
   }
@@ -56,6 +145,66 @@ async function requestVoid(path: string, init?: RequestInit): Promise<void> {
 // ---------------------------------------------------------------------------
 
 export const api = {
+  // ---- auth ----
+  login: async (username: string, password: string) => {
+    const response = await fetch(`${apiBase}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password }),
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+    }
+    const payload = await response.json();
+    const data = loginResponseSchema.parse(payload);
+    setTokens(data.access_token, data.refresh_token);
+    return data;
+  },
+  logout: () => {
+    clearTokens();
+    return Promise.resolve();
+  },
+  getMe: () => request("/auth/me", userViewSchema),
+  refreshToken: () => {
+    const refreshToken = getStoredRefreshToken();
+    if (!refreshToken) return Promise.reject("No refresh token");
+    return request("/auth/refresh", loginResponseSchema, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+  },
+
+  // ---- users ----
+  listUsers: () => request("/users", z.array(userViewSchema)),
+  createUser: (payload: z.infer<typeof createUserRequestSchema>) =>
+    request("/users", userViewSchema, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
+  getUser: (userId: number) => request(`/users/${userId}`, userViewSchema),
+  updateUser: (userId: number, payload: z.infer<typeof updateUserRequestSchema>) =>
+    request(`/users/${userId}`, userViewSchema, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
+  deleteUser: (userId: number) =>
+    request(`/users/${userId}`, z.object({ deleted: z.boolean() }), { method: "DELETE" }),
+  changePassword: (payload: z.infer<typeof changePasswordRequestSchema>) =>
+    request("/users/me/password", z.object({ message: z.string() }), {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
+  resetPassword: (userId: number, payload: z.infer<typeof resetPasswordRequestSchema>) =>
+    request(`/users/${userId}/reset-password`, z.object({ message: z.string() }), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
+
   // ---- config ----
   getConfig: () => request("/config", appConfigSchema),
   updateConfig: (payload: Record<string, unknown>) =>

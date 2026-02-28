@@ -32,17 +32,19 @@ export function useAppQueries(
   setSelectedRunId: React.Dispatch<React.SetStateAction<string>>,
   setErrorMessage: React.Dispatch<React.SetStateAction<string>>,
   activeTab: string = "dashboard",
+  enabled: boolean = true,
 ) {
   const notifier = useNotifier();
   const queryErrorCache = useRef<Record<string, string>>({});
 
   // ---- queries ----
-  const configQuery = useQuery({ queryKey: ["config"], queryFn: api.getConfig });
-  const uiOptionsQuery = useQuery({ queryKey: ["ui-options"], queryFn: api.getUiOptions });
-  const reportsQuery = useQuery({ queryKey: ["reports"], queryFn: api.listReports });
+  const configQuery = useQuery({ queryKey: ["config"], queryFn: api.getConfig, enabled });
+  const uiOptionsQuery = useQuery({ queryKey: ["ui-options"], queryFn: api.getUiOptions, enabled });
+  const reportsQuery = useQuery({ queryKey: ["reports"], queryFn: api.listReports, enabled });
   const reportTasksQuery = useQuery({
     queryKey: ["report-tasks"],
     queryFn: api.listReportTasks,
+    enabled,
     refetchInterval: (query) => {
       // Only poll when reports or report-runner tab is active
       if (activeTab !== "reports" && activeTab !== "report-runner") return false;
@@ -53,13 +55,13 @@ export function useAppQueries(
       return 30000;
     },
   });
-  const watchlistQuery = useQuery({ queryKey: ["watchlist"], queryFn: api.listWatchlist });
-  const newsSourcesQuery = useQuery({ queryKey: ["news-sources"], queryFn: api.listNewsSources });
-  const providersQuery = useQuery({ queryKey: ["providers"], queryFn: api.listAnalysisProviders });
+  const watchlistQuery = useQuery({ queryKey: ["watchlist"], queryFn: api.listWatchlist, enabled });
+  const newsSourcesQuery = useQuery({ queryKey: ["news-sources"], queryFn: api.listNewsSources, enabled });
+  const providersQuery = useQuery({ queryKey: ["providers"], queryFn: api.listAnalysisProviders, enabled });
   const detailQuery = useQuery({
     queryKey: ["report-detail", selectedRunId],
     queryFn: () => api.getReport(selectedRunId),
-    enabled: Boolean(selectedRunId),
+    enabled: enabled && Boolean(selectedRunId),
   });
 
   // ---- error notification helper ----

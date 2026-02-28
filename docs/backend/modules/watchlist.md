@@ -40,3 +40,70 @@
 
 - 关键词 JSON 反序列化失败时返回空列表，避免列表接口崩溃。
 - 重复标的返回明确 ValidationError。
+
+## 7. 配置示例
+
+### 7.1 默认配置（`config/settings.yaml`）
+
+```yaml
+watchlist:
+  default_market_scope:
+    - CN
+    - HK
+    - US
+```
+
+### 7.2 API 使用示例
+
+#### 添加 watchlist 项目
+
+```bash
+curl -X POST http://localhost:8000/api/watchlist \
+  -H "Content-Type: application/json" \
+  -d '{
+    "symbol": "AAPL",
+    "market": "US",
+    "display_name": "Apple Inc.",
+    "alias": "苹果",
+    "keywords": ["苹果", "iPhone", "iOS"],
+    "enabled": true
+  }'
+```
+
+#### 更新 watchlist 项目
+
+```bash
+curl -X PATCH http://localhost:8000/api/watchlist/1 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "alias": "苹果公司",
+    "keywords": ["苹果", "iPhone", "iOS", "Apple"],
+    "enabled": true
+  }'
+```
+
+#### 获取启用的 watchlist 项目
+
+```bash
+curl -X GET "http://localhost:8000/api/watchlist?enabled_only=true"
+```
+
+## 8. 使用场景
+
+### 8.1 个股监控
+
+- 用户添加关注的股票到 watchlist
+- Dashboard 实时显示这些股票的行情
+- 新闻监听模块监控这些股票的关联新闻
+
+### 8.2 新闻匹配
+
+- 为 watchlist 项目设置关键词（如 "苹果"、"iPhone"）
+- news_listener 模块在新闻标题中匹配这些关键词
+- 生成告警时关联到对应的 watchlist 项目
+
+### 8.3 自动化策略
+
+- 通过 API 批量导入 watchlist 项目
+- 结合定时任务自动更新关键词
+- 根据市场表现自动启用/禁用 watchlist 项目

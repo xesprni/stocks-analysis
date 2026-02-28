@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import Path
 from typing import Optional
 
 import typer
@@ -11,7 +12,13 @@ from rich.table import Table
 
 from market_reporter.config import AppConfig
 from market_reporter.core.registry import ProviderRegistry
-from market_reporter.infra.db.session import init_db
+from market_reporter.infra.db.repos import ApiKeyRepo, UserRepo
+from market_reporter.infra.db.session import (
+    generate_random_password,
+    hash_password,
+    init_db,
+    session_scope,
+)
 from market_reporter.infra.http.client import HttpClient
 from market_reporter.modules.analysis.service import AnalysisService
 from market_reporter.modules.fund_flow.service import FundFlowService
@@ -30,10 +37,12 @@ watchlist_app = typer.Typer(help="Manage watchlist")
 providers_app = typer.Typer(help="Manage analysis providers")
 analyze_app = typer.Typer(help="Run analysis tasks")
 db_app = typer.Typer(help="Database commands")
+auth_app = typer.Typer(help="Manage authentication")
 app.add_typer(watchlist_app, name="watchlist")
 app.add_typer(providers_app, name="providers")
 app.add_typer(analyze_app, name="analyze")
 app.add_typer(db_app, name="db")
+app.add_typer(auth_app, name="auth")
 
 
 def _store() -> ConfigStore:
@@ -292,6 +301,187 @@ def analyze_stock(
             )
 
     asyncio.run(_run())
+
+
+@auth_app.command("generate-key")
+def auth_generate_key() -> None:
+    console.print(
+        "[yellow]Note: JWT authentication is now used instead of API keys[/yellow]"
+    )
+    console.print(
+        "[green]Set MARKET_REPORTER_AUTH_ENABLED=true to enable JWT auth[/green]"
+    )
+    console.print("[green]Use 'market-reporter user create' to create users[/green]")
+
+
+@auth_app.command("enable")
+def auth_enable() -> None:
+    env_path = Path(".env")
+    lines = []
+    if env_path.exists():
+        lines = env_path.read_text().splitlines()
+
+    auth_enabled_line = "MARKET_REPORTER_AUTH_ENABLED=true"
+
+    filtered = [
+        l
+        for l in lines
+        if not l.startswith("MARKET_REPORTER_AUTH_ENABLED=")
+        and not l.startswith("MARKET_REPORTER_AUTH_API_KEY=")
+    ]
+    filtered.append(auth_enabled_line)
+
+    env_path.write_text("\n".join(filtered) + "\n")
+    console.print(f"[green]JWT Auth enabled in .env file[/green]")
+    console.print(
+        "[yellow]Restart the server and use 'market-reporter user create' to create users[/green]"
+    )
+
+
+@auth_app.command("disable")
+def auth_disable() -> None:
+    env_path = Path(".env")
+    if not env_path.exists():
+        console.print("[yellow]No .env file found[/yellow]")
+        return
+
+    lines = env_path.read_text().splitlines()
+    filtered = [
+        l
+        for l in lines
+        if not l.startswith("MARKET_REPORTER_AUTH_ENABLED=")
+        and not l.startswith("MARKET_REPORTER_AUTH_API_KEY=")
+    ]
+    filtered.append("MARKET_REPORTER_AUTH_ENABLED=false")
+
+    env_path.write_text("\n".join(filtered) + "\n")
+    console.print(f"[green]Auth disabled in .env file[/green]")
+
+
+user_app = typer.Typer(help="Manage users")
+app.add_typer(user_app, name="user")
+
+
+@user_app.command("create")
+def user_create(
+    username: str = typer.Option(..., help="Username"),
+    password: Optional[str] = typer.Option(
+        None, help="Password (will be generated if not provided)"
+    ),
+    email: Optional[str] = typer.Option(None, help="Email"),
+    display_name: Optional[str] = typer.Option(None, help="Display name"),
+    is_admin: bool = typer.Option(False, help="Is admin user"),
+) -> None:
+    config = _load_config()
+    with session_scope(config.database.url) as session:
+        user_repo = UserRepo(session)
+        existing = user_repo.get_by_username(username)
+        if existing:
+            console.print(f"[red]User already exists: {username}[/red]")
+            raise typer.Exit(1)
+
+        if not password:
+            password = generate_random_password(16)
+
+        password_hash = hash_password(password)
+        user = user_repo.create(
+            username=username,
+            password_hash=password_hash,
+            email=email,
+            display_name=display_name,
+            is_admin=is_admin,
+        )
+        console.print(f"[green]User created:[/green] {user.id} - {user.username}")
+        console.print(f"[green]Password:[/green] {password}")
+        console.print(
+            "[yellow]Save this password securely, it won't be shown again[/yellow]"
+        )
+
+
+@user_app.command("list")
+def user_list() -> None:
+    config = _load_config()
+    with session_scope(config.database.url) as session:
+        user_repo = UserRepo(session)
+        users = user_repo.list_all(include_inactive=True)
+        table = Table(title="Users")
+        table.add_column("ID")
+        table.add_column("Username")
+        table.add_column("Email")
+        table.add_column("Admin")
+        table.add_column("Active")
+        for u in users:
+            table.add_row(
+                str(u.id),
+                u.username,
+                u.email or "",
+                str(u.is_admin),
+                str(u.is_active),
+            )
+        console.print(table)
+
+
+@user_app.command("reset-password")
+def user_reset_password(
+    username: str = typer.Option(..., help="Username"),
+    password: Optional[str] = typer.Option(
+        None, help="New password (will be generated if not provided)"
+    ),
+) -> None:
+    config = _load_config()
+    with session_scope(config.database.url) as session:
+        user_repo = UserRepo(session)
+        user = user_repo.get_by_username(username)
+        if not user:
+            console.print(f"[red]User not found: {username}[/red]")
+            raise typer.Exit(1)
+
+        if not password:
+            password = generate_random_password(16)
+
+        password_hash = hash_password(password)
+        user_repo.update_password(user, password_hash)
+        console.print(f"[green]Password reset for {username}:[/green] {password}")
+        console.print(
+            "[yellow]Save this password securely, it won't be shown again[/yellow]"
+        )
+
+
+@user_app.command("deactivate")
+def user_deactivate(
+    username: str = typer.Option(..., help="Username"),
+) -> None:
+    config = _load_config()
+    with session_scope(config.database.url) as session:
+        user_repo = UserRepo(session)
+        user = user_repo.get_by_username(username)
+        if not user:
+            console.print(f"[red]User not found: {username}[/red]")
+            raise typer.Exit(1)
+        user_repo.update(user, is_active=False)
+        console.print(f"[green]User deactivated: {username}[/green]")
+
+
+@user_app.command("delete")
+def user_delete(
+    username: str = typer.Option(..., help="Username"),
+    force: bool = typer.Option(False, help="Force delete without confirmation"),
+) -> None:
+    if not force:
+        confirm = typer.confirm(f"Delete user {username}? This cannot be undone.")
+        if not confirm:
+            console.print("[yellow]Cancelled[/yellow]")
+            return
+
+    config = _load_config()
+    with session_scope(config.database.url) as session:
+        user_repo = UserRepo(session)
+        user = user_repo.get_by_username(username)
+        if not user:
+            console.print(f"[red]User not found: {username}[/red]")
+            raise typer.Exit(1)
+        user_repo.delete(user.id)
+        console.print(f"[green]User deleted: {username}[/green]")
 
 
 def main() -> None:

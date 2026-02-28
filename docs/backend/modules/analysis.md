@@ -78,3 +78,288 @@
 ## 8. 共享工具
 
 `market_reporter/core/utils.py` 中的 `parse_json()` 函数被本模块及 agent 子包多处复用，用于安全解析 LLM 返回的 JSON 文本。
+
+## 9. 配置示例
+
+### 9.1 完整配置（`config/settings.yaml`）
+
+```yaml
+analysis:
+  default_provider: openai_compatible
+  default_model: gpt-4
+  providers:
+    # Mock provider（测试用）
+    - id: mock
+      enabled: true
+      auth_mode: none
+    
+    # OpenAI Compatible provider
+    - id: openai_compatible
+      enabled: true
+      auth_mode: api_key
+      base_url: https://api.openai.com/v1
+      models:
+        - gpt-4
+        - gpt-4-turbo
+        - gpt-3.5-turbo
+    
+    # Codex App Server provider（OAuth）
+    - id: codex_app_server
+      enabled: false
+      auth_mode: chatgpt_oauth
+      base_url: http://localhost:8080
+      models:
+        - codex-default
+```
+
+### 9.2 Provider 配置说明
+
+| Provider | 认证模式 | 说明 | 适用场景 |
+|----------|----------|------|----------|
+| `mock` | `none` | 返回模拟数据 | 测试、开发 |
+| `openai_compatible` | `api_key` | OpenAI API 兼容服务 | 生产环境 |
+| `codex_app_server` | `chatgpt_oauth` | ChatGPT OAuth 登录 | 企业内网 |
+
+### 9.3 认证模式说明
+
+| 认证模式 | 凭据类型 | 存储方式 |
+|----------|----------|----------|
+| `none` | 无需凭据 | - |
+| `api_key` | API Key | 加密存储在 `analysis_provider_secrets` |
+| `chatgpt_oauth` | Access Token + Refresh Token | 加密存储在 `analysis_provider_accounts` |
+
+## 10. OAuth 流程说明
+
+### 10.1 OAuth 登录流程
+
+```text
+┌─────────┐                    ┌─────────┐                    ┌─────────┐
+│  前端   │                    │  后端   │                    │ ChatGPT │
+└────┬────┘                    └────┬────┘                    └────┬────┘
+     │                              │                              │
+     │  1. 点击登录                 │                              │
+     │ ───────────────────────────> │                              │
+     │                              │                              │
+     │  2. POST /api/providers/{id}/auth/start                    │
+     │ ───────────────────────────> │                              │
+     │                              │                              │
+     │                              │  3. 生成 OAuth state         │
+     │                              │  存储到 analysis_provider_auth_states
+     │                              │                              │
+     │  4. 返回 OAuth URL           │                              │
+     │ <─────────────────────────── │                              │
+     │                              │                              │
+     │  5. 跳转到 ChatGPT 授权页面  │                              │
+     │ ───────────────────────────────────────────────────────────>│
+     │                              │                              │
+     │  6. 用户授权                 │                              │
+     │ <─────────────────────────────────────────────────────────── │
+     │                              │                              │
+     │  7. 重定向到 callback URL    │                              │
+     │ ───────────────────────────> │                              │
+     │                              │                              │
+     │                              │  8. 验证 state，交换 token   │
+     │                              │ ─────────────────────────────>│
+     │                              │                              │
+     │                              │  9. 返回 access_token        │
+     │                              │ <─────────────────────────────│
+     │                              │                              │
+     │                              │  10. 加密存储 token          │
+     │                              │                              │
+     │  11. 返回登录成功            │                              │
+     │ <─────────────────────────── │                              │
+     │                              │                              │
+```
+
+### 10.2 OAuth API 端点
+
+#### 发起 OAuth 登录
+
+```bash
+POST /api/providers/analysis/codex_app_server/auth/start
+
+# 响应
+{
+  "auth_url": "https://chatgpt.com/oauth/authorize?...",
+  "state": "random_state_string"
+}
+```
+
+#### OAuth 回调
+
+```bash
+GET /api/providers/analysis/codex_app_server/auth/callback?code=xxx&state=xxx
+
+# 响应
+{
+  "status": "success",
+  "user_email": "user@example.com"
+}
+```
+
+#### 查询登录状态
+
+```bash
+GET /api/providers/analysis/codex_app_server/auth/status
+
+# 响应
+{
+  "logged_in": true,
+  "user_email": "user@example.com",
+  "expires_at": "2024-02-15T10:30:00Z"
+}
+```
+
+#### 退出登录
+
+```bash
+POST /api/providers/analysis/codex_app_server/auth/logout
+
+# 响应
+{
+  "status": "success"
+}
+```
+
+### 10.3 Token 刷新机制
+
+```python
+def refresh_access_token(provider_id: str) -> str:
+    """
+    刷新 OAuth access token
+    
+    1. 从数据库读取 encrypted_refresh_token
+    2. 解密 refresh_token
+    3. 调用 OAuth provider 刷新接口
+    4. 加密存储新的 access_token 和 refresh_token
+    5. 返回新的 access_token
+    """
+    pass
+```
+
+## 11. API 使用示例
+
+### 11.1 保存 API Key
+
+```bash
+curl -X PUT http://localhost:8000/api/providers/analysis/openai_compatible/secret \
+  -H "Content-Type: application/json" \
+  -d '{"api_key": "sk-xxx"}'
+```
+
+### 11.2 设置默认 Provider
+
+```bash
+curl -X PUT http://localhost:8000/api/providers/analysis/default \
+  -H "Content-Type: application/json" \
+  -d '{
+    "provider_id": "openai_compatible",
+    "model": "gpt-4"
+  }'
+```
+
+### 11.3 获取 Provider 状态
+
+```bash
+curl -X GET http://localhost:8000/api/providers/analysis
+
+# 响应
+[
+  {
+    "id": "mock",
+    "enabled": true,
+    "auth_mode": "none",
+    "status": "ready"
+  },
+  {
+    "id": "openai_compatible",
+    "enabled": true,
+    "auth_mode": "api_key",
+    "status": "ready",
+    "models": ["gpt-4", "gpt-3.5-turbo"],
+    "has_secret": true
+  },
+  {
+    "id": "codex_app_server",
+    "enabled": false,
+    "auth_mode": "chatgpt_oauth",
+    "status": "not_configured",
+    "has_account": false
+  }
+]
+```
+
+### 11.4 运行个股分析
+
+```bash
+curl -X POST http://localhost:8000/api/analysis/stocks/AAPL/run \
+  -H "Content-Type: application/json" \
+  -d '{
+    "provider_id": "openai_compatible",
+    "model": "gpt-4",
+    "skill_id": "stock_analysis"
+  }'
+```
+
+## 12. 凭据解析流程
+
+```python
+def resolve_credentials(
+    provider_id: str,
+    model: str,
+    db_url: str
+) -> Tuple[str, str, Optional[str], Optional[str]]:
+    """
+    解析 provider 凭据
+    
+    Args:
+        provider_id: Provider ID
+        model: 模型名称
+        db_url: 数据库 URL
+    
+    Returns:
+        (provider_id, model, api_key, access_token)
+    
+    Raises:
+        ProviderNotFoundError: Provider 不存在
+        ValidationError: 凭据未配置
+    """
+    # 1. 获取 provider 配置
+    provider = get_provider_config(provider_id)
+    
+    # 2. 根据认证模式获取凭据
+    if provider.auth_mode == "none":
+        return provider_id, model, None, None
+    
+    elif provider.auth_mode == "api_key":
+        secret = get_provider_secret(provider_id, db_url)
+        api_key = decrypt_text(secret.encrypted_api_key)
+        return provider_id, model, api_key, None
+    
+    elif provider.auth_mode == "chatgpt_oauth":
+        account = get_provider_account(provider_id, db_url)
+        access_token = decrypt_text(account.encrypted_access_token)
+        
+        # 检查是否需要刷新
+        if account.token_expires_at < datetime.now():
+            access_token = refresh_access_token(provider_id)
+        
+        return provider_id, model, None, access_token
+```
+
+## 13. 与其他模块的交互
+
+### 13.1 与 agent 模块
+
+- analysis 模块通过 `AgentService` 调用 agent 子包
+- `resolve_credentials()` 为 agent 提供统一的凭据解析接口
+
+### 13.2 与 reports 模块
+
+- reports 模块复用 `resolve_credentials()` 获取分析凭据
+- 共享 provider 配置和凭据管理
+
+### 13.3 与 news_listener 模块
+
+- news_listener 模块调用 `analyze_news_alert_batch()` 批量分析告警
+- 使用配置的分析 provider 和 model

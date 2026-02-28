@@ -10,6 +10,102 @@ FastAPI Router (market_reporter/api)
                 -> 外部系统 (SQLite / RSS / yfinance / akshare / OpenAI / Codex)
 ```
 
+## 1.1 模块依赖关系图
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              API Layer                                       │
+│  health | config | dashboard | watchlist | stocks | news | reports | analysis│
+└─────────────────────────────────────────────────────────────────────────────┘
+                                      │
+                                      ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           Service/Module Layer                               │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐       │
+│  │Dashboard │  │Watchlist │  │ Reports  │  │ Analysis │  │   News   │       │
+│  │ Service  │  │ Service  │  │ Service  │  │ Service  │  │ Listener │       │
+│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘       │
+│       │             │             │             │             │              │
+│       └─────────────┴──────┬──────┴─────────────┴─────────────┘              │
+│                            ▼                                                │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐       │
+│  │ Market   │  │  News    │  │ FundFlow │  │ Symbol   │  │  Agent   │       │
+│  │  Data    │  │ Service  │  │ Service  │  │ Search   │  │ Service  │       │
+│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘       │
+└───────┼─────────────┼─────────────┼─────────────┼─────────────┼─────────────┘
+        │             │             │             │             │
+        ▼             ▼             ▼             ▼             ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              Core Layer                                      │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │
+│  │  Contracts   │  │    Types     │  │   Registry   │  │    Errors    │     │
+│  │ (Protocols)  │  │   (DTOs)     │  │  (Providers) │  │  (Exceptions)│     │
+│  └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘     │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                      │
+                                      ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           Infrastructure Layer                               │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │
+│  │   Database   │  │    HTTP      │  │   Security   │  │   Provider   │     │
+│  │  (SQLModel)  │  │   Client     │  │  (AES-GCM)   │  │  Implementations│  │
+│  └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘     │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                      │
+                                      ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                            External Systems                                  │
+│  SQLite | RSS Feeds | yfinance | akshare | Longbridge | OpenAI | Codex     │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+## 1.2 核心数据流
+
+### 个股分析数据流
+
+```text
+用户请求 → API(/api/analysis/stocks/{symbol}/run)
+         → AnalysisService.run_stock_analysis()
+         → AgentService.run()
+            ├→ tools.get_price_history() → MarketDataService
+            ├→ tools.get_fundamentals_info() → Longbridge SDK
+            ├→ tools.search_news() → NewsService
+            ├→ tools.compute_indicators() → ComputeTools
+            └→ LLM Provider (OpenAI/Codex/Mock)
+         → 持久化到 stock_analysis_runs 表
+         → 返回 AnalysisOutput
+```
+
+### 新闻监听告警流
+
+```text
+定时调度 → NewsListenerScheduler
+         → NewsListenerService.run_listener()
+            ├→ WatchlistService.list_enabled_items()
+            ├→ NewsService.collect() → RSS Provider
+            ├→ Matcher.find_symbol_news_matches()
+            ├→ MarketDataService.get_curve() + get_quote()
+            ├→ 计算窗口涨跌幅
+            └→ AnalysisService.analyze_news_alert_batch()
+         → 持久化到 news_listener_runs + watchlist_news_alerts
+         → 前端轮询 /api/news-alerts
+```
+
+### 报告生成数据流
+
+```text
+用户请求 → API(/api/reports/run)
+         → ReportService.run_report()
+            ├→ NewsService.collect()
+            ├→ FundFlowService.collect()
+            ├→ AgentService.run() (market skill)
+            └→ ReportFormatter.format()
+         → 写入 output/<run_id>/
+            ├→ report.md
+            ├→ raw_data.json
+            └→ meta.json
+```
+
 ## 2. 入口与生命周期
 
 - 应用入口：`market_reporter/api/__init__.py` 中 `create_app()`。

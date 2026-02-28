@@ -80,3 +80,310 @@ market 模式仅保留新闻 + 宏观数据工具。
 
 - `AgentRunResult`（analysis_input/runtime_draft/final_report/tool_calls/evidence）
 - 最终由 `AnalysisService` 转换为 `AnalysisOutput`
+
+## 9. 配置示例
+
+### 9.1 完整配置（`config/settings.yaml`）
+
+```yaml
+agent:
+  default_skill: stock_analysis
+  runtime: openai_tools
+  max_tool_iterations: 10
+  guardrails:
+    pe_consistency_check: true
+    evidence_required: true
+  tools:
+    price_history:
+      enabled: true
+      periods:
+        - interval: 1d
+          lookback: 365
+        - interval: 1h
+          lookback: 30
+    fundamentals:
+      enabled: true
+    financial_reports:
+      enabled: true
+    news:
+      enabled: true
+      max_items: 20
+    web_search:
+      enabled: true
+      max_results: 5
+    indicators:
+      enabled: true
+      backend: auto  # auto, ta-lib, pandas-ta, builtin
+    peer_compare:
+      enabled: false
+    macro_data:
+      enabled: true
+```
+
+### 9.2 Skill 配置说明
+
+| Skill ID | 别名 | 说明 | 可用工具 |
+|----------|------|------|----------|
+| `stock_analysis` | `stock` | 个股深度分析 | 全部工具 |
+| `market_overview` | `market` | 市场总览 | news, macro_data |
+
+### 9.3 Runtime 配置说明
+
+| Runtime | 说明 | 适用模型 |
+|---------|------|----------|
+| `openai_tools` | OpenAI Tools API 循环调用 | GPT-4, GPT-3.5-turbo |
+| `action_json` | Action-JSON 协议 | 支持结构化输出的模型 |
+
+## 10. 工具调用规范
+
+### 10.1 工具定义格式
+
+```python
+@dataclass
+class ToolDefinition:
+    name: str           # 工具名称
+    description: str    # 工具描述
+    parameters: dict    # JSON Schema 参数定义
+    required: List[str] # 必需参数列表
+```
+
+### 10.2 工具调用示例
+
+#### get_price_history
+
+```python
+# 工具定义
+{
+    "name": "get_price_history",
+    "description": "获取股票历史价格数据",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "symbol": {"type": "string", "description": "股票代码"},
+            "market": {"type": "string", "enum": ["CN", "HK", "US"]},
+            "interval": {"type": "string", "enum": ["1d", "1h", "5m", "1m"]},
+            "lookback": {"type": "integer", "description": "回溯天数"}
+        },
+        "required": ["symbol", "market"]
+    }
+}
+
+# 调用示例
+{
+    "name": "get_price_history",
+    "arguments": {
+        "symbol": "AAPL",
+        "market": "US",
+        "interval": "1d",
+        "lookback": 365
+    }
+}
+
+# 返回结果
+{
+    "bars": [
+        {"time": "2024-01-15", "open": 176.17, "high": 179.23, "low": 175.82, "close": 178.52, "volume": 52340000}
+    ],
+    "source": "yfinance",
+    "as_of": "2024-01-15T21:00:00Z"
+}
+```
+
+#### compute_indicators
+
+```python
+# 调用示例
+{
+    "name": "compute_indicators",
+    "arguments": {
+        "symbol": "AAPL",
+        "market": "US",
+        "bars": [...]  # K线数据
+    }
+}
+
+# 返回结果
+{
+    "trend": {
+        "direction": "up",
+        "strength": 0.75,
+        "ma_alignment": "bullish"
+    },
+    "momentum": {
+        "rsi": 65.2,
+        "macd": {"value": 2.5, "signal": 1.8, "histogram": 0.7},
+        "stochastic": {"k": 72.5, "d": 68.3}
+    },
+    "volume_price": {
+        "obv_trend": "up",
+        "volume_sma_ratio": 1.2
+    },
+    "patterns": ["cup_and_handle", "breakout"],
+    "support_resistance": {
+        "support": [175.0, 170.0],
+        "resistance": [180.0, 185.0]
+    },
+    "strategy": {
+        "score": 75,
+        "stance": "bullish",
+        "position_suggestion": "0.6",
+        "stop_loss": 172.0,
+        "take_profit": 190.0
+    },
+    "signal_timeline": [
+        {"date": "2024-01-10", "signal": "buy", "confidence": 0.8},
+        {"date": "2024-01-15", "signal": "hold", "confidence": 0.7}
+    ]
+}
+```
+
+#### search_news
+
+```python
+# 调用示例
+{
+    "name": "search_news",
+    "arguments": {
+        "symbol": "AAPL",
+        "market": "US",
+        "keywords": ["苹果", "iPhone", "Apple"],
+        "max_items": 20
+    }
+}
+
+# 返回结果
+{
+    "news": [
+        {
+            "title": "Apple announces new iPhone",
+            "link": "https://...",
+            "published": "2024-01-15T10:30:00Z",
+            "summary": "Apple Inc. announced...",
+            "relevance_score": 0.95
+        }
+    ],
+    "source": "rss",
+    "as_of": "2024-01-15T21:00:00Z"
+}
+```
+
+### 10.3 工具调用流程
+
+```text
+1. Agent 接收用户问题
+2. 根据 skill 确定可用工具集
+3. Runtime 循环调用工具：
+   a. 构造工具调用请求
+   b. 执行工具获取结果
+   c. 将结果反馈给 LLM
+   d. LLM 决定继续调用工具或输出最终答案
+4. 达到 max_tool_iterations 或 LLM 输出最终答案时停止
+5. 护栏校验结果
+6. 格式化输出报告
+```
+
+## 11. 护栏校验规范
+
+### 11.1 证据标记规范
+
+```markdown
+[E1] 价格数据：AAPL 当前价格 $178.52
+[E2] 新闻数据：苹果发布新款 iPhone
+[E3] 指标数据：RSI 65.2，MACD 金叉
+```
+
+### 11.2 校验规则
+
+| 校验项 | 规则 | 失败处理 |
+|--------|------|----------|
+| 证据完整性 | 结论必须有至少一个 `[E*]` 标记 | 置信度 -20% |
+| PE 一致性 | 基本面 PE 与计算 PE 误差 < 10% | 置信度 -10% |
+| 数据时效性 | 数据 as_of 时间在 24 小时内 | 置信度 -5% |
+| 来源多样性 | 至少使用 2 个不同数据源 | 置信度 -5% |
+
+### 11.3 置信度计算
+
+```python
+def calculate_confidence(draft: RuntimeDraft, evidence: List[Evidence]) -> float:
+    """
+    计算分析结果置信度
+    
+    Args:
+        draft: LLM 生成的草稿
+        evidence: 证据列表
+    
+    Returns:
+        置信度（0-100）
+    """
+    confidence = 100.0
+    
+    # 证据完整性检查
+    if not has_evidence_markers(draft.content):
+        confidence -= 20
+    
+    # PE 一致性检查
+    if not check_pe_consistency(evidence):
+        confidence -= 10
+    
+    # 数据时效性检查
+    if not check_data_freshness(evidence, hours=24):
+        confidence -= 5
+    
+    # 来源多样性检查
+    if not check_source_diversity(evidence, min_sources=2):
+        confidence -= 5
+    
+    return max(confidence, 0)
+```
+
+## 12. 输出格式说明
+
+### 12.1 AgentRunResult 结构
+
+```python
+@dataclass
+class AgentRunResult:
+    analysis_input: AnalysisInput      # 输入数据
+    runtime_draft: RuntimeDraft        # LLM 草稿
+    final_report: AgentFinalReport     # 最终报告
+    tool_calls: List[ToolCall]         # 工具调用记录
+    evidence: List[Evidence]           # 证据列表
+    confidence: float                  # 置信度
+    warnings: List[str]                # 警告列表
+```
+
+### 12.2 AgentFinalReport 结构
+
+```python
+@dataclass
+class AgentFinalReport:
+    markdown: str           # Markdown 格式报告
+    summary: str            # 摘要
+    key_points: List[str]   # 关键点
+    recommendations: List[str]  # 建议
+    risk_factors: List[str] # 风险因素
+    data_sources: List[str] # 数据来源
+    confidence: float       # 置信度
+```
+
+## 13. 与其他模块的交互
+
+### 13.1 与 analysis 模块
+
+- analysis 模块通过 `AgentService` 调用 agent 子包
+- `resolve_credentials()` 为 agent 提供凭据
+
+### 13.2 与 market_data 模块
+
+- `get_price_history` 工具调用 `MarketDataService`
+- 获取 K线、分时曲线数据
+
+### 13.3 与 news 模块
+
+- `search_news` 工具调用 `NewsService`
+- 获取相关新闻数据
+
+### 13.4 与 fund_flow 模块
+
+- `get_macro_data` 工具调用 `FundFlowService`
+- 获取资金流和宏观数据

@@ -7,13 +7,47 @@ from sqlalchemy import UniqueConstraint
 from sqlmodel import Field, SQLModel
 
 
+class UserTable(SQLModel, table=True):
+    __tablename__ = "users"
+    __table_args__ = (UniqueConstraint("username", name="uq_users_username"),)
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    username: str = Field(index=True, max_length=64)
+    email: Optional[str] = Field(default=None, max_length=256)
+    display_name: Optional[str] = Field(default=None, max_length=128)
+    password_hash: str = Field(default="")
+    is_admin: bool = Field(default=False, index=True)
+    is_active: bool = Field(default=True, index=True)
+    last_login_at: Optional[datetime] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class ApiKeyTable(SQLModel, table=True):
+    __tablename__ = "api_keys"
+    __table_args__ = (UniqueConstraint("key_hash", name="uq_api_keys_key_hash"),)
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="users.id", index=True)
+    key_hash: str = Field(index=True)
+    key_prefix: str = Field(max_length=16)
+    name: Optional[str] = Field(default=None, max_length=128)
+    last_used_at: Optional[datetime] = None
+    expires_at: Optional[datetime] = None
+    is_active: bool = Field(default=True, index=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 class WatchlistItemTable(SQLModel, table=True):
     __tablename__ = "watchlist_items"
     __table_args__ = (
-        UniqueConstraint("symbol", "market", name="uq_watchlist_symbol_market"),
+        UniqueConstraint(
+            "user_id", "symbol", "market", name="uq_watchlist_user_symbol_market"
+        ),
     )
 
     id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: Optional[int] = Field(default=None, foreign_key="users.id", index=True)
     symbol: str = Field(index=True)
     market: str = Field(index=True)
     alias: Optional[str] = None
@@ -123,6 +157,7 @@ class StockAnalysisRunTable(SQLModel, table=True):
     __tablename__ = "stock_analysis_runs"
 
     id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: Optional[int] = Field(default=None, foreign_key="users.id", index=True)
     symbol: str = Field(index=True)
     market: str = Field(index=True)
     provider_id: str = Field(index=True)

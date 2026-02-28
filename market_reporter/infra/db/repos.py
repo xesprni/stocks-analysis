@@ -10,36 +10,188 @@ from market_reporter.infra.db.models import (
     AnalysisProviderAccountTable,
     AnalysisProviderAuthStateTable,
     AnalysisProviderSecretTable,
+    ApiKeyTable,
     LongbridgeCredentialTable,
     NewsListenerRunTable,
     StockAnalysisRunTable,
     StockCurvePointTable,
     StockKLineBarTable,
     TelegramConfigTable,
+    UserTable,
     WatchlistNewsAlertTable,
     WatchlistItemTable,
 )
+
+
+class UserRepo:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def create(
+        self,
+        username: str,
+        password_hash: str,
+        email: Optional[str] = None,
+        display_name: Optional[str] = None,
+        is_admin: bool = False,
+    ) -> UserTable:
+        user = UserTable(
+            username=username,
+            password_hash=password_hash,
+            email=email,
+            display_name=display_name,
+            is_admin=is_admin,
+            is_active=True,
+        )
+        self.session.add(user)
+        self.session.flush()
+        self.session.refresh(user)
+        return user
+
+    def get(self, user_id: int) -> Optional[UserTable]:
+        return self.session.get(UserTable, user_id)
+
+    def get_by_username(self, username: str) -> Optional[UserTable]:
+        return self.session.exec(
+            select(UserTable).where(UserTable.username == username)
+        ).first()
+
+    def list_all(self, include_inactive: bool = False) -> List[UserTable]:
+        stmt = select(UserTable).order_by(UserTable.id.desc())
+        if not include_inactive:
+            stmt = stmt.where(UserTable.is_active.is_(True))
+        return list(self.session.exec(stmt).all())
+
+    def update(
+        self,
+        user: UserTable,
+        email: Optional[str] = None,
+        display_name: Optional[str] = None,
+        is_admin: Optional[bool] = None,
+        is_active: Optional[bool] = None,
+    ) -> UserTable:
+        if email is not None:
+            user.email = email
+        if display_name is not None:
+            user.display_name = display_name
+        if is_admin is not None:
+            user.is_admin = is_admin
+        if is_active is not None:
+            user.is_active = is_active
+        user.updated_at = datetime.utcnow()
+        self.session.add(user)
+        self.session.flush()
+        self.session.refresh(user)
+        return user
+
+    def update_password(self, user: UserTable, password_hash: str) -> UserTable:
+        user.password_hash = password_hash
+        user.updated_at = datetime.utcnow()
+        self.session.add(user)
+        self.session.flush()
+        self.session.refresh(user)
+        return user
+
+    def update_last_login(self, user: UserTable) -> UserTable:
+        user.last_login_at = datetime.utcnow()
+        self.session.add(user)
+        self.session.flush()
+        self.session.refresh(user)
+        return user
+
+    def delete(self, user_id: int) -> bool:
+        user = self.get(user_id)
+        if user is None:
+            return False
+        self.session.delete(user)
+        self.session.flush()
+        return True
+
+
+class ApiKeyRepo:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def create(
+        self,
+        user_id: int,
+        key_hash: str,
+        key_prefix: str,
+        name: Optional[str] = None,
+        expires_at: Optional[datetime] = None,
+    ) -> ApiKeyTable:
+        api_key = ApiKeyTable(
+            user_id=user_id,
+            key_hash=key_hash,
+            key_prefix=key_prefix,
+            name=name,
+            expires_at=expires_at,
+            is_active=True,
+        )
+        self.session.add(api_key)
+        self.session.flush()
+        self.session.refresh(api_key)
+        return api_key
+
+    def get(self, key_id: int) -> Optional[ApiKeyTable]:
+        return self.session.get(ApiKeyTable, key_id)
+
+    def get_by_key_hash(self, key_hash: str) -> Optional[ApiKeyTable]:
+        return self.session.exec(
+            select(ApiKeyTable).where(ApiKeyTable.key_hash == key_hash)
+        ).first()
+
+    def list_by_user(self, user_id: int) -> List[ApiKeyTable]:
+        return list(
+            self.session.exec(
+                select(ApiKeyTable)
+                .where(ApiKeyTable.user_id == user_id)
+                .order_by(ApiKeyTable.id.desc())
+            ).all()
+        )
+
+    def update_last_used(self, api_key: ApiKeyTable) -> None:
+        api_key.last_used_at = datetime.utcnow()
+        self.session.add(api_key)
+        self.session.flush()
+
+    def deactivate(self, key_id: int) -> bool:
+        api_key = self.get(key_id)
+        if api_key is None:
+            return False
+        api_key.is_active = False
+        self.session.add(api_key)
+        self.session.flush()
+        return True
+
+    def delete(self, key_id: int) -> bool:
+        api_key = self.get(key_id)
+        if api_key is None:
+            return False
+        self.session.delete(api_key)
+        self.session.flush()
+        return True
 
 
 class WatchlistRepo:
     def __init__(self, session: Session) -> None:
         self.session = session
 
-    def list_all(self) -> List[WatchlistItemTable]:
-        return list(
-            self.session.exec(
-                select(WatchlistItemTable).order_by(WatchlistItemTable.id.desc())
-            ).all()
-        )
+    def list_all(self, user_id: Optional[int] = None) -> List[WatchlistItemTable]:
+        stmt = select(WatchlistItemTable).order_by(WatchlistItemTable.id.desc())
+        if user_id is not None:
+            stmt = stmt.where(WatchlistItemTable.user_id == user_id)
+        return list(self.session.exec(stmt).all())
 
-    def list_enabled(self) -> List[WatchlistItemTable]:
-        return list(
-            self.session.exec(
-                select(WatchlistItemTable)
-                .where(WatchlistItemTable.enabled.is_(True))
-                .order_by(WatchlistItemTable.id.desc())
-            ).all()
+    def list_enabled(self, user_id: Optional[int] = None) -> List[WatchlistItemTable]:
+        stmt = (
+            select(WatchlistItemTable)
+            .where(WatchlistItemTable.enabled.is_(True))
+            .order_by(WatchlistItemTable.id.desc())
         )
+        if user_id is not None:
+            stmt = stmt.where(WatchlistItemTable.user_id == user_id)
+        return list(self.session.exec(stmt).all())
 
     def add(
         self,
@@ -48,8 +200,10 @@ class WatchlistRepo:
         alias: Optional[str],
         display_name: Optional[str],
         keywords_json: Optional[str],
+        user_id: Optional[int] = None,
     ) -> WatchlistItemTable:
         item = WatchlistItemTable(
+            user_id=user_id,
             symbol=symbol,
             market=market,
             alias=alias,
@@ -58,19 +212,21 @@ class WatchlistRepo:
             enabled=True,
         )
         self.session.add(item)
-        # Flush + refresh makes generated fields (for example, id/timestamps) immediately available.
         self.session.flush()
         self.session.refresh(item)
         return item
 
     def get_by_symbol_market(
-        self, symbol: str, market: str
+        self, symbol: str, market: str, user_id: Optional[int] = None
     ) -> Optional[WatchlistItemTable]:
-        return self.session.exec(
+        stmt = (
             select(WatchlistItemTable)
             .where(WatchlistItemTable.symbol == symbol)
             .where(WatchlistItemTable.market == market)
-        ).first()
+        )
+        if user_id is not None:
+            stmt = stmt.where(WatchlistItemTable.user_id == user_id)
+        return self.session.exec(stmt).first()
 
     def get(self, item_id: int) -> Optional[WatchlistItemTable]:
         return self.session.get(WatchlistItemTable, item_id)
@@ -446,8 +602,10 @@ class StockAnalysisRunRepo:
         input_json: str,
         output_json: str,
         markdown: str,
+        user_id: Optional[int] = None,
     ) -> StockAnalysisRunTable:
         row = StockAnalysisRunTable(
+            user_id=user_id,
             symbol=symbol,
             market=market,
             provider_id=provider_id,
@@ -463,17 +621,18 @@ class StockAnalysisRunRepo:
         return row
 
     def list_by_symbol(
-        self, symbol: str, market: str, limit: int = 20
+        self, symbol: str, market: str, limit: int = 20, user_id: Optional[int] = None
     ) -> List[StockAnalysisRunTable]:
-        return list(
-            self.session.exec(
-                select(StockAnalysisRunTable)
-                .where(StockAnalysisRunTable.symbol == symbol)
-                .where(StockAnalysisRunTable.market == market)
-                .order_by(StockAnalysisRunTable.id.desc())
-                .limit(limit)
-            ).all()
+        stmt = (
+            select(StockAnalysisRunTable)
+            .where(StockAnalysisRunTable.symbol == symbol)
+            .where(StockAnalysisRunTable.market == market)
+            .order_by(StockAnalysisRunTable.id.desc())
+            .limit(limit)
         )
+        if user_id is not None:
+            stmt = stmt.where(StockAnalysisRunTable.user_id == user_id)
+        return list(self.session.exec(stmt).all())
 
     def get(self, run_id: int) -> Optional[StockAnalysisRunTable]:
         return self.session.get(StockAnalysisRunTable, run_id)
@@ -483,10 +642,13 @@ class StockAnalysisRunRepo:
         limit: int = 50,
         symbol: Optional[str] = None,
         market: Optional[str] = None,
+        user_id: Optional[int] = None,
     ) -> List[StockAnalysisRunTable]:
         statement = select(StockAnalysisRunTable).order_by(
             StockAnalysisRunTable.id.desc()
         )
+        if user_id is not None:
+            statement = statement.where(StockAnalysisRunTable.user_id == user_id)
         if symbol:
             statement = statement.where(StockAnalysisRunTable.symbol == symbol)
         if market:

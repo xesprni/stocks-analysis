@@ -115,3 +115,190 @@
   - 报告任务：`ReportService._tasks`
   - 个股分析任务：`StockAnalysisTaskManager._tasks`
 - 部分端点在请求时显式 `init_db`，确保数据库 schema 已就绪。
+
+## 4. 响应格式与示例
+
+### 4.1 统一响应结构
+
+所有 API 返回 JSON 格式，成功响应直接返回数据对象或数组：
+
+```json
+{
+  "id": 1,
+  "symbol": "AAPL",
+  "market": "US",
+  "display_name": "Apple Inc.",
+  "enabled": true
+}
+```
+
+列表接口返回数组：
+
+```json
+[
+  {"id": 1, "symbol": "AAPL", "market": "US", ...},
+  {"id": 2, "symbol": "0700", "market": "HK", ...}
+]
+```
+
+### 4.2 分页响应
+
+分页接口（如 watchlist 快照）返回结构：
+
+```json
+{
+  "items": [...],
+  "total": 100,
+  "page": 1,
+  "page_size": 20
+}
+```
+
+### 4.3 典型响应示例
+
+#### 报价响应 (`GET /api/stocks/{symbol}/quote`)
+
+```json
+{
+  "symbol": "AAPL",
+  "market": "US",
+  "price": 178.52,
+  "change": 2.35,
+  "change_percent": 1.33,
+  "volume": 52340000,
+  "source": "yfinance",
+  "timestamp": "2024-01-15T21:00:00Z"
+}
+```
+
+#### K线响应 (`GET /api/stocks/{symbol}/kline`)
+
+```json
+{
+  "symbol": "AAPL",
+  "market": "US",
+  "interval": "1d",
+  "bars": [
+    {
+      "time": "2024-01-15",
+      "open": 176.17,
+      "high": 179.23,
+      "low": 175.82,
+      "close": 178.52,
+      "volume": 52340000
+    }
+  ],
+  "source": "yfinance"
+}
+```
+
+#### 新闻流响应 (`GET /api/news-feed`)
+
+```json
+[
+  {
+    "id": "abc123",
+    "title": "Apple announces new product",
+    "link": "https://example.com/news/1",
+    "source_name": "Reuters",
+    "published": "2024-01-15T10:30:00Z",
+    "summary": "Apple Inc. announced..."
+  }
+]
+```
+
+#### 告警响应 (`GET /api/news-alerts`)
+
+```json
+[
+  {
+    "id": 1,
+    "symbol": "AAPL",
+    "market": "US",
+    "display_name": "Apple Inc.",
+    "severity": "high",
+    "matched_keywords": ["Apple", "iPhone"],
+    "price_change_percent": 3.5,
+    "news_title": "Apple announces record sales",
+    "analysis_summary": "正面利好，建议关注...",
+    "status": "UNREAD",
+    "created_at": "2024-01-15T10:30:00Z"
+  }
+]
+```
+
+#### 报告任务响应 (`GET /api/reports/tasks/{task_id}`)
+
+```json
+{
+  "task_id": "task_abc123",
+  "status": "SUCCEEDED",
+  "run_id": "20240115_103000",
+  "created_at": "2024-01-15T10:30:00Z",
+  "finished_at": "2024-01-15T10:35:00Z",
+  "error": null
+}
+```
+
+## 5. 错误码与异常处理
+
+### 5.1 HTTP 状态码
+
+| 状态码 | 含义 | 场景 |
+|--------|------|------|
+| 200 | 成功 | 请求正常处理 |
+| 400 | 请求错误 | 参数校验失败、JSON 解析错误 |
+| 404 | 未找到 | 资源不存在（如 symbol、report） |
+| 409 | 冲突 | 资源已存在（如重复添加 watchlist） |
+| 500 | 服务器错误 | 内部异常、provider 执行失败 |
+
+### 5.2 错误响应格式
+
+```json
+{
+  "detail": "错误描述信息"
+}
+```
+
+### 5.3 常见错误示例
+
+#### 参数校验失败 (400)
+
+```json
+{
+  "detail": "Invalid market: must be one of ['CN', 'HK', 'US']"
+}
+```
+
+#### 资源不存在 (404)
+
+```json
+{
+  "detail": "Report not found: run_id=20240101_000000"
+}
+```
+
+#### 资源冲突 (409)
+
+```json
+{
+  "detail": "Watchlist item already exists: symbol=AAPL, market=US"
+}
+```
+
+#### Provider 执行失败 (500)
+
+```json
+{
+  "detail": "Provider execution failed: yfinance timeout"
+}
+```
+
+### 5.4 业务异常类型
+
+| 异常类型 | HTTP 映射 | 说明 |
+|----------|-----------|------|
+| `ValidationError` | 400 | 参数校验失败 |
+| `ProviderNotFoundError` | 400 | 指定的 provider 不存在 |
+| `ProviderExecutionError` | 500 | provider 执行异常 |
+| `SecretStorageError` | 500 | 密钥存储操作失败 |

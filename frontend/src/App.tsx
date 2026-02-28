@@ -6,14 +6,16 @@ import {
   LayoutDashboard,
   ListChecks,
   Loader2,
+  LogOut,
   Moon,
   Newspaper,
   Rocket,
   Settings2,
   Sun,
+  Users,
 } from "lucide-react";
 
-import { api, type AppConfig } from "@/api/client";
+import { api, type UserView, type AppConfig, isAuthenticated, clearTokens } from "@/api/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -22,6 +24,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toErrorMessage, useAppQueries } from "@/hooks/useAppQueries";
 import { useAppMutations } from "@/hooks/useAppMutations";
 import { useProviderActions } from "@/hooks/useProviderActions";
+import { LoginPage } from "@/pages/Login";
 
 // Lazy-loaded page components for code splitting & reduced initial bundle
 const DashboardPage = lazy(() => import("@/pages/Dashboard").then((m) => ({ default: m.DashboardPage })));
@@ -31,6 +34,7 @@ const NewsFeedPage = lazy(() => import("@/pages/NewsFeed").then((m) => ({ defaul
 const WatchlistPage = lazy(() => import("@/pages/Watchlist").then((m) => ({ default: m.WatchlistPage })));
 const StockTerminalPage = lazy(() => import("@/pages/StockTerminal").then((m) => ({ default: m.StockTerminalPage })));
 const ReportsPage = lazy(() => import("@/pages/Reports").then((m) => ({ default: m.ReportsPage })));
+const UsersPage = lazy(() => import("@/pages/Users").then((m) => ({ default: m.UsersPage })));
 
 const emptyConfig: AppConfig = {
   output_root: "output",
@@ -122,6 +126,10 @@ export default function App() {
   const queryClient = useQueryClient();
   const notifier = useNotifier();
 
+  const [authenticated, setAuthenticated] = useState(false);
+  const [currentUser, setCurrentUser] = useState<UserView | null>(null);
+  const [checkingAuth, setCheckingAuth] = useState(true);
+
   const [activeTab, setActiveTab] = useState("dashboard");
   const [configDraft, setConfigDraft] = useState<AppConfig>(emptyConfig);
   const [selectedRunId, setSelectedRunId] = useState<string>("");
@@ -143,6 +151,41 @@ export default function App() {
     localStorage.setItem("theme", dark ? "dark" : "light");
   }, [dark]);
 
+  useEffect(() => {
+    const checkAuth = async () => {
+      if (isAuthenticated()) {
+        try {
+          const user = await api.getMe();
+          setCurrentUser(user);
+          setAuthenticated(true);
+        } catch {
+          clearTokens();
+          setAuthenticated(false);
+          setCurrentUser(null);
+        }
+      }
+      setCheckingAuth(false);
+    };
+    checkAuth();
+  }, []);
+
+  const handleLoginSuccess = async () => {
+    try {
+      const user = await api.getMe();
+      setCurrentUser(user);
+      setAuthenticated(true);
+    } catch {
+      notifier.error("Failed to get user info");
+    }
+  };
+
+  const handleLogout = () => {
+    api.logout();
+    setAuthenticated(false);
+    setCurrentUser(null);
+    notifier.success("Logged out successfully");
+  };
+
   const {
     configQuery,
     reportsQuery,
@@ -159,6 +202,7 @@ export default function App() {
     setSelectedRunId,
     setErrorMessage,
     activeTab,
+    authenticated,
   );
 
   const { runReportMutation } = useAppMutations(
@@ -273,7 +317,20 @@ export default function App() {
     { key: "watchlist", label: "Watchlist", icon: ListChecks },
     { key: "terminal", label: "Stock Terminal", icon: ChartCandlestick },
     { key: "reports", label: "Reports", icon: ClipboardList },
+    ...(currentUser?.is_admin ? [{ key: "users", label: "Users", icon: Users }] : []),
   ];
+
+  if (checkingAuth) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (!authenticated) {
+    return <LoginPage onLoginSuccess={handleLoginSuccess} />;
+  }
 
   return (
     <main className="mx-auto w-full max-w-[1920px] px-4 py-6 sm:px-6 lg:px-8 xl:px-10">
@@ -283,11 +340,18 @@ export default function App() {
             <h1 className="text-3xl font-semibold tracking-tight text-foreground">Market Reporter Pro Console</h1>
             <p className="mt-2 text-sm text-muted-foreground">模块化多实现、watchlist、实时曲线与 K 线洞察。</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
+            {currentUser && (
+              <div className="flex items-center gap-2 text-sm">
+                <span className="text-muted-foreground">{currentUser.username}</span>
+                {currentUser.is_admin && <Badge variant="secondary">Admin</Badge>}
+              </div>
+            )}
             <Badge variant="secondary">FastAPI</Badge>
             <Badge>shadcn/ui</Badge>
-            <Badge variant="outline">react-query</Badge>
-            <Badge variant="outline">lightweight-charts</Badge>
+            <Button variant="ghost" size="sm" onClick={handleLogout} aria-label="Logout">
+              <LogOut className="h-4 w-4" />
+            </Button>
             <Button variant="ghost" size="sm" onClick={() => setDark((prev) => !prev)} aria-label="Toggle dark mode">
               {dark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             </Button>
@@ -624,6 +688,14 @@ export default function App() {
             />
           </Suspense>
         </TabsContent>
+
+        {currentUser?.is_admin && (
+          <TabsContent value="users" className="mt-0">
+            <Suspense fallback={<TabFallback />}>
+              <UsersPage currentUserIsAdmin={currentUser.is_admin} />
+            </Suspense>
+          </TabsContent>
+        )}
       </Tabs>
     </main>
   );

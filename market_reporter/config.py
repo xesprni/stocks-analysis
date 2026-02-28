@@ -228,6 +228,15 @@ def default_analysis_providers() -> List[AnalysisProviderConfig]:
             enabled=False,
             auth_mode="chatgpt_oauth",
         ),
+        AnalysisProviderConfig(
+            provider_id="glm_coding_plan",
+            type="openai_compatible",
+            base_url="https://api.z.ai/api/coding/paas/v4",
+            models=["glm-5"],
+            timeout=60,
+            enabled=True,
+            auth_mode="api_key",
+        ),
     ]
 
 

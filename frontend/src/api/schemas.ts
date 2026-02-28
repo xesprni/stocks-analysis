@@ -1,6 +1,70 @@
 import { z } from "zod";
 
 // ---------------------------------------------------------------------------
+// Auth schemas
+// ---------------------------------------------------------------------------
+
+export const loginRequestSchema = z.object({
+  username: z.string(),
+  password: z.string(),
+});
+
+export const currentUserSchema = z.object({
+  user_id: z.number(),
+  username: z.string(),
+  is_admin: z.boolean(),
+  is_active: z.boolean(),
+});
+
+export const loginResponseSchema = z.object({
+  access_token: z.string(),
+  refresh_token: z.string(),
+  token_type: z.literal("Bearer"),
+  expires_in: z.number(),
+  user: currentUserSchema,
+});
+
+export const refreshRequestSchema = z.object({
+  refresh_token: z.string(),
+});
+
+export const userViewSchema = z.object({
+  id: z.number(),
+  username: z.string(),
+  email: z.string().nullable(),
+  display_name: z.string().nullable(),
+  is_admin: z.boolean(),
+  is_active: z.boolean(),
+  last_login_at: z.string().nullable(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+
+export const createUserRequestSchema = z.object({
+  username: z.string(),
+  password: z.string(),
+  email: z.string().nullable().optional(),
+  display_name: z.string().nullable().optional(),
+  is_admin: z.boolean().optional(),
+});
+
+export const updateUserRequestSchema = z.object({
+  email: z.string().nullable().optional(),
+  display_name: z.string().nullable().optional(),
+  is_admin: z.boolean().optional(),
+  is_active: z.boolean().optional(),
+});
+
+export const changePasswordRequestSchema = z.object({
+  current_password: z.string(),
+  new_password: z.string(),
+});
+
+export const resetPasswordRequestSchema = z.object({
+  new_password: z.string(),
+});
+
+// ---------------------------------------------------------------------------
 // Zod schemas
 // ---------------------------------------------------------------------------
 
@@ -411,6 +475,17 @@ export const stockAnalysisHistoryItemSchema = z.object({
 // ---------------------------------------------------------------------------
 // Inferred TypeScript types
 // ---------------------------------------------------------------------------
+
+// Auth types
+export type LoginRequest = z.infer<typeof loginRequestSchema>;
+export type CurrentUser = z.infer<typeof currentUserSchema>;
+export type LoginResponse = z.infer<typeof loginResponseSchema>;
+export type RefreshRequest = z.infer<typeof refreshRequestSchema>;
+export type UserView = z.infer<typeof userViewSchema>;
+export type CreateUserRequest = z.infer<typeof createUserRequestSchema>;
+export type UpdateUserRequest = z.infer<typeof updateUserRequestSchema>;
+export type ChangePasswordRequest = z.infer<typeof changePasswordRequestSchema>;
+export type ResetPasswordRequest = z.infer<typeof resetPasswordRequestSchema>;
 
 export type AppConfig = z.infer<typeof appConfigSchema>;
 export type AnalysisProviderConfig = z.infer<typeof analysisProviderConfigSchema>;

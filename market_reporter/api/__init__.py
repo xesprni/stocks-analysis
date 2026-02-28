@@ -3,23 +3,30 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, ORJSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from market_reporter.api import auth as auth_module
+from market_reporter.api.auth import auth_required, router as auth_router
 from market_reporter.api.stock_analysis_tasks import StockAnalysisTaskManager
-from market_reporter.infra.db.session import init_db, seed_news_sources
+from market_reporter.infra.db.session import (
+    init_db,
+    init_default_admin,
+    seed_news_sources,
+)
 from market_reporter.modules.reports.service import ReportService
 from market_reporter.services.config_store import ConfigStore
 from market_reporter.settings import AppSettings
 
 try:
     from market_reporter.modules.news_listener.scheduler import NewsListenerScheduler
-except ModuleNotFoundError:  # pragma: no cover - optional runtime dependency guard
-    NewsListenerScheduler = None  # type: ignore[assignment]
+except ModuleNotFoundError:
+    NewsListenerScheduler = None
 
 from market_reporter.api import (
     analysis,
@@ -32,8 +39,12 @@ from market_reporter.api import (
     providers,
     reports,
     stocks,
+    users,
     watchlist,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 def _migrate_news_sources_to_db(cfg, config_store: ConfigStore) -> None:
@@ -100,16 +111,19 @@ def create_app() -> FastAPI:
 
     # ---------- routers ------------------------------------------------------
     app.include_router(health.router)
-    app.include_router(config.router)
-    app.include_router(dashboard.router)
-    app.include_router(news_sources.router)
-    app.include_router(news_feed.router)
-    app.include_router(reports.router)
-    app.include_router(watchlist.router)
-    app.include_router(stocks.router)
-    app.include_router(news_listener.router)
-    app.include_router(providers.router)
-    app.include_router(analysis.router)
+    app.include_router(auth_router)
+    protected_deps = [Depends(auth_required)]
+    app.include_router(users.router, dependencies=protected_deps)
+    app.include_router(config.router, dependencies=protected_deps)
+    app.include_router(dashboard.router, dependencies=protected_deps)
+    app.include_router(news_sources.router, dependencies=protected_deps)
+    app.include_router(news_feed.router, dependencies=protected_deps)
+    app.include_router(reports.router, dependencies=protected_deps)
+    app.include_router(watchlist.router, dependencies=protected_deps)
+    app.include_router(stocks.router, dependencies=protected_deps)
+    app.include_router(news_listener.router, dependencies=protected_deps)
+    app.include_router(providers.router, dependencies=protected_deps)
+    app.include_router(analysis.router, dependencies=protected_deps)
 
     # ---------- news listener cycle wrapper ----------------------------------
     # The scheduler needs a zero-arg async callable.  The router-level
@@ -143,8 +157,22 @@ def create_app() -> FastAPI:
     async def startup_event() -> None:
         cfg = config_store.load()
         init_db(cfg.database.url)
-        # Migrate news sources from YAML to DB (first run), or seed defaults
         _migrate_news_sources_to_db(cfg, config_store)
+
+        if settings.auth_enabled:
+            password = init_default_admin(
+                database_url=cfg.database.url,
+                default_username=settings.default_admin_username,
+                default_password=settings.default_admin_password,
+            )
+            if password:
+                logger.warning("=" * 60)
+                logger.warning("DEFAULT ADMIN CREATED")
+                logger.warning(f"Username: {settings.default_admin_username}")
+                logger.warning(f"Password: {password}")
+                logger.warning("PLEASE CHANGE THIS PASSWORD IMMEDIATELY")
+                logger.warning("=" * 60)
+
         _start_scheduler(app)
 
     @app.on_event("shutdown")

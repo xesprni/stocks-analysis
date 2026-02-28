@@ -21,8 +21,8 @@ modules:
   symbol_search:
     default_provider: longbridge
 analysis:
-  default_provider: codex_app_server
-  default_model: gpt-5.2
+  default_provider: glm_coding_plan
+  default_model: glm-5
   providers:
   - provider_id: openai_compatible
     type: openai_compatible
@@ -43,6 +43,16 @@ analysis:
     timeout: 30
     enabled: true
     auth_mode: chatgpt_oauth
+    login_callback_url: null
+    login_timeout_seconds: 600
+  - provider_id: glm_coding_plan
+    type: openai_compatible
+    base_url: https://api.z.ai/api/coding/paas/v4
+    models:
+    - glm-5
+    timeout: 60
+    enabled: true
+    auth_mode: api_key
     login_callback_url: null
     login_timeout_seconds: 600
 watchlist:
@@ -118,5 +128,10 @@ longbridge:
   app_key: 0bfff1c3ab4308f8c81d1bdac3f34ac0
   app_secret: ''
   access_token: ''
+telegram:
+  enabled: false
+  chat_id: ''
+  bot_token: ''
+  timeout_seconds: 10
 database:
   url: sqlite:///data/market_reporter.db

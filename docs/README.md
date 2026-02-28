@@ -22,6 +22,13 @@
 - [reports 模块](./backend/modules/reports.md)
 - [dashboard 模块](./backend/modules/dashboard.md)
 
+## 使用指南
+
+1. **阅读顺序建议**：从架构总览开始，理解系统分层，然后按基础层→业务模块顺序阅读
+2. **配置参考**：所有模块的默认配置可在 `config/settings.yaml` 中查看
+3. **API 调试**：使用 `/api/options/ui` 端点获取可选参数列表
+4. **调试模式**：启用 `mock` provider 可在无外部依赖情况下测试功能
+
 ## 约定
 
 - 术语中的“模块”默认指 `market_reporter/modules/*` 下子模块。
