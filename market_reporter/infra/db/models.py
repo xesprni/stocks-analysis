@@ -216,3 +216,14 @@ class NewsSourceTable(SQLModel, table=True):
     enabled: bool = Field(default=True, index=True)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class UserConfigTable(SQLModel, table=True):
+    __tablename__ = "user_configs"
+    __table_args__ = (UniqueConstraint("user_id", name="uq_user_configs_user_id"),)
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="users.id", index=True)
+    config_json: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)

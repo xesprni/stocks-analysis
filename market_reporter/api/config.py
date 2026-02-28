@@ -1,19 +1,31 @@
-"""Config routes."""
+"""Config routes with per-user isolation."""
 
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 
-from market_reporter.api.deps import get_config_store
+from market_reporter.api.auth import CurrentUser, require_user
 from market_reporter.config import AppConfig, LongbridgeConfig, TelegramConfig
 from market_reporter.infra.db.session import init_db
 from market_reporter.schemas import ConfigUpdateRequest
 from market_reporter.services.config_store import ConfigStore
 from market_reporter.services.longbridge_credentials import LongbridgeCredentialService
 from market_reporter.services.telegram_config import TelegramConfigService
+from market_reporter.services.user_config_store import UserConfigStore
+from market_reporter.settings import AppSettings
 
 router = APIRouter(prefix="/api", tags=["config"])
+
+
+def _get_user_config_store(request: Request, user: CurrentUser) -> UserConfigStore:
+    settings: AppSettings = request.app.state.settings
+    global_store: ConfigStore = request.app.state.config_store
+    return UserConfigStore(
+        database_url=global_store.load().database.url,
+        global_config_path=settings.config_file,
+        user_id=user.user_id,
+    )
 
 
 def _redact_sensitive_config(cfg: AppConfig) -> AppConfig:
@@ -33,9 +45,13 @@ def _redact_sensitive_config(cfg: AppConfig) -> AppConfig:
 
 @router.get("/config", response_model=AppConfig)
 async def get_config(
-    config_store: ConfigStore = Depends(get_config_store),
+    request: Request,
+    user: CurrentUser = Depends(require_user),
 ) -> AppConfig:
-    cfg = config_store.load()
+    store = _get_user_config_store(request, user)
+    if not store.has_user_config():
+        store.init_from_global()
+    cfg = store.load()
     return _redact_sensitive_config(cfg)
 
 
@@ -43,14 +59,14 @@ async def get_config(
 async def update_config(
     payload: ConfigUpdateRequest,
     request: Request,
-    config_store: ConfigStore = Depends(get_config_store),
+    user: CurrentUser = Depends(require_user),
 ) -> AppConfig:
-    current = config_store.load()
+    store = _get_user_config_store(request, user)
+    current = store.load()
     updated = payload.to_config(current)
-    saved = config_store.save(updated)
+    saved = store.save(updated)
     init_db(saved.database.url)
 
-    # Restart news listener scheduler if available
     _restart_listener_scheduler(request.app.state, saved)
     return _redact_sensitive_config(saved)
 
@@ -70,9 +86,11 @@ class TelegramConfigRequest(BaseModel):
 
 @router.get("/longbridge", response_model=LongbridgeConfig)
 async def get_longbridge_config(
-    config_store: ConfigStore = Depends(get_config_store),
+    request: Request,
+    user: CurrentUser = Depends(require_user),
 ) -> LongbridgeConfig:
-    cfg = config_store.load()
+    store = _get_user_config_store(request, user)
+    cfg = store.load()
     return cfg.longbridge.model_copy(
         update={
             "app_secret": "***" if cfg.longbridge.app_secret else "",
@@ -84,9 +102,11 @@ async def get_longbridge_config(
 @router.put("/longbridge/token")
 async def update_longbridge_token(
     payload: LongbridgeTokenRequest,
-    config_store: ConfigStore = Depends(get_config_store),
+    request: Request,
+    user: CurrentUser = Depends(require_user),
 ) -> dict:
-    current = config_store.load()
+    store = _get_user_config_store(request, user)
+    current = store.load()
     next_lb = current.longbridge.model_copy(
         update={
             "app_key": payload.app_key,
@@ -98,29 +118,33 @@ async def update_longbridge_token(
         }
     )
     next_config = current.model_copy(update={"longbridge": next_lb})
-    config_store.save(next_config)
+    store.save(next_config)
     return {"ok": True}
 
 
 @router.delete("/longbridge/token")
 async def delete_longbridge_token(
-    config_store: ConfigStore = Depends(get_config_store),
+    request: Request,
+    user: CurrentUser = Depends(require_user),
 ) -> dict:
-    current = config_store.load()
+    store = _get_user_config_store(request, user)
+    current = store.load()
     init_db(current.database.url)
     credential_service = LongbridgeCredentialService(database_url=current.database.url)
     credential_service.delete()
-    next_lb = LongbridgeConfig()  # Reset to defaults (disabled, empty credentials)
+    next_lb = LongbridgeConfig()
     next_config = current.model_copy(update={"longbridge": next_lb})
-    config_store.save(next_config)
+    store.save(next_config)
     return {"ok": True}
 
 
 @router.get("/telegram", response_model=TelegramConfig)
 async def get_telegram_config(
-    config_store: ConfigStore = Depends(get_config_store),
+    request: Request,
+    user: CurrentUser = Depends(require_user),
 ) -> TelegramConfig:
-    cfg = config_store.load()
+    store = _get_user_config_store(request, user)
+    cfg = store.load()
     return cfg.telegram.model_copy(
         update={
             "bot_token": "***" if cfg.telegram.bot_token else "",
@@ -131,9 +155,11 @@ async def get_telegram_config(
 @router.put("/telegram")
 async def update_telegram_config(
     payload: TelegramConfigRequest,
-    config_store: ConfigStore = Depends(get_config_store),
+    request: Request,
+    user: CurrentUser = Depends(require_user),
 ) -> dict:
-    current = config_store.load()
+    store = _get_user_config_store(request, user)
+    current = store.load()
     bot_token_input = str(payload.bot_token or "").strip()
     if bot_token_input in {"", "***"}:
         bot_token = current.telegram.bot_token
@@ -150,19 +176,21 @@ async def update_telegram_config(
         }
     )
     next_config = current.model_copy(update={"telegram": next_tg})
-    config_store.save(next_config)
+    store.save(next_config)
     return {"ok": True}
 
 
 @router.delete("/telegram")
 async def delete_telegram_config(
-    config_store: ConfigStore = Depends(get_config_store),
+    request: Request,
+    user: CurrentUser = Depends(require_user),
 ) -> dict:
-    current = config_store.load()
+    store = _get_user_config_store(request, user)
+    current = store.load()
     init_db(current.database.url)
     TelegramConfigService(database_url=current.database.url).delete()
     next_config = current.model_copy(update={"telegram": TelegramConfig()})
-    config_store.save(next_config)
+    store.save(next_config)
     return {"ok": True}
 
 

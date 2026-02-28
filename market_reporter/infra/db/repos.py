@@ -17,6 +17,7 @@ from market_reporter.infra.db.models import (
     StockCurvePointTable,
     StockKLineBarTable,
     TelegramConfigTable,
+    UserConfigTable,
     UserTable,
     WatchlistNewsAlertTable,
     WatchlistItemTable,
@@ -761,3 +762,39 @@ class WatchlistNewsAlertRepo:
             self.session.add(row)
         self.session.flush()
         return len(rows)
+
+
+class UserConfigRepo:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def get(self, user_id: int) -> Optional[UserConfigTable]:
+        return self.session.exec(
+            select(UserConfigTable).where(UserConfigTable.user_id == user_id)
+        ).first()
+
+    def upsert(self, user_id: int, config_json: str) -> UserConfigTable:
+        existing = self.get(user_id)
+        if existing:
+            existing.config_json = config_json
+            existing.updated_at = datetime.utcnow()
+            self.session.add(existing)
+            self.session.flush()
+            self.session.refresh(existing)
+            return existing
+        row = UserConfigTable(
+            user_id=user_id,
+            config_json=config_json,
+        )
+        self.session.add(row)
+        self.session.flush()
+        self.session.refresh(row)
+        return row
+
+    def delete(self, user_id: int) -> bool:
+        row = self.get(user_id)
+        if row is None:
+            return False
+        self.session.delete(row)
+        self.session.flush()
+        return True
