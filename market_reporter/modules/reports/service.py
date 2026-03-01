@@ -33,6 +33,7 @@ from market_reporter.schemas import (
     RunResult,
 )
 from market_reporter.services.config_store import ConfigStore
+from market_reporter.services.user_config_store import UserConfigStore
 from market_reporter.services.telegram_notifier import TelegramNotifier
 
 logger = logging.getLogger(__name__)
@@ -48,6 +49,7 @@ class ReportService:
         self.telegram_notifier = telegram_notifier
         self._task_lock = asyncio.Lock()
         self._tasks: Dict[str, ReportRunTaskView] = {}
+        self._task_user_ids: Dict[str, Optional[int]] = {}
         self._task_handles: Dict[str, asyncio.Task[None]] = {}
         self.skill_registry = ReportSkillRegistry(
             skills=[
@@ -58,7 +60,9 @@ class ReportService:
         )
 
     async def start_report_async(
-        self, overrides: Optional[RunRequest] = None
+        self,
+        overrides: Optional[RunRequest] = None,
+        user_id: Optional[int] = None,
     ) -> ReportRunTaskView:
         task_id = uuid4().hex
         task_view = ReportRunTaskView(
@@ -68,30 +72,52 @@ class ReportService:
         )
         async with self._task_lock:
             self._tasks[task_id] = task_view
+            self._task_user_ids[task_id] = user_id
         # Detached background task keeps HTTP request latency low.
         task = asyncio.create_task(
-            self._run_background_task(task_id=task_id, overrides=overrides)
+            self._run_background_task(
+                task_id=task_id,
+                overrides=overrides,
+                user_id=user_id,
+            )
         )
         self._task_handles[task_id] = task
         task.add_done_callback(lambda _: self._task_handles.pop(task_id, None))
         return task_view
 
-    async def get_report_task(self, task_id: str) -> ReportRunTaskView:
+    async def get_report_task(
+        self,
+        task_id: str,
+        user_id: Optional[int] = None,
+    ) -> ReportRunTaskView:
         async with self._task_lock:
             task = self._tasks.get(task_id)
             if task is None:
                 raise FileNotFoundError(f"Report task not found: {task_id}")
+            owner = self._task_user_ids.get(task_id)
+            if owner != user_id:
+                raise FileNotFoundError(f"Report task not found: {task_id}")
             return task
 
-    async def list_report_tasks(self) -> List[ReportRunTaskView]:
+    async def list_report_tasks(
+        self,
+        user_id: Optional[int] = None,
+    ) -> List[ReportRunTaskView]:
         """Return all tracked report tasks, sorted by creation time (newest first)."""
         async with self._task_lock:
-            tasks = list(self._tasks.values())
+            tasks = [
+                task
+                for task_id, task in self._tasks.items()
+                if self._task_user_ids.get(task_id) == user_id
+            ]
         tasks.sort(key=lambda t: t.created_at, reverse=True)
         return tasks
 
     async def _run_background_task(
-        self, task_id: str, overrides: Optional[RunRequest]
+        self,
+        task_id: str,
+        overrides: Optional[RunRequest],
+        user_id: Optional[int] = None,
     ) -> None:
         await self._update_task(
             task_id=task_id,
@@ -100,7 +126,7 @@ class ReportService:
             error_message=None,
         )
         try:
-            result = await self.run_report(overrides=overrides)
+            result = await self.run_report(overrides=overrides, user_id=user_id)
             await self._update_task(
                 task_id=task_id,
                 status=ReportTaskStatus.SUCCEEDED,
@@ -144,18 +170,25 @@ class ReportService:
                 update_payload["result"] = result
             self._tasks[task_id] = task.model_copy(update=update_payload)
 
-    def _resolve_telegram_notifier(self) -> Optional[TelegramNotifier]:
+    def _resolve_telegram_notifier(
+        self,
+        user_id: Optional[int] = None,
+    ) -> Optional[TelegramNotifier]:
         if self.telegram_notifier is not None:
             return self.telegram_notifier
         try:
-            config = self.config_store.load()
+            config = self._load_config(user_id=user_id)
             return TelegramNotifier.from_config(config.telegram)
         except Exception as exc:
             logger.warning("resolve telegram notifier failed: %s", exc)
             return None
 
-    async def _notify_report_succeeded(self, result: RunResult) -> None:
-        notifier = self._resolve_telegram_notifier()
+    async def _notify_report_succeeded(
+        self,
+        result: RunResult,
+        user_id: Optional[int] = None,
+    ) -> None:
+        notifier = self._resolve_telegram_notifier(user_id=user_id)
         if notifier is None:
             return
         try:
@@ -169,8 +202,9 @@ class ReportService:
         error: str,
         mode: str,
         skill_id: Optional[str],
+        user_id: Optional[int] = None,
     ) -> None:
-        notifier = self._resolve_telegram_notifier()
+        notifier = self._resolve_telegram_notifier(user_id=user_id)
         if notifier is None:
             return
         try:
@@ -182,14 +216,18 @@ class ReportService:
         except Exception as exc:
             logger.warning("telegram failure notify failed: %s", exc)
 
-    async def run_report(self, overrides: Optional[RunRequest] = None) -> RunResult:
+    async def run_report(
+        self,
+        overrides: Optional[RunRequest] = None,
+        user_id: Optional[int] = None,
+    ) -> RunResult:
         requested_mode = (
             (overrides.mode if overrides else "market") or "market"
         ).lower()
         requested_skill_id = overrides.skill_id if overrides else None
 
         try:
-            config = self._build_runtime_config(overrides=overrides)
+            config = self._build_runtime_config(overrides=overrides, user_id=user_id)
             config.ensure_output_root()
             config.ensure_data_root()
             generated_at = self._now_iso8601(config.timezone)
@@ -220,6 +258,7 @@ class ReportService:
                 analysis_service = AnalysisService(
                     config=config,
                     registry=registry,
+                    user_id=user_id,
                     news_service=news_service,
                     fund_flow_service=fund_flow_service,
                 )
@@ -279,7 +318,8 @@ class ReportService:
                     }
                     report_skill_id = report_skill_id or "fallback"
 
-            run_dir = self._build_run_dir(output_root=config.output_root)
+            run_output_root = self._resolve_output_root(config=config, user_id=user_id)
+            run_dir = self._build_run_dir(output_root=run_output_root)
             report_path = run_dir / "report.md"
             raw_path = run_dir / "raw_data.json"
             meta_path = run_dir / "meta.json"
@@ -326,19 +366,21 @@ class ReportService:
                 encoding="utf-8",
             )
             result = RunResult(summary=summary, warnings=warnings)
-            await self._notify_report_succeeded(result=result)
+            await self._notify_report_succeeded(result=result, user_id=user_id)
             return result
         except Exception as exc:
             await self._notify_report_failed(
                 error=str(exc),
                 mode=requested_mode,
                 skill_id=requested_skill_id,
+                user_id=user_id,
             )
             raise
 
-    def list_reports(self) -> List[ReportRunSummary]:
-        config = self.config_store.load()
-        root = config.ensure_output_root()
+    def list_reports(self, user_id: Optional[int] = None) -> List[ReportRunSummary]:
+        config = self._load_config(user_id=user_id)
+        root = self._resolve_output_root(config=config, user_id=user_id)
+        root.mkdir(parents=True, exist_ok=True)
         if not root.exists():
             return []
 
@@ -354,9 +396,14 @@ class ReportService:
                 summaries.append(summary)
         return summaries
 
-    def get_report(self, run_id: str) -> ReportRunDetail:
-        config = self.config_store.load()
-        run_dir = config.output_root / run_id
+    def get_report(
+        self,
+        run_id: str,
+        user_id: Optional[int] = None,
+    ) -> ReportRunDetail:
+        config = self._load_config(user_id=user_id)
+        root = self._resolve_output_root(config=config, user_id=user_id)
+        run_dir = root / run_id
         report_path = run_dir / "report.md"
         raw_path = run_dir / "raw_data.json"
         if not run_dir.exists() or not report_path.exists() or not raw_path.exists():
@@ -381,9 +428,10 @@ class ReportService:
             raw_data=json.loads(raw_path.read_text(encoding="utf-8")),
         )
 
-    def delete_report(self, run_id: str) -> bool:
-        config = self.config_store.load()
-        root = config.ensure_output_root().resolve()
+    def delete_report(self, run_id: str, user_id: Optional[int] = None) -> bool:
+        config = self._load_config(user_id=user_id)
+        root = self._resolve_output_root(config=config, user_id=user_id).resolve()
+        root.mkdir(parents=True, exist_ok=True)
         target = (root / run_id).resolve()
         if not target.exists() or not target.is_dir():
             return False
@@ -393,8 +441,12 @@ class ReportService:
         shutil.rmtree(target)
         return True
 
-    def _build_runtime_config(self, overrides: Optional[RunRequest]) -> AppConfig:
-        config = self.config_store.load()
+    def _build_runtime_config(
+        self,
+        overrides: Optional[RunRequest],
+        user_id: Optional[int] = None,
+    ) -> AppConfig:
+        config = self._load_config(user_id=user_id)
         if overrides is None:
             return config
         payload = config.model_dump(mode="python")
@@ -421,6 +473,26 @@ class ReportService:
             cursor += 1
         run_dir.mkdir(parents=True, exist_ok=False)
         return run_dir
+
+    @staticmethod
+    def _resolve_output_root(config: AppConfig, user_id: Optional[int]) -> Path:
+        base_root = config.ensure_output_root()
+        if user_id is None:
+            return base_root
+        return base_root / f"user_{user_id}"
+
+    def _load_config(self, user_id: Optional[int] = None) -> AppConfig:
+        if user_id is None:
+            return self.config_store.load(user_id=None)
+        global_config = self.config_store.load(user_id=None)
+        store = UserConfigStore(
+            database_url=global_config.database.url,
+            global_config_path=self.config_store.config_path,
+            user_id=user_id,
+        )
+        if not store.has_user_config():
+            store.init_from_global()
+        return store.load()
 
     @staticmethod
     def _now_iso8601(timezone_name: str) -> str:

@@ -12,12 +12,17 @@ from market_reporter.api import config as config_module
 from market_reporter.config import AppConfig, DatabaseConfig, TelegramConfig
 from market_reporter.services.config_store import ConfigStore
 from market_reporter.services.telegram_config import TelegramConfigService
+from market_reporter.settings import AppSettings
 
 
 class TelegramApiTest(unittest.TestCase):
     def _build_app(self, config_store: ConfigStore) -> FastAPI:
         app = FastAPI()
         app.state.config_store = config_store
+        app.state.settings = AppSettings(
+            auth_enabled=False,
+            config_file=config_store.config_path,
+        )
         app.include_router(config_module.router)
         return app
 

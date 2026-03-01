@@ -29,6 +29,7 @@ class DashboardService:
         self,
         config: AppConfig,
         registry: ProviderRegistry,
+        user_id: Optional[int] = None,
         market_data_service: Optional[MarketDataService] = None,
         watchlist_service: Optional[WatchlistService] = None,
     ) -> None:
@@ -36,7 +37,10 @@ class DashboardService:
         self.market_data_service = market_data_service or MarketDataService(
             config=config, registry=registry
         )
-        self.watchlist_service = watchlist_service or WatchlistService(config=config)
+        self.watchlist_service = watchlist_service or WatchlistService(
+            config=config,
+            user_id=user_id,
+        )
 
     async def get_snapshot(
         self, page: int = 1, page_size: int = 10, enabled_only: bool = True

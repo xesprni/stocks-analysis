@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import yaml
 
@@ -20,7 +20,7 @@ class ConfigStore:
     def __init__(self, config_path: Path) -> None:
         self.config_path = config_path
 
-    def load(self) -> AppConfig:
+    def load(self, user_id: Optional[int] = None) -> AppConfig:
         if not self.config_path.exists():
             config = (
                 default_app_config()
@@ -28,7 +28,7 @@ class ConfigStore:
                 .normalized()
             )
             config.ensure_data_root()
-            self.save(config)
+            self.save(config, user_id=user_id)
             return config
 
         raw = yaml.safe_load(self.config_path.read_text(encoding="utf-8")) or {}
@@ -43,33 +43,38 @@ class ConfigStore:
             or self._should_rewrite_dashboard(raw)
             or self._should_rewrite_longbridge(raw)
         ):
-            return self.save(config)
+            return self.save(config, user_id=user_id)
         return self._hydrate_telegram_config(
-            self._hydrate_longbridge_credentials(config)
+            self._hydrate_longbridge_credentials(config, user_id=user_id),
+            user_id=user_id,
         )
 
-    def save(self, config: AppConfig) -> AppConfig:
+    def save(self, config: AppConfig, user_id: Optional[int] = None) -> AppConfig:
         normalized = config.model_copy(
             update={"config_file": self.config_path}
         ).normalized()
         normalized.ensure_data_root()
-        normalized = self._persist_longbridge_credentials(config=normalized)
-        normalized = self._persist_telegram_config(config=normalized)
+        normalized = self._persist_longbridge_credentials(
+            config=normalized, user_id=user_id
+        )
+        normalized = self._persist_telegram_config(config=normalized, user_id=user_id)
         self.config_path.parent.mkdir(parents=True, exist_ok=True)
         payload = normalized.model_dump(mode="json")
         self.config_path.write_text(
             yaml.safe_dump(payload, allow_unicode=True, sort_keys=False),
             encoding="utf-8",
         )
-        hydrated = self._hydrate_longbridge_credentials(normalized)
-        return self._hydrate_telegram_config(hydrated)
+        hydrated = self._hydrate_longbridge_credentials(normalized, user_id=user_id)
+        return self._hydrate_telegram_config(hydrated, user_id=user_id)
 
-    def patch(self, patch_data: Dict[str, Any]) -> AppConfig:
-        current = self.load()
+    def patch(
+        self, patch_data: Dict[str, Any], user_id: Optional[int] = None
+    ) -> AppConfig:
+        current = self.load(user_id=user_id)
         payload = current.model_dump(mode="python")
         payload.update(patch_data)
         merged = AppConfig.model_validate(payload)
-        return self.save(merged)
+        return self.save(merged, user_id=user_id)
 
     @staticmethod
     def _normalize_analysis_providers(
@@ -232,7 +237,11 @@ class ConfigStore:
         access_token = str(raw_longbridge.get("access_token") or "").strip()
         return app_secret not in {"", "***"} or access_token not in {"", "***"}
 
-    def _persist_longbridge_credentials(self, config: AppConfig) -> AppConfig:
+    def _persist_longbridge_credentials(
+        self,
+        config: AppConfig,
+        user_id: Optional[int] = None,
+    ) -> AppConfig:
         longbridge = config.longbridge
         app_secret = str(longbridge.app_secret or "").strip()
         access_token = str(longbridge.access_token or "").strip()
@@ -241,7 +250,10 @@ class ConfigStore:
         has_credentials = False
         try:
             init_db(config.database.url)
-            service = LongbridgeCredentialService(database_url=config.database.url)
+            service = LongbridgeCredentialService(
+                database_url=config.database.url,
+                user_id=user_id,
+            )
             if (
                 app_secret
                 and access_token
@@ -267,7 +279,11 @@ class ConfigStore:
         )
         return config.model_copy(update={"longbridge": sanitized_longbridge})
 
-    def _hydrate_longbridge_credentials(self, config: AppConfig) -> AppConfig:
+    def _hydrate_longbridge_credentials(
+        self,
+        config: AppConfig,
+        user_id: Optional[int] = None,
+    ) -> AppConfig:
         longbridge = config.longbridge
         app_key = str(longbridge.app_key or "").strip()
         app_secret = ""
@@ -276,7 +292,10 @@ class ConfigStore:
 
         try:
             init_db(config.database.url)
-            service = LongbridgeCredentialService(database_url=config.database.url)
+            service = LongbridgeCredentialService(
+                database_url=config.database.url,
+                user_id=user_id,
+            )
             app_secret, access_token = service.get()
             has_credentials = bool(app_secret and access_token)
         except Exception:
@@ -291,7 +310,11 @@ class ConfigStore:
         )
         return config.model_copy(update={"longbridge": hydrated_longbridge})
 
-    def _persist_telegram_config(self, config: AppConfig) -> AppConfig:
+    def _persist_telegram_config(
+        self,
+        config: AppConfig,
+        user_id: Optional[int] = None,
+    ) -> AppConfig:
         telegram = config.telegram
         enabled = bool(telegram.enabled)
         chat_id = str(telegram.chat_id or "").strip()
@@ -301,7 +324,10 @@ class ConfigStore:
 
         try:
             init_db(config.database.url)
-            service = TelegramConfigService(database_url=config.database.url)
+            service = TelegramConfigService(
+                database_url=config.database.url,
+                user_id=user_id,
+            )
             if not enabled and not chat_id and not bot_token:
                 service.delete()
             else:
@@ -316,10 +342,17 @@ class ConfigStore:
 
         return config.model_copy(update={"telegram": TelegramConfig()})
 
-    def _hydrate_telegram_config(self, config: AppConfig) -> AppConfig:
+    def _hydrate_telegram_config(
+        self,
+        config: AppConfig,
+        user_id: Optional[int] = None,
+    ) -> AppConfig:
         try:
             init_db(config.database.url)
-            service = TelegramConfigService(database_url=config.database.url)
+            service = TelegramConfigService(
+                database_url=config.database.url,
+                user_id=user_id,
+            )
             telegram = service.get()
         except Exception:
             telegram = TelegramConfig()

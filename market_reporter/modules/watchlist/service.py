@@ -14,18 +14,24 @@ from market_reporter.modules.watchlist.schemas import WatchlistItem
 
 
 class WatchlistService:
-    def __init__(self, config: AppConfig) -> None:
+    def __init__(self, config: AppConfig, user_id: Optional[int] = None) -> None:
         self.config = config
+        self.user_id = user_id
 
     def list_items(self) -> List[WatchlistItem]:
         with session_scope(self.config.database.url) as session:
             repo = WatchlistRepo(session)
-            return [self._to_schema(item) for item in repo.list_all()]
+            return [
+                self._to_schema(item) for item in repo.list_all(user_id=self.user_id)
+            ]
 
     def list_enabled_items(self) -> List[WatchlistItem]:
         with session_scope(self.config.database.url) as session:
             repo = WatchlistRepo(session)
-            return [self._to_schema(item) for item in repo.list_enabled()]
+            return [
+                self._to_schema(item)
+                for item in repo.list_enabled(user_id=self.user_id)
+            ]
 
     def add_item(
         self,
@@ -44,7 +50,11 @@ class WatchlistService:
         with session_scope(self.config.database.url) as session:
             repo = WatchlistRepo(session)
             # Pre-check to return deterministic validation message before DB constraint errors.
-            existing = repo.get_by_symbol_market(symbol=normalized, market=market)
+            existing = repo.get_by_symbol_market(
+                symbol=normalized,
+                market=market,
+                user_id=self.user_id,
+            )
             if existing is not None:
                 raise ValidationError(
                     f"Watchlist item already exists: {normalized} ({market})"
@@ -56,6 +66,7 @@ class WatchlistService:
                     alias=alias,
                     display_name=display_name,
                     keywords_json=keywords_json,
+                    user_id=self.user_id,
                 )
             except IntegrityError as exc:
                 raise ValidationError(
@@ -73,7 +84,7 @@ class WatchlistService:
     ) -> WatchlistItem:
         with session_scope(self.config.database.url) as session:
             repo = WatchlistRepo(session)
-            item = repo.get(item_id)
+            item = repo.get(item_id=item_id, user_id=self.user_id)
             if item is None:
                 raise ValidationError(f"Watchlist item not found: {item_id}")
             updated = repo.update(
@@ -88,7 +99,7 @@ class WatchlistService:
     def delete_item(self, item_id: int) -> bool:
         with session_scope(self.config.database.url) as session:
             repo = WatchlistRepo(session)
-            return repo.delete(item_id=item_id)
+            return repo.delete(item_id=item_id, user_id=self.user_id)
 
     def _to_schema(self, item) -> WatchlistItem:
         return WatchlistItem(

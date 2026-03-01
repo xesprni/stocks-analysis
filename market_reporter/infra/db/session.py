@@ -112,6 +112,76 @@ def _ensure_sqlite_columns(engine) -> None:
             )
 
         try:
+            lb_columns = {
+                row[1]
+                for row in connection.exec_driver_sql(
+                    "PRAGMA table_info('longbridge_credentials')"
+                ).fetchall()
+            }
+            if "user_id" not in lb_columns:
+                connection.exec_driver_sql(
+                    "ALTER TABLE longbridge_credentials ADD COLUMN user_id INTEGER REFERENCES users(id)"
+                )
+        except Exception:
+            pass
+
+        try:
+            tg_columns = {
+                row[1]
+                for row in connection.exec_driver_sql(
+                    "PRAGMA table_info('telegram_configs')"
+                ).fetchall()
+            }
+            if "user_id" not in tg_columns:
+                connection.exec_driver_sql(
+                    "ALTER TABLE telegram_configs ADD COLUMN user_id INTEGER REFERENCES users(id)"
+                )
+        except Exception:
+            pass
+
+        try:
+            provider_secret_columns = {
+                row[1]
+                for row in connection.exec_driver_sql(
+                    "PRAGMA table_info('analysis_provider_secrets')"
+                ).fetchall()
+            }
+            if "user_id" not in provider_secret_columns:
+                connection.exec_driver_sql(
+                    "ALTER TABLE analysis_provider_secrets ADD COLUMN user_id INTEGER REFERENCES users(id)"
+                )
+        except Exception:
+            pass
+
+        try:
+            provider_account_columns = {
+                row[1]
+                for row in connection.exec_driver_sql(
+                    "PRAGMA table_info('analysis_provider_accounts')"
+                ).fetchall()
+            }
+            if "user_id" not in provider_account_columns:
+                connection.exec_driver_sql(
+                    "ALTER TABLE analysis_provider_accounts ADD COLUMN user_id INTEGER REFERENCES users(id)"
+                )
+        except Exception:
+            pass
+
+        try:
+            provider_auth_state_columns = {
+                row[1]
+                for row in connection.exec_driver_sql(
+                    "PRAGMA table_info('analysis_provider_auth_states')"
+                ).fetchall()
+            }
+            if "user_id" not in provider_auth_state_columns:
+                connection.exec_driver_sql(
+                    "ALTER TABLE analysis_provider_auth_states ADD COLUMN user_id INTEGER REFERENCES users(id)"
+                )
+        except Exception:
+            pass
+
+        try:
             user_columns = {
                 row[1]
                 for row in connection.exec_driver_sql(

@@ -55,6 +55,7 @@ class AnalysisService:
         self,
         config: AppConfig,
         registry: ProviderRegistry,
+        user_id: Optional[int] = None,
         market_data_service: Optional[MarketDataService] = None,
         news_service: Optional[NewsService] = None,
         fund_flow_service: Optional[FundFlowService] = None,
@@ -62,6 +63,7 @@ class AnalysisService:
     ) -> None:
         self.config = config
         self.registry = registry
+        self.user_id = user_id
         self.market_data_service = market_data_service
         self.news_service = news_service
         self.fund_flow_service = fund_flow_service
@@ -93,8 +95,17 @@ class AnalysisService:
             # Readiness state is derived from config + secret presence + OAuth connection.
             for provider in self.config.analysis.providers:
                 auth_mode = self._resolve_auth_mode(provider)
-                has_secret = secret_repo.get(provider.provider_id) is not None
-                account = account_repo.get(provider.provider_id)
+                has_secret = (
+                    secret_repo.get(
+                        provider.provider_id,
+                        user_id=self.user_id,
+                    )
+                    is not None
+                )
+                account = account_repo.get(
+                    provider.provider_id,
+                    user_id=self.user_id,
+                )
                 credential_expires_at = account.expires_at if account else None
                 connected = self._is_account_connected(account)
                 secret_required = auth_mode == "api_key"
@@ -151,12 +162,17 @@ class AnalysisService:
         ciphertext, nonce = encrypt_text(api_key, master_key)
         with session_scope(self.config.database.url) as session:
             repo = AnalysisProviderSecretRepo(session)
-            repo.upsert(provider_id=provider_id, ciphertext=ciphertext, nonce=nonce)
+            repo.upsert(
+                provider_id=provider_id,
+                ciphertext=ciphertext,
+                nonce=nonce,
+                user_id=self.user_id,
+            )
 
     def delete_secret(self, provider_id: str) -> bool:
         with session_scope(self.config.database.url) as session:
             repo = AnalysisProviderSecretRepo(session)
-            return repo.delete(provider_id=provider_id)
+            return repo.delete(provider_id=provider_id, user_id=self.user_id)
 
     async def start_provider_auth(
         self,
@@ -174,13 +190,14 @@ class AnalysisService:
         expires_at = now + timedelta(seconds=provider_cfg.login_timeout_seconds)
         with session_scope(self.config.database.url) as session:
             state_repo = AnalysisProviderAuthStateRepo(session)
-            state_repo.delete_expired(now)
+            state_repo.delete_expired(now, user_id=self.user_id)
             # Store one-time state to validate callback origin and expiry.
             state_repo.create(
                 state=state,
                 provider_id=provider_cfg.provider_id,
                 redirect_to=redirect_to,
                 expires_at=expires_at,
+                user_id=self.user_id,
             )
 
         provider = self.registry.resolve(
@@ -224,6 +241,7 @@ class AnalysisService:
                 state=state,
                 provider_id=provider_cfg.provider_id,
                 now=now,
+                user_id=self.user_id,
             )
             if auth_state is None:
                 raise ValueError("Login callback state is invalid or expired.")
@@ -272,6 +290,7 @@ class AnalysisService:
                 credential_ciphertext=ciphertext,
                 nonce=nonce,
                 expires_at=expires_at,
+                user_id=self.user_id,
             )
         return await self.get_provider_auth_status(provider_id=provider_id)
 
@@ -368,11 +387,11 @@ class AnalysisService:
                 external_deleted = bool(await provider.logout())
             with session_scope(self.config.database.url) as session:
                 repo = AnalysisProviderAccountRepo(session)
-                deleted = repo.delete(provider_id=provider_id)
+                deleted = repo.delete(provider_id=provider_id, user_id=self.user_id)
             return bool(external_deleted or deleted)
         with session_scope(self.config.database.url) as session:
             repo = AnalysisProviderSecretRepo(session)
-            return repo.delete(provider_id=provider_id)
+            return repo.delete(provider_id=provider_id, user_id=self.user_id)
 
     async def list_provider_models(self, provider_id: str) -> ProviderModelsView:
         provider_cfg = self._find_provider(provider_id)
@@ -587,7 +606,10 @@ class AnalysisService:
         with session_scope(self.config.database.url) as session:
             repo = StockAnalysisRunRepo(session)
             rows = repo.list_by_symbol(
-                symbol=normalized_symbol, market=market.upper(), limit=limit
+                symbol=normalized_symbol,
+                market=market.upper(),
+                limit=limit,
+                user_id=self.user_id,
             )
             return [self._to_history_item(row) for row in rows]
 
@@ -610,13 +632,14 @@ class AnalysisService:
                 limit=limit,
                 symbol=normalized_symbol,
                 market=normalized_market,
+                user_id=self.user_id,
             )
             return [self._to_history_item(row) for row in rows]
 
     def get_history_item(self, run_id: int) -> StockAnalysisHistoryItem:
         with session_scope(self.config.database.url) as session:
             repo = StockAnalysisRunRepo(session)
-            row = repo.get(run_id=run_id)
+            row = repo.get(run_id=run_id, user_id=self.user_id)
             if row is None:
                 raise FileNotFoundError(f"Stock analysis run not found: {run_id}")
             return self._to_history_item(row)
@@ -624,7 +647,7 @@ class AnalysisService:
     def delete_history_item(self, run_id: int) -> bool:
         with session_scope(self.config.database.url) as session:
             repo = StockAnalysisRunRepo(session)
-            return repo.delete(run_id=run_id)
+            return repo.delete(run_id=run_id, user_id=self.user_id)
 
     async def _invoke_provider(
         self,
@@ -660,7 +683,10 @@ class AnalysisService:
             return None
         with session_scope(self.config.database.url) as session:
             secret_repo = AnalysisProviderSecretRepo(session)
-            secret = secret_repo.get(provider_cfg.provider_id)
+            secret = secret_repo.get(
+                provider_cfg.provider_id,
+                user_id=self.user_id,
+            )
             if secret is None:
                 return None
             key_ciphertext = secret.key_ciphertext
@@ -695,7 +721,7 @@ class AnalysisService:
     def _has_secret(self, provider_id: str) -> bool:
         with session_scope(self.config.database.url) as session:
             secret_repo = AnalysisProviderSecretRepo(session)
-            return secret_repo.get(provider_id) is not None
+            return secret_repo.get(provider_id, user_id=self.user_id) is not None
 
     def _has_connected_account(self, provider_id: str) -> bool:
         account = self._get_account(provider_id=provider_id)
@@ -704,7 +730,7 @@ class AnalysisService:
     def _get_account(self, provider_id: str):
         with session_scope(self.config.database.url) as session:
             repo = AnalysisProviderAccountRepo(session)
-            account = repo.get(provider_id=provider_id)
+            account = repo.get(provider_id=provider_id, user_id=self.user_id)
             if account is not None:
                 session.expunge(account)
             return account
@@ -718,7 +744,7 @@ class AnalysisService:
         with session_scope(self.config.database.url) as session:
             repo = AnalysisProviderAccountRepo(session)
             if not connected:
-                repo.delete(provider_id=provider_id)
+                repo.delete(provider_id=provider_id, user_id=self.user_id)
                 return
 
             try:
@@ -740,6 +766,7 @@ class AnalysisService:
                     credential_ciphertext=ciphertext,
                     nonce=nonce,
                     expires_at=None,
+                    user_id=self.user_id,
                 )
             except Exception:
                 # This marker does not contain secrets; keep provider status functional even if keychain is unavailable.
@@ -749,6 +776,7 @@ class AnalysisService:
                     credential_ciphertext='{"marker_type":"codex_app_server","connected":true}',
                     nonce="plain",
                     expires_at=None,
+                    user_id=self.user_id,
                 )
 
     def _find_provider(self, provider_id: str) -> AnalysisProviderConfig:
@@ -819,6 +847,7 @@ class AnalysisService:
                 input_json=payload.model_dump_json(),
                 output_json=output.model_dump_json(),
                 markdown=output.markdown,
+                user_id=self.user_id,
             )
             run_id = row.id
             created_at = row.created_at

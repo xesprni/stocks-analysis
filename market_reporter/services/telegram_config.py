@@ -14,9 +14,11 @@ class TelegramConfigService:
     def __init__(
         self,
         database_url: str,
+        user_id: Optional[int] = None,
         keychain_store: Optional[KeychainStore] = None,
     ) -> None:
         self.database_url = database_url
+        self.user_id = user_id
         self.keychain_store = keychain_store or KeychainStore()
 
     def upsert(
@@ -40,12 +42,16 @@ class TelegramConfigService:
         )
         with session_scope(self.database_url) as session:
             repo = TelegramConfigRepo(session)
-            repo.upsert(config_ciphertext=ciphertext, nonce=nonce)
+            repo.upsert(
+                config_ciphertext=ciphertext,
+                nonce=nonce,
+                user_id=self.user_id,
+            )
 
     def get(self) -> TelegramConfig:
         with session_scope(self.database_url) as session:
             repo = TelegramConfigRepo(session)
-            row = repo.get()
+            row = repo.get(user_id=self.user_id)
             if row is None:
                 return TelegramConfig()
             ciphertext = row.config_ciphertext
@@ -83,4 +89,4 @@ class TelegramConfigService:
     def delete(self) -> bool:
         with session_scope(self.database_url) as session:
             repo = TelegramConfigRepo(session)
-            return repo.delete()
+            return repo.delete(user_id=self.user_id)

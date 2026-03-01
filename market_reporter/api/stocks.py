@@ -7,14 +7,14 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from market_reporter.api.deps import get_config_store
+from market_reporter.api.deps import get_user_config
+from market_reporter.config import AppConfig
 from market_reporter.core.registry import ProviderRegistry
 from market_reporter.core.types import Quote
 from market_reporter.infra.db.session import init_db
 from market_reporter.modules.market_data.service import MarketDataService
 from market_reporter.modules.symbol_search.schemas import StockSearchResult
 from market_reporter.modules.symbol_search.service import SymbolSearchService
-from market_reporter.services.config_store import ConfigStore
 
 router = APIRouter(prefix="/api", tags=["stocks"])
 
@@ -33,9 +33,8 @@ async def stock_search(
     q: str = Query(..., min_length=1),
     market: str = Query("ALL", pattern="^(ALL|CN|HK|US)$"),
     limit: int = Query(20, ge=1, le=100),
-    config_store: ConfigStore = Depends(get_config_store),
+    config: AppConfig = Depends(get_user_config),
 ) -> List[StockSearchResult]:
-    config = config_store.load()
     init_db(config.database.url)
     service = SymbolSearchService(config=config, registry=ProviderRegistry())
     try:
@@ -48,9 +47,8 @@ async def stock_search(
 async def stock_quote(
     symbol: str,
     market: str = Query(..., pattern="^(CN|HK|US)$"),
-    config_store: ConfigStore = Depends(get_config_store),
+    config: AppConfig = Depends(get_user_config),
 ):
-    config = config_store.load()
     init_db(config.database.url)
     service = MarketDataService(config=config, registry=ProviderRegistry())
     try:
@@ -62,9 +60,8 @@ async def stock_quote(
 @router.post("/stocks/quotes", response_model=List[Quote])
 async def stock_quotes_batch(
     payload: QuoteBatchRequest,
-    config_store: ConfigStore = Depends(get_config_store),
+    config: AppConfig = Depends(get_user_config),
 ) -> List[Quote]:
-    config = config_store.load()
     init_db(config.database.url)
     service = MarketDataService(config=config, registry=ProviderRegistry())
     return await service.get_quotes(
@@ -78,9 +75,8 @@ async def stock_kline(
     market: str = Query(..., pattern="^(CN|HK|US)$"),
     interval: str = Query("1m", pattern="^(1m|5m|1d)$"),
     limit: int = Query(300, ge=20, le=1000),
-    config_store: ConfigStore = Depends(get_config_store),
+    config: AppConfig = Depends(get_user_config),
 ):
-    config = config_store.load()
     init_db(config.database.url)
     service = MarketDataService(config=config, registry=ProviderRegistry())
     return await service.get_kline(
@@ -93,9 +89,8 @@ async def stock_curve(
     symbol: str,
     market: str = Query(..., pattern="^(CN|HK|US)$"),
     window: str = Query("1d"),
-    config_store: ConfigStore = Depends(get_config_store),
+    config: AppConfig = Depends(get_user_config),
 ):
-    config = config_store.load()
     init_db(config.database.url)
     service = MarketDataService(config=config, registry=ProviderRegistry())
     return await service.get_curve(symbol=symbol, market=market, window=window)

@@ -14,16 +14,26 @@ from market_reporter.api.stock_analysis_tasks import StockAnalysisTaskManager
 from market_reporter.config import AppConfig, DatabaseConfig
 from market_reporter.infra.db.repos import StockAnalysisRunRepo
 from market_reporter.infra.db.session import init_db, session_scope
-from market_reporter.modules.analysis.schemas import StockAnalysisTaskStatus, StockAnalysisTaskView
+from market_reporter.modules.analysis.schemas import (
+    StockAnalysisTaskStatus,
+    StockAnalysisTaskView,
+)
 from market_reporter.services.config_store import ConfigStore
+from market_reporter.settings import AppSettings
 
 
 class StockAnalysisResultsApiTest(unittest.TestCase):
     @staticmethod
-    def _build_app(config_store: ConfigStore, task_manager: StockAnalysisTaskManager) -> FastAPI:
+    def _build_app(
+        config_store: ConfigStore, task_manager: StockAnalysisTaskManager
+    ) -> FastAPI:
         app = FastAPI()
         app.state.config_store = config_store
         app.state.stock_analysis_task_manager = task_manager
+        app.state.settings = AppSettings(
+            auth_enabled=False,
+            config_file=config_store.config_path,
+        )
         app.include_router(analysis.router)
         return app
 
@@ -53,7 +63,13 @@ class StockAnalysisResultsApiTest(unittest.TestCase):
                     model="market-default",
                     status="SUCCESS",
                     input_json=json.dumps({"symbol": "AAPL"}),
-                    output_json=json.dumps({"summary": "AAPL summary", "sentiment": "bullish", "confidence": 0.8}),
+                    output_json=json.dumps(
+                        {
+                            "summary": "AAPL summary",
+                            "sentiment": "bullish",
+                            "confidence": 0.8,
+                        }
+                    ),
                     markdown="# AAPL",
                 )
                 row1_id = int(row1.id)
@@ -64,7 +80,13 @@ class StockAnalysisResultsApiTest(unittest.TestCase):
                     model="market-default",
                     status="SUCCESS",
                     input_json=json.dumps({"symbol": "PDD"}),
-                    output_json=json.dumps({"summary": "PDD summary", "sentiment": "neutral", "confidence": 0.6}),
+                    output_json=json.dumps(
+                        {
+                            "summary": "PDD summary",
+                            "sentiment": "neutral",
+                            "confidence": 0.6,
+                        }
+                    ),
                     markdown="# PDD",
                 )
                 row2_id = int(row2.id)

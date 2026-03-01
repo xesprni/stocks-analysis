@@ -99,9 +99,17 @@ class StockCurvePointTable(SQLModel, table=True):
 
 class AnalysisProviderSecretTable(SQLModel, table=True):
     __tablename__ = "analysis_provider_secrets"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "provider_id",
+            name="uq_analysis_provider_secrets_user_provider",
+        ),
+    )
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    provider_id: str = Field(index=True, unique=True)
+    user_id: Optional[int] = Field(default=None, foreign_key="users.id", index=True)
+    provider_id: str = Field(index=True)
     key_ciphertext: str
     nonce: str
     created_at: datetime = Field(default_factory=datetime.utcnow)
@@ -110,8 +118,12 @@ class AnalysisProviderSecretTable(SQLModel, table=True):
 
 class LongbridgeCredentialTable(SQLModel, table=True):
     __tablename__ = "longbridge_credentials"
+    __table_args__ = (
+        UniqueConstraint("user_id", name="uq_longbridge_credentials_user_id"),
+    )
 
     id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: Optional[int] = Field(default=None, foreign_key="users.id", index=True)
     credential_ciphertext: str
     nonce: str
     created_at: datetime = Field(default_factory=datetime.utcnow)
@@ -120,8 +132,10 @@ class LongbridgeCredentialTable(SQLModel, table=True):
 
 class TelegramConfigTable(SQLModel, table=True):
     __tablename__ = "telegram_configs"
+    __table_args__ = (UniqueConstraint("user_id", name="uq_telegram_configs_user_id"),)
 
     id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: Optional[int] = Field(default=None, foreign_key="users.id", index=True)
     config_ciphertext: str
     nonce: str
     created_at: datetime = Field(default_factory=datetime.utcnow)
@@ -130,9 +144,17 @@ class TelegramConfigTable(SQLModel, table=True):
 
 class AnalysisProviderAccountTable(SQLModel, table=True):
     __tablename__ = "analysis_provider_accounts"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "provider_id",
+            name="uq_analysis_provider_accounts_user_provider",
+        ),
+    )
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    provider_id: str = Field(index=True, unique=True)
+    user_id: Optional[int] = Field(default=None, foreign_key="users.id", index=True)
+    provider_id: str = Field(index=True)
     account_type: str = Field(default="chatgpt")
     credential_ciphertext: str
     nonce: str
@@ -146,6 +168,7 @@ class AnalysisProviderAuthStateTable(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     state: str = Field(index=True, unique=True)
+    user_id: Optional[int] = Field(default=None, foreign_key="users.id", index=True)
     provider_id: str = Field(index=True)
     redirect_to: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)

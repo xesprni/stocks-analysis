@@ -10,12 +10,17 @@ from fastapi.testclient import TestClient
 from market_reporter.api import stocks
 from market_reporter.config import AppConfig
 from market_reporter.services.config_store import ConfigStore
+from market_reporter.settings import AppSettings
 
 
 class StockBatchQuotesApiTest(unittest.TestCase):
     def _build_app(self, config_store: ConfigStore) -> FastAPI:
         app = FastAPI()
         app.state.config_store = config_store
+        app.state.settings = AppSettings(
+            auth_enabled=False,
+            config_file=config_store.config_path,
+        )
         app.include_router(stocks.router)
         return app
 

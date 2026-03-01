@@ -16,12 +16,17 @@ from market_reporter.modules.dashboard.schemas import (
     DashboardIndicesSnapshotView,
 )
 from market_reporter.services.config_store import ConfigStore
+from market_reporter.settings import AppSettings
 
 
 class DashboardSnapshotApiValidationTest(unittest.TestCase):
     def _build_app(self, config_store: ConfigStore) -> FastAPI:
         app = FastAPI()
         app.state.config_store = config_store
+        app.state.settings = AppSettings(
+            auth_enabled=False,
+            config_file=config_store.config_path,
+        )
         app.include_router(dashboard.router)
         return app
 
@@ -56,7 +61,9 @@ class DashboardSnapshotApiValidationTest(unittest.TestCase):
             bad_watch_page_size_low = client.get("/api/dashboard/watchlist?page_size=1")
             self.assertEqual(bad_watch_page_size_low.status_code, 422)
 
-            bad_watch_page_size_high = client.get("/api/dashboard/watchlist?page_size=100")
+            bad_watch_page_size_high = client.get(
+                "/api/dashboard/watchlist?page_size=100"
+            )
             self.assertEqual(bad_watch_page_size_high.status_code, 422)
 
     def test_indices_endpoint_returns_service_payload(self):

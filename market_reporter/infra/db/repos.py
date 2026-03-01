@@ -180,7 +180,9 @@ class WatchlistRepo:
 
     def list_all(self, user_id: Optional[int] = None) -> List[WatchlistItemTable]:
         stmt = select(WatchlistItemTable).order_by(WatchlistItemTable.id.desc())
-        if user_id is not None:
+        if user_id is None:
+            stmt = stmt.where(WatchlistItemTable.user_id.is_(None))
+        else:
             stmt = stmt.where(WatchlistItemTable.user_id == user_id)
         return list(self.session.exec(stmt).all())
 
@@ -190,7 +192,9 @@ class WatchlistRepo:
             .where(WatchlistItemTable.enabled.is_(True))
             .order_by(WatchlistItemTable.id.desc())
         )
-        if user_id is not None:
+        if user_id is None:
+            stmt = stmt.where(WatchlistItemTable.user_id.is_(None))
+        else:
             stmt = stmt.where(WatchlistItemTable.user_id == user_id)
         return list(self.session.exec(stmt).all())
 
@@ -225,12 +229,21 @@ class WatchlistRepo:
             .where(WatchlistItemTable.symbol == symbol)
             .where(WatchlistItemTable.market == market)
         )
-        if user_id is not None:
+        if user_id is None:
+            stmt = stmt.where(WatchlistItemTable.user_id.is_(None))
+        else:
             stmt = stmt.where(WatchlistItemTable.user_id == user_id)
         return self.session.exec(stmt).first()
 
-    def get(self, item_id: int) -> Optional[WatchlistItemTable]:
-        return self.session.get(WatchlistItemTable, item_id)
+    def get(
+        self, item_id: int, user_id: Optional[int] = None
+    ) -> Optional[WatchlistItemTable]:
+        stmt = select(WatchlistItemTable).where(WatchlistItemTable.id == item_id)
+        if user_id is None:
+            stmt = stmt.where(WatchlistItemTable.user_id.is_(None))
+        else:
+            stmt = stmt.where(WatchlistItemTable.user_id == user_id)
+        return self.session.exec(stmt).first()
 
     def update(
         self,
@@ -254,8 +267,8 @@ class WatchlistRepo:
         self.session.refresh(item)
         return item
 
-    def delete(self, item_id: int) -> bool:
-        item = self.session.get(WatchlistItemTable, item_id)
+    def delete(self, item_id: int, user_id: Optional[int] = None) -> bool:
+        item = self.get(item_id=item_id, user_id=user_id)
         if item is None:
             return False
         self.session.delete(item)
@@ -369,20 +382,22 @@ class AnalysisProviderSecretRepo:
         self.session = session
 
     def upsert(
-        self, provider_id: str, ciphertext: str, nonce: str
+        self,
+        provider_id: str,
+        ciphertext: str,
+        nonce: str,
+        user_id: Optional[int] = None,
     ) -> AnalysisProviderSecretTable:
-        row = self.session.exec(
-            select(AnalysisProviderSecretTable).where(
-                AnalysisProviderSecretTable.provider_id == provider_id
-            )
-        ).first()
+        row = self.get(provider_id=provider_id, user_id=user_id)
         if row is None:
             row = AnalysisProviderSecretTable(
+                user_id=user_id,
                 provider_id=provider_id,
                 key_ciphertext=ciphertext,
                 nonce=nonce,
             )
         else:
+            row.user_id = user_id
             row.key_ciphertext = ciphertext
             row.nonce = nonce
             row.updated_at = datetime.utcnow()
@@ -391,15 +406,22 @@ class AnalysisProviderSecretRepo:
         self.session.refresh(row)
         return row
 
-    def get(self, provider_id: str) -> Optional[AnalysisProviderSecretTable]:
-        return self.session.exec(
-            select(AnalysisProviderSecretTable).where(
-                AnalysisProviderSecretTable.provider_id == provider_id
-            )
-        ).first()
+    def get(
+        self,
+        provider_id: str,
+        user_id: Optional[int] = None,
+    ) -> Optional[AnalysisProviderSecretTable]:
+        stmt = select(AnalysisProviderSecretTable).where(
+            AnalysisProviderSecretTable.provider_id == provider_id
+        )
+        if user_id is None:
+            stmt = stmt.where(AnalysisProviderSecretTable.user_id.is_(None))
+        else:
+            stmt = stmt.where(AnalysisProviderSecretTable.user_id == user_id)
+        return self.session.exec(stmt).first()
 
-    def delete(self, provider_id: str) -> bool:
-        row = self.get(provider_id)
+    def delete(self, provider_id: str, user_id: Optional[int] = None) -> bool:
+        row = self.get(provider_id=provider_id, user_id=user_id)
         if row is None:
             return False
         self.session.delete(row)
@@ -418,14 +440,12 @@ class AnalysisProviderAccountRepo:
         credential_ciphertext: str,
         nonce: str,
         expires_at: Optional[datetime],
+        user_id: Optional[int] = None,
     ) -> AnalysisProviderAccountTable:
-        row = self.session.exec(
-            select(AnalysisProviderAccountTable).where(
-                AnalysisProviderAccountTable.provider_id == provider_id
-            )
-        ).first()
+        row = self.get(provider_id=provider_id, user_id=user_id)
         if row is None:
             row = AnalysisProviderAccountTable(
+                user_id=user_id,
                 provider_id=provider_id,
                 account_type=account_type,
                 credential_ciphertext=credential_ciphertext,
@@ -433,6 +453,7 @@ class AnalysisProviderAccountRepo:
                 expires_at=expires_at,
             )
         else:
+            row.user_id = user_id
             row.account_type = account_type
             row.credential_ciphertext = credential_ciphertext
             row.nonce = nonce
@@ -443,15 +464,22 @@ class AnalysisProviderAccountRepo:
         self.session.refresh(row)
         return row
 
-    def get(self, provider_id: str) -> Optional[AnalysisProviderAccountTable]:
-        return self.session.exec(
-            select(AnalysisProviderAccountTable).where(
-                AnalysisProviderAccountTable.provider_id == provider_id
-            )
-        ).first()
+    def get(
+        self,
+        provider_id: str,
+        user_id: Optional[int] = None,
+    ) -> Optional[AnalysisProviderAccountTable]:
+        stmt = select(AnalysisProviderAccountTable).where(
+            AnalysisProviderAccountTable.provider_id == provider_id
+        )
+        if user_id is None:
+            stmt = stmt.where(AnalysisProviderAccountTable.user_id.is_(None))
+        else:
+            stmt = stmt.where(AnalysisProviderAccountTable.user_id == user_id)
+        return self.session.exec(stmt).first()
 
-    def delete(self, provider_id: str) -> bool:
-        row = self.get(provider_id)
+    def delete(self, provider_id: str, user_id: Optional[int] = None) -> bool:
+        row = self.get(provider_id=provider_id, user_id=user_id)
         if row is None:
             return False
         self.session.delete(row)
@@ -464,15 +492,20 @@ class LongbridgeCredentialRepo:
         self.session = session
 
     def upsert(
-        self, credential_ciphertext: str, nonce: str
+        self,
+        credential_ciphertext: str,
+        nonce: str,
+        user_id: Optional[int] = None,
     ) -> LongbridgeCredentialTable:
-        row = self.get()
+        row = self.get(user_id=user_id)
         if row is None:
             row = LongbridgeCredentialTable(
+                user_id=user_id,
                 credential_ciphertext=credential_ciphertext,
                 nonce=nonce,
             )
         else:
+            row.user_id = user_id
             row.credential_ciphertext = credential_ciphertext
             row.nonce = nonce
             row.updated_at = datetime.utcnow()
@@ -481,15 +514,17 @@ class LongbridgeCredentialRepo:
         self.session.refresh(row)
         return row
 
-    def get(self) -> Optional[LongbridgeCredentialTable]:
-        return self.session.exec(
-            select(LongbridgeCredentialTable).order_by(
-                LongbridgeCredentialTable.id.desc()
-            )
-        ).first()
+    def get(self, user_id: Optional[int] = None) -> Optional[LongbridgeCredentialTable]:
+        stmt = select(LongbridgeCredentialTable)
+        if user_id is None:
+            stmt = stmt.where(LongbridgeCredentialTable.user_id.is_(None))
+        else:
+            stmt = stmt.where(LongbridgeCredentialTable.user_id == user_id)
+        stmt = stmt.order_by(LongbridgeCredentialTable.id.desc())
+        return self.session.exec(stmt).first()
 
-    def delete(self) -> bool:
-        row = self.get()
+    def delete(self, user_id: Optional[int] = None) -> bool:
+        row = self.get(user_id=user_id)
         if row is None:
             return False
         self.session.delete(row)
@@ -501,14 +536,21 @@ class TelegramConfigRepo:
     def __init__(self, session: Session) -> None:
         self.session = session
 
-    def upsert(self, config_ciphertext: str, nonce: str) -> TelegramConfigTable:
-        row = self.get()
+    def upsert(
+        self,
+        config_ciphertext: str,
+        nonce: str,
+        user_id: Optional[int] = None,
+    ) -> TelegramConfigTable:
+        row = self.get(user_id=user_id)
         if row is None:
             row = TelegramConfigTable(
+                user_id=user_id,
                 config_ciphertext=config_ciphertext,
                 nonce=nonce,
             )
         else:
+            row.user_id = user_id
             row.config_ciphertext = config_ciphertext
             row.nonce = nonce
             row.updated_at = datetime.utcnow()
@@ -517,13 +559,17 @@ class TelegramConfigRepo:
         self.session.refresh(row)
         return row
 
-    def get(self) -> Optional[TelegramConfigTable]:
-        return self.session.exec(
-            select(TelegramConfigTable).order_by(TelegramConfigTable.id.desc())
-        ).first()
+    def get(self, user_id: Optional[int] = None) -> Optional[TelegramConfigTable]:
+        stmt = select(TelegramConfigTable)
+        if user_id is None:
+            stmt = stmt.where(TelegramConfigTable.user_id.is_(None))
+        else:
+            stmt = stmt.where(TelegramConfigTable.user_id == user_id)
+        stmt = stmt.order_by(TelegramConfigTable.id.desc())
+        return self.session.exec(stmt).first()
 
-    def delete(self) -> bool:
-        row = self.get()
+    def delete(self, user_id: Optional[int] = None) -> bool:
+        row = self.get(user_id=user_id)
         if row is None:
             return False
         self.session.delete(row)
@@ -541,9 +587,11 @@ class AnalysisProviderAuthStateRepo:
         provider_id: str,
         redirect_to: Optional[str],
         expires_at: datetime,
+        user_id: Optional[int] = None,
     ) -> AnalysisProviderAuthStateTable:
         row = AnalysisProviderAuthStateTable(
             state=state,
+            user_id=user_id,
             provider_id=provider_id,
             redirect_to=redirect_to,
             expires_at=expires_at,
@@ -555,15 +603,24 @@ class AnalysisProviderAuthStateRepo:
         return row
 
     def get_valid(
-        self, state: str, provider_id: str, now: datetime
+        self,
+        state: str,
+        provider_id: str,
+        now: datetime,
+        user_id: Optional[int] = None,
     ) -> Optional[AnalysisProviderAuthStateTable]:
-        return self.session.exec(
+        stmt = (
             select(AnalysisProviderAuthStateTable)
             .where(AnalysisProviderAuthStateTable.state == state)
             .where(AnalysisProviderAuthStateTable.provider_id == provider_id)
             .where(AnalysisProviderAuthStateTable.used.is_(False))
             .where(AnalysisProviderAuthStateTable.expires_at >= now)
-        ).first()
+        )
+        if user_id is None:
+            stmt = stmt.where(AnalysisProviderAuthStateTable.user_id.is_(None))
+        else:
+            stmt = stmt.where(AnalysisProviderAuthStateTable.user_id == user_id)
+        return self.session.exec(stmt).first()
 
     def mark_used(
         self, row: AnalysisProviderAuthStateTable
@@ -574,15 +631,16 @@ class AnalysisProviderAuthStateRepo:
         self.session.refresh(row)
         return row
 
-    def delete_expired(self, now: datetime) -> int:
+    def delete_expired(self, now: datetime, user_id: Optional[int] = None) -> int:
         # Bulk-delete in Python to keep behavior predictable on SQLite.
-        expired_rows = list(
-            self.session.exec(
-                select(AnalysisProviderAuthStateTable).where(
-                    AnalysisProviderAuthStateTable.expires_at < now
-                )
-            ).all()
+        stmt = select(AnalysisProviderAuthStateTable).where(
+            AnalysisProviderAuthStateTable.expires_at < now
         )
+        if user_id is None:
+            stmt = stmt.where(AnalysisProviderAuthStateTable.user_id.is_(None))
+        else:
+            stmt = stmt.where(AnalysisProviderAuthStateTable.user_id == user_id)
+        expired_rows = list(self.session.exec(stmt).all())
         for row in expired_rows:
             self.session.delete(row)
         self.session.flush()
@@ -631,12 +689,23 @@ class StockAnalysisRunRepo:
             .order_by(StockAnalysisRunTable.id.desc())
             .limit(limit)
         )
-        if user_id is not None:
+        if user_id is None:
+            stmt = stmt.where(StockAnalysisRunTable.user_id.is_(None))
+        else:
             stmt = stmt.where(StockAnalysisRunTable.user_id == user_id)
         return list(self.session.exec(stmt).all())
 
-    def get(self, run_id: int) -> Optional[StockAnalysisRunTable]:
-        return self.session.get(StockAnalysisRunTable, run_id)
+    def get(
+        self,
+        run_id: int,
+        user_id: Optional[int] = None,
+    ) -> Optional[StockAnalysisRunTable]:
+        stmt = select(StockAnalysisRunTable).where(StockAnalysisRunTable.id == run_id)
+        if user_id is None:
+            stmt = stmt.where(StockAnalysisRunTable.user_id.is_(None))
+        else:
+            stmt = stmt.where(StockAnalysisRunTable.user_id == user_id)
+        return self.session.exec(stmt).first()
 
     def list_recent(
         self,
@@ -648,7 +717,9 @@ class StockAnalysisRunRepo:
         statement = select(StockAnalysisRunTable).order_by(
             StockAnalysisRunTable.id.desc()
         )
-        if user_id is not None:
+        if user_id is None:
+            statement = statement.where(StockAnalysisRunTable.user_id.is_(None))
+        else:
             statement = statement.where(StockAnalysisRunTable.user_id == user_id)
         if symbol:
             statement = statement.where(StockAnalysisRunTable.symbol == symbol)
@@ -657,8 +728,8 @@ class StockAnalysisRunRepo:
         statement = statement.limit(limit)
         return list(self.session.exec(statement).all())
 
-    def delete(self, run_id: int) -> bool:
-        row = self.get(run_id=run_id)
+    def delete(self, run_id: int, user_id: Optional[int] = None) -> bool:
+        row = self.get(run_id=run_id, user_id=user_id)
         if row is None:
             return False
         self.session.delete(row)

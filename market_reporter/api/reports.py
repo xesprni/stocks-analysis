@@ -7,7 +7,8 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import PlainTextResponse
 
-from market_reporter.api.deps import get_report_service
+from market_reporter.api.auth import CurrentUser, require_user
+from market_reporter.api.deps import get_effective_user_id, get_report_service
 from market_reporter.modules.reports.service import ReportService
 from market_reporter.schemas import (
     ReportRunDetail,
@@ -24,9 +25,13 @@ router = APIRouter(prefix="/api", tags=["reports"])
 async def run_report(
     payload: Optional[RunRequest] = None,
     report_service: ReportService = Depends(get_report_service),
+    user: CurrentUser = Depends(require_user),
 ) -> RunResult:
     try:
-        return await report_service.run_report(overrides=payload)
+        return await report_service.run_report(
+            overrides=payload,
+            user_id=get_effective_user_id(user),
+        )
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -35,24 +40,35 @@ async def run_report(
 async def run_report_async(
     payload: Optional[RunRequest] = None,
     report_service: ReportService = Depends(get_report_service),
+    user: CurrentUser = Depends(require_user),
 ) -> ReportRunTaskView:
-    return await report_service.start_report_async(overrides=payload)
+    return await report_service.start_report_async(
+        overrides=payload,
+        user_id=get_effective_user_id(user),
+    )
 
 
 @router.get("/reports/tasks", response_model=List[ReportRunTaskView])
 async def list_report_tasks(
     report_service: ReportService = Depends(get_report_service),
+    user: CurrentUser = Depends(require_user),
 ) -> List[ReportRunTaskView]:
-    return await report_service.list_report_tasks()
+    return await report_service.list_report_tasks(
+        user_id=get_effective_user_id(user),
+    )
 
 
 @router.get("/reports/tasks/{task_id}", response_model=ReportRunTaskView)
 async def get_report_task(
     task_id: str,
     report_service: ReportService = Depends(get_report_service),
+    user: CurrentUser = Depends(require_user),
 ) -> ReportRunTaskView:
     try:
-        return await report_service.get_report_task(task_id=task_id)
+        return await report_service.get_report_task(
+            task_id=task_id,
+            user_id=get_effective_user_id(user),
+        )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -60,17 +76,22 @@ async def get_report_task(
 @router.get("/reports", response_model=List[ReportRunSummary])
 async def list_reports(
     report_service: ReportService = Depends(get_report_service),
+    user: CurrentUser = Depends(require_user),
 ) -> List[ReportRunSummary]:
-    return report_service.list_reports()
+    return report_service.list_reports(user_id=get_effective_user_id(user))
 
 
 @router.get("/reports/{run_id}", response_model=ReportRunDetail)
 async def get_report(
     run_id: str,
     report_service: ReportService = Depends(get_report_service),
+    user: CurrentUser = Depends(require_user),
 ) -> ReportRunDetail:
     try:
-        return report_service.get_report(run_id=run_id)
+        return report_service.get_report(
+            run_id=run_id,
+            user_id=get_effective_user_id(user),
+        )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -79,9 +100,13 @@ async def get_report(
 async def delete_report(
     run_id: str,
     report_service: ReportService = Depends(get_report_service),
+    user: CurrentUser = Depends(require_user),
 ) -> dict:
     try:
-        deleted = report_service.delete_report(run_id=run_id)
+        deleted = report_service.delete_report(
+            run_id=run_id,
+            user_id=get_effective_user_id(user),
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"deleted": deleted}
@@ -91,8 +116,12 @@ async def delete_report(
 async def get_report_markdown(
     run_id: str,
     report_service: ReportService = Depends(get_report_service),
+    user: CurrentUser = Depends(require_user),
 ) -> str:
     try:
-        return report_service.get_report(run_id=run_id).report_markdown
+        return report_service.get_report(
+            run_id=run_id,
+            user_id=get_effective_user_id(user),
+        ).report_markdown
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

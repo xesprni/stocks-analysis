@@ -7,7 +7,12 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 
-from market_reporter.api.deps import get_config_store
+from market_reporter.api.auth import CurrentUser, require_user
+from market_reporter.api.deps import (
+    get_effective_user_id,
+    get_user_config,
+    get_user_config_store,
+)
 from market_reporter.config import AppConfig
 from market_reporter.core.registry import ProviderRegistry
 from market_reporter.infra.db.session import init_db
@@ -21,32 +26,46 @@ from market_reporter.modules.analysis.schemas import (
     ProviderSecretRequest,
 )
 from market_reporter.modules.analysis.service import AnalysisService
-from market_reporter.services.config_store import ConfigStore
+from market_reporter.services.user_config_store import UserConfigStore
 
 router = APIRouter(prefix="/api", tags=["providers"])
 
 
-def _get_analysis_service(config: AppConfig) -> AnalysisService:
+def _get_analysis_service(
+    config: AppConfig,
+    user_id: Optional[int],
+) -> AnalysisService:
     init_db(config.database.url)
-    return AnalysisService(config=config, registry=ProviderRegistry())
+    return AnalysisService(
+        config=config,
+        registry=ProviderRegistry(),
+        user_id=user_id,
+    )
 
 
 @router.get("/providers/analysis", response_model=List[AnalysisProviderView])
 async def analysis_providers(
-    config_store: ConfigStore = Depends(get_config_store),
+    config: AppConfig = Depends(get_user_config),
+    user: CurrentUser = Depends(require_user),
 ) -> List[AnalysisProviderView]:
-    config = config_store.load()
-    service = _get_analysis_service(config)
+    service = _get_analysis_service(
+        config,
+        user_id=get_effective_user_id(user),
+    )
     return service.list_providers()
 
 
 @router.put("/providers/analysis/default", response_model=AppConfig)
 async def update_default_analysis(
     payload: ProviderModelSelectionRequest,
-    config_store: ConfigStore = Depends(get_config_store),
+    config_store: UserConfigStore = Depends(get_user_config_store),
+    user: CurrentUser = Depends(require_user),
 ) -> AppConfig:
     config = config_store.load()
-    service = _get_analysis_service(config)
+    service = _get_analysis_service(
+        config,
+        user_id=get_effective_user_id(user),
+    )
     try:
         service.ensure_provider_ready(provider_id=payload.provider_id, model=None)
         models_view = await service.list_provider_models(
@@ -74,10 +93,13 @@ async def update_default_analysis(
 async def put_analysis_secret(
     provider_id: str,
     payload: ProviderSecretRequest,
-    config_store: ConfigStore = Depends(get_config_store),
+    config: AppConfig = Depends(get_user_config),
+    user: CurrentUser = Depends(require_user),
 ) -> dict:
-    config = config_store.load()
-    service = _get_analysis_service(config)
+    service = _get_analysis_service(
+        config,
+        user_id=get_effective_user_id(user),
+    )
     try:
         service.put_secret(provider_id=provider_id, api_key=payload.api_key)
     except Exception as exc:
@@ -93,10 +115,13 @@ async def start_analysis_auth(
     provider_id: str,
     request: Request,
     payload: Optional[ProviderAuthStartRequest] = None,
-    config_store: ConfigStore = Depends(get_config_store),
+    config: AppConfig = Depends(get_user_config),
+    user: CurrentUser = Depends(require_user),
 ) -> ProviderAuthStartResponse:
-    config = config_store.load()
-    service = _get_analysis_service(config)
+    service = _get_analysis_service(
+        config,
+        user_id=get_effective_user_id(user),
+    )
     callback_url = str(
         request.url_for("analysis_auth_callback", provider_id=provider_id)
     )
@@ -116,10 +141,13 @@ async def start_analysis_auth(
 )
 async def analysis_auth_status(
     provider_id: str,
-    config_store: ConfigStore = Depends(get_config_store),
+    config: AppConfig = Depends(get_user_config),
+    user: CurrentUser = Depends(require_user),
 ) -> ProviderAuthStatusView:
-    config = config_store.load()
-    service = _get_analysis_service(config)
+    service = _get_analysis_service(
+        config,
+        user_id=get_effective_user_id(user),
+    )
     try:
         return await service.get_provider_auth_status(provider_id=provider_id)
     except Exception as exc:
@@ -137,7 +165,8 @@ async def analysis_auth_callback(
     state: str = Query(..., min_length=8),
     code: Optional[str] = Query(None),
     error: Optional[str] = Query(None),
-    config_store: ConfigStore = Depends(get_config_store),
+    config: AppConfig = Depends(get_user_config),
+    user: CurrentUser = Depends(require_user),
 ) -> str:
     if error:
         return (
@@ -145,8 +174,10 @@ async def analysis_auth_callback(
             f"<p>{error}</p><p>You can close this page.</p></body></html>"
         )
 
-    config = config_store.load()
-    service = _get_analysis_service(config)
+    service = _get_analysis_service(
+        config,
+        user_id=get_effective_user_id(user),
+    )
     callback_url = str(
         request.url_for("analysis_auth_callback", provider_id=provider_id)
     )
@@ -174,10 +205,13 @@ async def analysis_auth_callback(
 @router.post("/providers/analysis/{provider_id}/auth/logout")
 async def logout_analysis_auth(
     provider_id: str,
-    config_store: ConfigStore = Depends(get_config_store),
+    config: AppConfig = Depends(get_user_config),
+    user: CurrentUser = Depends(require_user),
 ) -> dict:
-    config = config_store.load()
-    service = _get_analysis_service(config)
+    service = _get_analysis_service(
+        config,
+        user_id=get_effective_user_id(user),
+    )
     deleted = await service.logout_provider_auth(provider_id=provider_id)
     return {"deleted": deleted}
 
@@ -188,10 +222,13 @@ async def logout_analysis_auth(
 )
 async def analysis_provider_models(
     provider_id: str,
-    config_store: ConfigStore = Depends(get_config_store),
+    config: AppConfig = Depends(get_user_config),
+    user: CurrentUser = Depends(require_user),
 ) -> ProviderModelsView:
-    config = config_store.load()
-    service = _get_analysis_service(config)
+    service = _get_analysis_service(
+        config,
+        user_id=get_effective_user_id(user),
+    )
     try:
         return await service.list_provider_models(provider_id=provider_id)
     except Exception as exc:
@@ -201,10 +238,13 @@ async def analysis_provider_models(
 @router.delete("/providers/analysis/{provider_id}/secret")
 async def delete_analysis_secret(
     provider_id: str,
-    config_store: ConfigStore = Depends(get_config_store),
+    config: AppConfig = Depends(get_user_config),
+    user: CurrentUser = Depends(require_user),
 ) -> dict:
-    config = config_store.load()
-    service = _get_analysis_service(config)
+    service = _get_analysis_service(
+        config,
+        user_id=get_effective_user_id(user),
+    )
     deleted = service.delete_secret(provider_id=provider_id)
     return {"deleted": deleted}
 
@@ -212,10 +252,14 @@ async def delete_analysis_secret(
 @router.delete("/providers/analysis/{provider_id}", response_model=AppConfig)
 async def delete_analysis_provider(
     provider_id: str,
-    config_store: ConfigStore = Depends(get_config_store),
+    config_store: UserConfigStore = Depends(get_user_config_store),
+    user: CurrentUser = Depends(require_user),
 ) -> AppConfig:
     config = config_store.load()
-    cleanup_service = _get_analysis_service(config)
+    cleanup_service = _get_analysis_service(
+        config,
+        user_id=get_effective_user_id(user),
+    )
     providers = config.analysis.providers
     if not any(item.provider_id == provider_id for item in providers):
         raise HTTPException(

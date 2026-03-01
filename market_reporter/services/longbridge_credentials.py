@@ -13,9 +13,11 @@ class LongbridgeCredentialService:
     def __init__(
         self,
         database_url: str,
+        user_id: Optional[int] = None,
         keychain_store: Optional[KeychainStore] = None,
     ) -> None:
         self.database_url = database_url
+        self.user_id = user_id
         self.keychain_store = keychain_store or KeychainStore()
 
     def upsert(self, app_secret: str, access_token: str) -> None:
@@ -35,12 +37,16 @@ class LongbridgeCredentialService:
         )
         with session_scope(self.database_url) as session:
             repo = LongbridgeCredentialRepo(session)
-            repo.upsert(credential_ciphertext=ciphertext, nonce=nonce)
+            repo.upsert(
+                credential_ciphertext=ciphertext,
+                nonce=nonce,
+                user_id=self.user_id,
+            )
 
     def get(self) -> Tuple[str, str]:
         with session_scope(self.database_url) as session:
             repo = LongbridgeCredentialRepo(session)
-            row = repo.get()
+            row = repo.get(user_id=self.user_id)
             if row is None:
                 return "", ""
             ciphertext = row.credential_ciphertext
@@ -64,4 +70,4 @@ class LongbridgeCredentialService:
     def delete(self) -> bool:
         with session_scope(self.database_url) as session:
             repo = LongbridgeCredentialRepo(session)
-            return repo.delete()
+            return repo.delete(user_id=self.user_id)

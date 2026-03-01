@@ -10,12 +10,17 @@ from fastapi.testclient import TestClient
 from market_reporter.api import providers
 from market_reporter.config import AnalysisConfig, AnalysisProviderConfig, AppConfig
 from market_reporter.services.config_store import ConfigStore
+from market_reporter.settings import AppSettings
 
 
 class DeleteAnalysisProviderApiTest(unittest.TestCase):
     def _build_app(self, config_store: ConfigStore) -> FastAPI:
         app = FastAPI()
         app.state.config_store = config_store
+        app.state.settings = AppSettings(
+            auth_enabled=False,
+            config_file=config_store.config_path,
+        )
         app.include_router(providers.router)
         return app
 
@@ -62,7 +67,9 @@ class DeleteAnalysisProviderApiTest(unittest.TestCase):
 
             self.assertEqual(response.status_code, 200, response.text)
             payload = response.json()
-            provider_ids = [item["provider_id"] for item in payload["analysis"]["providers"]]
+            provider_ids = [
+                item["provider_id"] for item in payload["analysis"]["providers"]
+            ]
             self.assertNotIn("mock", provider_ids)
             self.assertGreaterEqual(len(provider_ids), 1)
 

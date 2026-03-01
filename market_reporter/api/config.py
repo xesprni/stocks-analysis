@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Optional
+
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 
@@ -18,13 +20,19 @@ from market_reporter.settings import AppSettings
 router = APIRouter(prefix="/api", tags=["config"])
 
 
+def _resolve_effective_user_id(user: CurrentUser) -> Optional[int]:
+    user_id = int(getattr(user, "user_id", 0) or 0)
+    return user_id if user_id > 0 else None
+
+
 def _get_user_config_store(request: Request, user: CurrentUser) -> UserConfigStore:
     settings: AppSettings = request.app.state.settings
     global_store: ConfigStore = request.app.state.config_store
+    effective_user_id = _resolve_effective_user_id(user)
     return UserConfigStore(
         database_url=global_store.load().database.url,
         global_config_path=settings.config_file,
-        user_id=user.user_id,
+        user_id=effective_user_id,
     )
 
 
@@ -130,7 +138,10 @@ async def delete_longbridge_token(
     store = _get_user_config_store(request, user)
     current = store.load()
     init_db(current.database.url)
-    credential_service = LongbridgeCredentialService(database_url=current.database.url)
+    credential_service = LongbridgeCredentialService(
+        database_url=current.database.url,
+        user_id=_resolve_effective_user_id(user),
+    )
     credential_service.delete()
     next_lb = LongbridgeConfig()
     next_config = current.model_copy(update={"longbridge": next_lb})
@@ -188,7 +199,10 @@ async def delete_telegram_config(
     store = _get_user_config_store(request, user)
     current = store.load()
     init_db(current.database.url)
-    TelegramConfigService(database_url=current.database.url).delete()
+    TelegramConfigService(
+        database_url=current.database.url,
+        user_id=_resolve_effective_user_id(user),
+    ).delete()
     next_config = current.model_copy(update={"telegram": TelegramConfig()})
     store.save(next_config)
     return {"ok": True}

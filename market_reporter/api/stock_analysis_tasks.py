@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from typing import Dict, Optional
 from uuid import uuid4
 
+from market_reporter.config import AppConfig
 from market_reporter.core.registry import ProviderRegistry
 from market_reporter.infra.db.session import init_db
 from market_reporter.infra.http.client import HttpClient
@@ -21,6 +22,7 @@ from market_reporter.modules.fund_flow.service import FundFlowService
 from market_reporter.modules.market_data.service import MarketDataService
 from market_reporter.modules.news.service import NewsService
 from market_reporter.services.config_store import ConfigStore
+from market_reporter.services.user_config_store import UserConfigStore
 
 
 class StockAnalysisTaskManager:
@@ -30,6 +32,7 @@ class StockAnalysisTaskManager:
         self._config_store = config_store
         self._lock = asyncio.Lock()
         self._tasks: Dict[str, StockAnalysisTaskView] = {}
+        self._task_user_ids: Dict[str, Optional[int]] = {}
         self._handles: Dict[str, asyncio.Task[None]] = {}
 
     async def update_task(
@@ -64,8 +67,9 @@ class StockAnalysisTaskManager:
         self,
         symbol: str,
         payload: StockAnalysisRunRequest,
+        user_id: Optional[int] = None,
     ) -> StockAnalysisRunView:
-        config = self._config_store.load()
+        config = self._load_config(user_id=user_id)
         init_db(config.database.url)
         async with HttpClient(
             timeout_seconds=config.request_timeout_seconds,
@@ -80,6 +84,7 @@ class StockAnalysisTaskManager:
             analysis_service = AnalysisService(
                 config=config,
                 registry=registry,
+                user_id=user_id,
                 market_data_service=market_data_service,
                 news_service=news_service,
                 fund_flow_service=fund_flow_service,
@@ -103,11 +108,25 @@ class StockAnalysisTaskManager:
                 indicator_profile=payload.indicator_profile,
             )
 
+    def _load_config(self, user_id: Optional[int]) -> AppConfig:
+        if user_id is None:
+            return self._config_store.load(user_id=None)
+        global_config = self._config_store.load(user_id=None)
+        store = UserConfigStore(
+            database_url=global_config.database.url,
+            global_config_path=self._config_store.config_path,
+            user_id=user_id,
+        )
+        if not store.has_user_config():
+            store.init_from_global()
+        return store.load()
+
     async def _run_task(
         self,
         task_id: str,
         symbol: str,
         payload: StockAnalysisRunRequest,
+        user_id: Optional[int] = None,
     ) -> None:
         await self.update_task(
             task_id=task_id,
@@ -116,7 +135,11 @@ class StockAnalysisTaskManager:
             error_message=None,
         )
         try:
-            result = await self._run_analysis_once(symbol=symbol, payload=payload)
+            result = await self._run_analysis_once(
+                symbol=symbol,
+                payload=payload,
+                user_id=user_id,
+            )
             await self.update_task(
                 task_id=task_id,
                 status=StockAnalysisTaskStatus.SUCCEEDED,
@@ -136,6 +159,7 @@ class StockAnalysisTaskManager:
         self,
         symbol: str,
         payload: StockAnalysisRunRequest,
+        user_id: Optional[int] = None,
     ) -> StockAnalysisTaskView:
         task_id = uuid4().hex
         task_view = StockAnalysisTaskView(
@@ -147,6 +171,7 @@ class StockAnalysisTaskManager:
         )
         async with self._lock:
             self._tasks[task_id] = task_view
+            self._task_user_ids[task_id] = user_id
 
         task_payload = payload.model_copy(deep=True)
         task = asyncio.create_task(
@@ -154,22 +179,37 @@ class StockAnalysisTaskManager:
                 task_id=task_id,
                 symbol=symbol,
                 payload=task_payload,
+                user_id=user_id,
             )
         )
         self._handles[task_id] = task
         task.add_done_callback(lambda _: self._handles.pop(task_id, None))
         return task_view
 
-    async def get_task(self, task_id: str) -> StockAnalysisTaskView:
+    async def get_task(
+        self,
+        task_id: str,
+        user_id: Optional[int] = None,
+    ) -> StockAnalysisTaskView:
         async with self._lock:
             task = self._tasks.get(task_id)
             if task is None:
                 raise FileNotFoundError(f"Stock analysis task not found: {task_id}")
+            owner = self._task_user_ids.get(task_id)
+            if owner != user_id:
+                raise FileNotFoundError(f"Stock analysis task not found: {task_id}")
             return task
 
-    async def list_tasks(self) -> list[StockAnalysisTaskView]:
+    async def list_tasks(
+        self,
+        user_id: Optional[int] = None,
+    ) -> list[StockAnalysisTaskView]:
         async with self._lock:
-            tasks = list(self._tasks.values())
+            tasks = [
+                task
+                for task_id, task in self._tasks.items()
+                if self._task_user_ids.get(task_id) == user_id
+            ]
         tasks.sort(key=lambda item: item.created_at, reverse=True)
         return tasks
 

@@ -115,7 +115,7 @@ def decode_token(token: str, settings: AppSettings) -> dict[str, Any]:
 
 
 def _get_settings(request: Request) -> AppSettings:
-    return request.app.state.settings
+    return getattr(request.app.state, "settings", AppSettings())
 
 
 def _get_db_url(request: Request) -> str:
@@ -182,8 +182,11 @@ class AuthDependency:
 auth_required = AuthDependency()
 
 
-def require_user(user: CurrentUser = Depends(auth_required)) -> CurrentUser:
-    settings = AppSettings()
+def require_user(
+    request: Request,
+    user: CurrentUser = Depends(auth_required),
+) -> CurrentUser:
+    settings = getattr(request.app.state, "settings", AppSettings())
     if not settings.auth_enabled:
         return user
     if user.user_id == 0:

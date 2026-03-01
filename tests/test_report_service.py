@@ -24,6 +24,7 @@ from market_reporter.schemas import (
 )
 from market_reporter.services.config_store import ConfigStore
 from market_reporter.services.report_service import ReportService
+from market_reporter.settings import AppSettings
 
 
 class ReportServiceTest(unittest.TestCase):
@@ -34,6 +35,10 @@ class ReportServiceTest(unittest.TestCase):
         app = FastAPI()
         app.state.config_store = config_store
         app.state.report_service = report_service
+        app.state.settings = AppSettings(
+            auth_enabled=False,
+            config_file=config_store.config_path,
+        )
         app.include_router(reports.router)
         return app
 
@@ -109,8 +114,9 @@ class ReportServiceTest(unittest.TestCase):
 
             service = ReportService(config_store=store)
 
-            async def fake_run_report(overrides=None):
+            async def fake_run_report(overrides=None, user_id=None):
                 del overrides
+                del user_id
                 await asyncio.sleep(0.01)
                 summary = ReportRunSummary(
                     run_id="20260207_010101",
@@ -161,8 +167,9 @@ class ReportServiceTest(unittest.TestCase):
 
             service = ReportService(config_store=store)
 
-            async def fake_run_report(overrides=None):
+            async def fake_run_report(overrides=None, user_id=None):
                 del overrides
+                del user_id
                 await asyncio.sleep(0.01)
                 raise RuntimeError("provider timeout")
 
@@ -557,8 +564,9 @@ class ReportServiceTest(unittest.TestCase):
                 telegram_notifier=notifier,  # type: ignore[arg-type]
             )
 
-            def fail_build_runtime_config(*, overrides=None):
+            def fail_build_runtime_config(*, overrides=None, user_id=None):
                 del overrides
+                del user_id
                 raise RuntimeError("runtime config unavailable")
 
             service._build_runtime_config = fail_build_runtime_config  # type: ignore[method-assign]
