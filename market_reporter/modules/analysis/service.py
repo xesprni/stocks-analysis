@@ -67,7 +67,9 @@ class AnalysisService:
         self.market_data_service = market_data_service
         self.news_service = news_service
         self.fund_flow_service = fund_flow_service
-        self.keychain_store = keychain_store or KeychainStore()
+        self.keychain_store = keychain_store or KeychainStore(
+            database_url=config.database.url
+        )
 
         # Register provider factories by type; actual instances are created per invocation.
         self.registry.register(self.MODULE_NAME, "mock", self._build_mock)

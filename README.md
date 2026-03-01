@@ -158,7 +158,13 @@ docker compose up -d --build
 2. `./data -> /app/data`
 3. `./output -> /app/output`
 
-其中 `MARKET_REPORTER_MASTER_KEY_FILE=/app/data/master_key.b64` 用于容器环境下主密钥文件回退（当系统 keyring 不可用时）。
+其中 `MARKET_REPORTER_MASTER_KEY_FILE=/app/data/master_key.b64` 用于显式指定主密钥文件路径（推荐容器场景）。
+
+说明：
+
+1. 系统 keyring 不可用时（常见于 Linux 服务器），会自动回退到主密钥文件。
+2. 未显式配置时，SQLite 默认使用数据库同目录的 `master_key.b64`。
+3. 也可通过 `MARKET_REPORTER_MASTER_KEY`（base64）直接注入固定主密钥。
 
 ### 7) 容器内 Codex CLI（用于 `codex_app_server`）
 
@@ -368,9 +374,11 @@ UV_CACHE_DIR=.uv-cache uv run pytest -q tests/test_compute_tools_* tests/test_ag
 
 1. Provider API Key 不写入 YAML。
 2. API Key 加密后保存到 SQLite。
-3. 主密钥默认保存在 macOS Keychain：
-   - service: `market-reporter`
-   - account: `master-key`
+3. 主密钥获取顺序：
+   - `MARKET_REPORTER_MASTER_KEY`（base64）
+   - `MARKET_REPORTER_MASTER_KEY_FILE`（或 SQLite 默认同目录 `master_key.b64`）
+   - 系统 keyring（service=`market-reporter`, account=`master-key`）
+4. 当从 keyring 读取到主密钥时，会同步落盘到主密钥文件，避免后续 keyring 不可用导致解密失败。
 
 ## 注意
 

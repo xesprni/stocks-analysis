@@ -18,7 +18,7 @@ class LongbridgeCredentialService:
     ) -> None:
         self.database_url = database_url
         self.user_id = user_id
-        self.keychain_store = keychain_store or KeychainStore()
+        self.keychain_store = keychain_store or KeychainStore(database_url=database_url)
 
     def upsert(self, app_secret: str, access_token: str) -> None:
         secret = str(app_secret or "").strip()
