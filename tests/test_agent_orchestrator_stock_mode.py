@@ -12,6 +12,7 @@ from market_reporter.modules.analysis.agent.schemas import (
     PriceBar,
     PriceHistoryResult,
     RuntimeDraft,
+    ToolCallTrace,
     WebSearchResult,
 )
 
@@ -113,7 +114,30 @@ class AgentOrchestratorStockModeTest(unittest.TestCase):
             )
 
         async def fake_runtime(**kwargs):
-            del kwargs
+            executor = kwargs.get("tool_executor")
+            traces = []
+            if callable(executor):
+                for name, args in [
+                    (
+                        "get_price_history",
+                        {"symbol": "AAPL", "market": "US", "interval": "1d"},
+                    ),
+                    ("get_fundamentals_info", {"symbol": "AAPL", "market": "US"}),
+                    (
+                        "search_news",
+                        {"query": "AAPL", "symbol": "AAPL", "market": "US"},
+                    ),
+                    ("search_web", {"query": "AAPL"}),
+                    (
+                        "get_financial_reports",
+                        {"symbol": "AAPL", "market": "US", "limit": 6},
+                    ),
+                    ("compute_indicators", {"symbol": "AAPL", "market": "US"}),
+                ]:
+                    result = await executor(name, args)
+                    traces.append(
+                        ToolCallTrace(tool=name, arguments=args, result_preview=result)
+                    )
             return (
                 RuntimeDraft(
                     summary="summary",
@@ -127,7 +151,7 @@ class AgentOrchestratorStockModeTest(unittest.TestCase):
                     },
                     markdown="m",
                 ),
-                [],
+                traces,
             )
 
         orchestrator.market_tools.get_price_history = fake_price  # type: ignore[method-assign]
@@ -253,7 +277,30 @@ class AgentOrchestratorStockModeTest(unittest.TestCase):
             )
 
         async def fake_runtime(**kwargs):
-            del kwargs
+            executor = kwargs.get("tool_executor")
+            traces = []
+            if callable(executor):
+                for name, args in [
+                    (
+                        "get_price_history",
+                        {"symbol": "AAPL", "market": "US", "interval": "1d"},
+                    ),
+                    ("get_fundamentals_info", {"symbol": "AAPL", "market": "US"}),
+                    (
+                        "search_news",
+                        {"query": "AAPL", "symbol": "AAPL", "market": "US"},
+                    ),
+                    ("search_web", {"query": "AAPL"}),
+                    (
+                        "get_financial_reports",
+                        {"symbol": "AAPL", "market": "US", "limit": 6},
+                    ),
+                    ("compute_indicators", {"symbol": "AAPL", "market": "US"}),
+                ]:
+                    result = await executor(name, args)
+                    traces.append(
+                        ToolCallTrace(tool=name, arguments=args, result_preview=result)
+                    )
             return (
                 RuntimeDraft(
                     summary="summary",
@@ -267,7 +314,7 @@ class AgentOrchestratorStockModeTest(unittest.TestCase):
                     },
                     markdown="m",
                 ),
-                [],
+                traces,
             )
 
         orchestrator.market_tools.get_price_history = fake_price  # type: ignore[method-assign]

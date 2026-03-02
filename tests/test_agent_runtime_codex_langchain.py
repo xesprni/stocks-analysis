@@ -1,13 +1,15 @@
+from __future__ import annotations
+
 import asyncio
 import unittest
 from typing import Any, cast
 
-from market_reporter.modules.analysis.agent.runtime.action_json_runtime import (
-    ActionJSONRuntime,
+from market_reporter.modules.analysis.agent.runtime.codex_langchain_runtime import (
+    CodexLangChainRuntime,
 )
 
 
-class _FakeProvider:
+class _FakeCodexProvider:
     def __init__(self, responses):
         self._responses = list(responses)
 
@@ -18,21 +20,21 @@ class _FakeProvider:
         return self._responses.pop(0)
 
 
-class ActionJSONRuntimeTest(unittest.TestCase):
+class CodexLangChainRuntimeTest(unittest.TestCase):
     def test_runtime_calls_tool_then_returns_final(self):
-        provider = _FakeProvider(
+        provider = _FakeCodexProvider(
             responses=[
                 '{"action":"call_tool","tool":"search_news","arguments":{"query":"AAPL"}}',
                 '{"action":"final","final":{"summary":"ok","sentiment":"neutral","key_levels":[],"risks":[],"action_items":[],"confidence":0.7,"conclusions":["结论 [E1]"],"scenario_assumptions":{"base":"b","bull":"u","bear":"d"},"markdown":"m"}}',
             ]
         )
-        runtime = ActionJSONRuntime(provider=cast(Any, provider))
+        runtime = CodexLangChainRuntime(provider=cast(Any, provider))
 
         async def executor(tool, args):
             self.assertEqual(tool, "search_news")
             self.assertEqual(args.get("query"), "AAPL")
             return {
-                "as_of": "2026-02-13",
+                "as_of": "2026-03-02",
                 "source": "rss",
                 "items": [{"title": "x"}],
             }
@@ -61,13 +63,13 @@ class ActionJSONRuntimeTest(unittest.TestCase):
         self.assertEqual(traces[0].tool, "search_news")
 
     def test_runtime_tool_error_does_not_abort_loop(self):
-        provider = _FakeProvider(
+        provider = _FakeCodexProvider(
             responses=[
                 '{"action":"call_tool","tool":"search_news","arguments":{"query":"AAPL"}}',
-                '{"action":"final","final":{"summary":"ok-after-error","sentiment":"neutral","key_levels":[],"risks":[],"action_items":[],"confidence":0.5,"conclusions":["结论 [E1]"],"scenario_assumptions":{"base":"b","bull":"u","bear":"d"},"markdown":"m"}}',
+                '{"action":"final","final":{"summary":"ok-after-error","sentiment":"neutral","key_levels":[],"risks":[],"action_items":[],"confidence":0.6,"conclusions":["结论 [E1]"],"scenario_assumptions":{"base":"b","bull":"u","bear":"d"},"markdown":"m"}}',
             ]
         )
-        runtime = ActionJSONRuntime(provider=cast(Any, provider))
+        runtime = CodexLangChainRuntime(provider=cast(Any, provider))
 
         async def executor(tool, args):
             del tool, args
@@ -93,21 +95,20 @@ class ActionJSONRuntimeTest(unittest.TestCase):
         draft, traces = asyncio.run(scenario())
         self.assertEqual(draft.summary, "ok-after-error")
         self.assertEqual(len(traces), 1)
-        self.assertIn("warnings", traces[0].result_preview)
         warnings = traces[0].result_preview.get("warnings") or []
         self.assertTrue(isinstance(warnings, list) and warnings)
         self.assertIn("tool_execution_error", str(warnings[0]))
 
     def test_runtime_limits_repeated_same_failing_call(self):
-        provider = _FakeProvider(
+        provider = _FakeCodexProvider(
             responses=[
                 '{"action":"call_tool","tool":"search_news","arguments":{"query":"AAPL"}}',
                 '{"action":"call_tool","tool":"search_news","arguments":{"query":"AAPL"}}',
                 '{"action":"call_tool","tool":"search_news","arguments":{"query":"AAPL"}}',
-                '{"action":"final","final":{"summary":"ok","sentiment":"neutral","key_levels":[],"risks":[],"action_items":[],"confidence":0.5,"conclusions":["结论 [E1]"],"scenario_assumptions":{"base":"b","bull":"u","bear":"d"},"markdown":"m"}}',
+                '{"action":"final","final":{"summary":"ok","sentiment":"neutral","key_levels":[],"risks":[],"action_items":[],"confidence":0.6,"conclusions":["结论 [E1]"],"scenario_assumptions":{"base":"b","bull":"u","bear":"d"},"markdown":"m"}}',
             ]
         )
-        runtime = ActionJSONRuntime(provider=cast(Any, provider))
+        runtime = CodexLangChainRuntime(provider=cast(Any, provider))
 
         state = {"calls": 0}
 

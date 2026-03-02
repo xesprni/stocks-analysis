@@ -10,8 +10,13 @@
 - 门面：`market_reporter/modules/analysis/agent/service.py`
 - 运行时：
   - `runtime/openai_tool_runtime.py`
-  - `runtime/action_json_runtime.py`
+  - `runtime/codex_langchain_runtime.py`
+  - `runtime/action_json_runtime.py`（未知 provider 的兜底协议）
   - `runtime/factory.py`
+- 能力注册：
+  - `capability_registry.py`
+  - `skill_catalog.py`
+  - `subagents.py`
 - 护栏：`guardrails.py`
 - 报告输出：`report_formatter.py`
 - 工具集合：`tools/*.py`
@@ -26,23 +31,27 @@
 - `compute_indicators`（技术指标/策略打分/信号时间线）
 - `peer_compare`（同行对比）
 - `get_macro_data`（宏观资金流）
+- `skill`（从 `skills/*/SKILL.md` 懒加载完整技能文档）
+- `subagent`（调用注册子代理能力做中间分析）
 
 ## 4. 执行流程（stock 模式）
 
 1. 解析问题与时间范围（news/filing/price）。
-2. 采集多周期行情（1d/5m/1m 可配置）。
-3. 采集基本面、财报、新闻、联网检索、可选 peer compare。
-4. `compute_indicators` 生成趋势/动量/量价/形态/支撑阻力/策略评分。
-5. 进入 runtime（OpenAI tools 或 Action-JSON）生成草稿。
-6. 护栏校验证据完整性与关键一致性（如 PE 一致性）。
-7. 报告格式化输出 `AgentFinalReport`。
+2. 根据 mode + skill 选择注册能力集（data tool + skill + subagent）。
+3. 进入 runtime，由模型自主决定调用哪些工具及顺序。
+4. `compute_indicators` 可在缺省输入时自动拉取多周期价格数据。
+5. 护栏校验证据完整性与关键一致性（如 PE 一致性）。
+6. 报告格式化输出 `AgentFinalReport`。
 
 market 模式仅保留新闻 + 宏观数据工具。
 
 ## 5. Runtime 策略
 
-- `OpenAIToolRuntime`：使用 tools API 循环调用。
-- `ActionJSONRuntime`：要求模型输出 `action_json_v1` 协议（call_tool/final）。
+- `OpenAIToolRuntime`：基于 LangChain `ChatOpenAI` + tool-calling 循环调用。
+- `CodexLangChainRuntime`：基于 LangChain prompt/parser + codex app-server 文本回合执行。
+- `ActionJSONRuntime`：未知 provider 的协议兜底（`action_json_v1`）。
+- 工具调用异常默认转为结构化 `tool_execution_error`/`tool_argument_error` 观察结果并继续循环，模型可据此自我纠错。
+- 同一 `tool + arguments` 失败重试默认上限 2 次（超限写入 `tool_retry_limit_exceeded`），再叠加 `max_steps/max_tool_calls`，避免死循环。
 - 失败时生成 fallback `RuntimeDraft`，保证输出可用。
 
 ## 5.1 Skills（能力抽象）

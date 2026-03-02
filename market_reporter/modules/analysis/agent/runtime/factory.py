@@ -7,8 +7,8 @@ from market_reporter.core.registry import ProviderRegistry
 from market_reporter.modules.analysis.agent.runtime.action_json_runtime import (
     ActionJSONRuntime,
 )
-from market_reporter.modules.analysis.agent.runtime.openai_tool_runtime import (
-    OpenAIToolRuntime,
+from market_reporter.modules.analysis.agent.runtime.codex_langchain_runtime import (
+    CodexLangChainRuntime,
 )
 
 
@@ -29,6 +29,15 @@ class AgentRuntimeFactory:
         if lowered_type == "openai_compatible":
             if not api_key:
                 raise ValueError("API key is required for openai tool runtime")
+            try:
+                from market_reporter.modules.analysis.agent.runtime.openai_tool_runtime import (
+                    OpenAIToolRuntime,
+                )
+            except Exception as exc:
+                raise ValueError(
+                    "LangChain runtime dependencies are missing for openai_compatible provider"
+                ) from exc
+
             return OpenAIToolRuntime(provider_config=provider_cfg, api_key=api_key)
 
         if lowered_type == "codex_app_server":
@@ -37,7 +46,7 @@ class AgentRuntimeFactory:
                 provider_cfg.type,
                 provider_config=provider_cfg,
             )
-            return ActionJSONRuntime(provider=provider, access_token=access_token)
+            return CodexLangChainRuntime(provider=provider, access_token=access_token)
 
         # Fallback to action-json protocol for unknown providers that can return text.
         provider = registry.resolve(

@@ -47,6 +47,7 @@
 
 1. 调用 `resolve_credentials()` 选择 provider + model + 凭据
 2. 构建 `AgentService` 并执行工具链
+   - `openai_compatible` 与 `codex_app_server` provider 通过 LangChain runtime 执行注册能力
 3. 转换为 `AnalysisInput + AnalysisOutput`
 4. 持久化到 `stock_analysis_runs`
 

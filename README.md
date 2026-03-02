@@ -9,6 +9,7 @@
 3. Stock Terminal 仅保留盘中行情图表，个股分析入口统一收敛到 `Run Reports` 的 `stock` 模式。
 4. Config 页面改为分区保存（基础配置 / 模块默认配置 / Dashboard 配置），不再顶部“一键全局保存”。
 5. Dashboard 监控总览拆分为异步并发加载（指标与 watchlist 分离渲染）。
+6. Agent 的 `openai_compatible` 与 `codex_app_server` 运行时统一为 LangChain 能力编排，工具/skill/subagent 全部走注册能力集并由模型自主决策调用。
 
 ## 核心能力
 
@@ -18,6 +19,7 @@
 4. 多 Provider / 多 Model 分析引擎（mock / openai_compatible / codex_app_server）。
 5. 报告生成与历史回看（市场报告 + 个股分析，均支持异步任务）。
 6. 可选 Telegram 报告完成推送（成功/失败）。
+7. Skill 文档懒加载：支持从 `skills/*/SKILL.md` 动态加载能力说明并作为 `skill` 工具返回。
 
 ## 架构
 
@@ -149,6 +151,38 @@ docker compose down
 ```bash
 docker compose up -d --build
 ```
+
+### 5.1) 一键脚本（可选）
+
+项目提供 `bin/` 运维脚本（见 `bin/README.md`）：
+
+```bash
+./bin/deploy.sh   # 部署（build + up）
+./bin/restart.sh  # 重启
+./bin/stop.sh     # 停止
+./bin/update.sh   # 更新代码并重建
+./bin/status.sh   # 查看状态
+./bin/logs.sh 300 # 查看日志
+```
+
+### 5.2) 非 Docker 一键脚本（可选）
+
+如果你不希望依赖 Docker，可使用本地进程版脚本：
+
+```bash
+./bin/deploy-local.sh   # 本地部署（uv sync + frontend build + 启动后端）
+./bin/restart-local.sh  # 本地重启
+./bin/stop-local.sh     # 本地停止
+./bin/update-local.sh   # 拉取代码并本地重建
+./bin/status-local.sh   # 查看本地状态
+./bin/logs-local.sh 300 # 查看本地日志
+```
+
+说明：
+
+1. 本地脚本会使用 `run/market-reporter.pid` 管理进程。
+2. 后端日志写入 `logs/market-reporter.log`。
+3. 可通过 `SKIP_FRONTEND_BUILD=1` 跳过前端构建，通过 `SKIP_UV_SYNC=1` 跳过依赖同步。
 
 ### 6) 持久化目录
 

@@ -9,6 +9,7 @@ from market_reporter.modules.analysis.agent.schemas import (
     MacroResult,
     NewsSearchResult,
     RuntimeDraft,
+    ToolCallTrace,
     WebSearchResult,
 )
 
@@ -73,6 +74,18 @@ class AgentOrchestratorMarketModeTest(unittest.TestCase):
                 "question": kwargs.get("question"),
                 "context": kwargs.get("context"),
             }
+            executor = kwargs.get("tool_executor")
+            traces = []
+            if callable(executor):
+                for name, args in [
+                    ("search_news", {"query": "HK market"}),
+                    ("search_web", {"query": "HK market"}),
+                    ("get_macro_data", {"market": "HK"}),
+                ]:
+                    result = await executor(name, args)
+                    traces.append(
+                        ToolCallTrace(tool=name, arguments=args, result_preview=result)
+                    )
             return (
                 RuntimeDraft(
                     summary="summary",
@@ -82,7 +95,7 @@ class AgentOrchestratorMarketModeTest(unittest.TestCase):
                     scenario_assumptions={"base": "b", "bull": "u", "bear": "d"},
                     markdown="m",
                 ),
-                [],
+                traces,
             )
 
         orchestrator.news_tools.search_news = fake_news  # type: ignore[method-assign]

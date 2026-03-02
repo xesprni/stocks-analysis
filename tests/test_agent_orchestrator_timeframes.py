@@ -16,6 +16,7 @@ from market_reporter.modules.analysis.agent.schemas import (
     PriceBar,
     PriceHistoryResult,
     RuntimeDraft,
+    ToolCallTrace,
     WebSearchResult,
 )
 
@@ -148,7 +149,16 @@ class AgentOrchestratorTimeframesTest(unittest.TestCase):
             )
 
         async def fake_runtime(**kwargs):
-            del kwargs
+            executor = kwargs.get("tool_executor")
+            traces = []
+            if callable(executor):
+                for name, args in [
+                    ("compute_indicators", {"symbol": "AAPL", "market": "US"}),
+                ]:
+                    result = await executor(name, args)
+                    traces.append(
+                        ToolCallTrace(tool=name, arguments=args, result_preview=result)
+                    )
             return (
                 RuntimeDraft(
                     summary="summary",
@@ -158,7 +168,7 @@ class AgentOrchestratorTimeframesTest(unittest.TestCase):
                     scenario_assumptions={"base": "b", "bull": "u", "bear": "d"},
                     markdown="m",
                 ),
-                [],
+                traces,
             )
 
         orchestrator.market_tools.get_price_history = fake_price  # type: ignore[method-assign]

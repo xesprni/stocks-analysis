@@ -4,6 +4,10 @@ import json
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
+from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
+from langchain_core.output_parsers import JsonOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+
 from market_reporter.core.utils import parse_json
 from market_reporter.modules.analysis.agent.schemas import RuntimeDraft, ToolCallTrace
 from market_reporter.modules.analysis.providers.codex_app_server_provider import (
@@ -13,7 +17,7 @@ from market_reporter.modules.analysis.providers.codex_app_server_provider import
 ToolExecutor = Callable[[str, Dict[str, Any]], Awaitable[Dict[str, Any]]]
 
 
-class ActionJSONRuntime:
+class CodexLangChainRuntime:
     MAX_RETRIES_PER_TOOL_SIGNATURE = 2
 
     def __init__(
@@ -23,6 +27,7 @@ class ActionJSONRuntime:
     ) -> None:
         self.provider = provider
         self.access_token = access_token
+        self._json_parser = JsonOutputParser()
 
     async def run(
         self,
@@ -40,53 +45,68 @@ class ActionJSONRuntime:
         used_calls = 0
         tool_attempts: Dict[str, int] = {}
 
+        prompt_template = ChatPromptTemplate.from_messages(
+            [
+                SystemMessage(
+                    content=(
+                        "You are a financial analysis orchestrator running in LangChain loop mode. "
+                        "Pick tools when needed, then return final structured result."
+                    )
+                ),
+                HumanMessage(
+                    content=(
+                        "Task packet:\n"
+                        "{packet}\n\n"
+                        "Return valid JSON only. "
+                        "Either:\n"
+                        '1) {"action":"call_tool","tool":"name","arguments":{...}}\n'
+                        '2) {"action":"final","final":{summary,sentiment,key_levels,risks,action_items,confidence,conclusions,scenario_assumptions,markdown}}\n'
+                        "If you already have enough evidence, return final."
+                    )
+                ),
+            ]
+        )
+
+        format_instruction = self._json_parser.get_format_instructions()
+        tool_names = [
+            str(item.get("function", {}).get("name") or "")
+            for item in tool_specs
+            if isinstance(item, dict)
+        ]
+
         for step in range(max_steps):
-            instruction = {
-                "protocol": "action_json_v1",
-                "task": {
-                    "mode": mode,
-                    "question": question,
-                },
-                "tools": [item.get("function", {}).get("name") for item in tool_specs],
+            packet = {
+                "protocol": "langchain_action_json_v1",
+                "mode": mode,
+                "question": question,
                 "context": context,
+                "tools": tool_names,
                 "observations": observations[-8:],
                 "requirements": {
-                    "json_only": True,
                     "must_use_tools_for_numbers": True,
-                    "action_schema": {
-                        "action": "call_tool|final",
-                        "tool": "string",
-                        "arguments": "object",
-                        "final": {
-                            "summary": "string",
-                            "sentiment": "bullish|neutral|bearish",
-                            "key_levels": ["string"],
-                            "risks": ["string"],
-                            "action_items": ["string"],
-                            "confidence": "number",
-                            "conclusions": ["string"],
-                            "scenario_assumptions": {
-                                "base": "",
-                                "bull": "",
-                                "bear": "",
-                            },
-                            "markdown": "string",
-                        },
-                    },
+                    "format_instructions": format_instruction,
                 },
             }
+            messages = prompt_template.format_messages(
+                packet=json.dumps(packet, ensure_ascii=False)
+            )
+            prompt = self._messages_to_prompt(messages)
+
             response_text = await self.provider.complete_text(
-                prompt=json.dumps(instruction, ensure_ascii=False),
+                prompt=prompt,
                 model=model,
                 system_prompt=(
-                    "Respond with pure JSON only. "
-                    "Either request a tool call or return final structured result."
+                    "Return JSON only. Do not emit markdown or prose outside JSON."
                 ),
                 access_token=self.access_token,
             )
-            parsed = parse_json(response_text)
+            parsed = self._parse_json(response_text)
             if not isinstance(parsed, dict):
                 break
+
+            final_payload = self._coerce_final_payload(parsed)
+            if isinstance(final_payload, dict):
+                return self._to_draft(final_payload), traces
 
             action = str(parsed.get("action") or "").strip().lower()
             if action == "call_tool" and used_calls < max_tool_calls:
@@ -94,6 +114,7 @@ class ActionJSONRuntime:
                 arguments = parsed.get("arguments")
                 if not isinstance(arguments, dict):
                     arguments = {}
+
                 attempt_key = self._tool_attempt_key(tool=tool, arguments=arguments)
                 seen = tool_attempts.get(attempt_key, 0)
                 if seen >= self.MAX_RETRIES_PER_TOOL_SIGNATURE:
@@ -109,6 +130,7 @@ class ActionJSONRuntime:
                     except Exception as exc:
                         result = self._tool_error_result(tool=tool, exc=exc)
                 result = self._normalize_tool_result(tool=tool, result=result)
+                used_calls += 1
                 traces.append(
                     ToolCallTrace(
                         tool=tool,
@@ -124,17 +146,38 @@ class ActionJSONRuntime:
                         "result": result,
                     }
                 )
-                used_calls += 1
                 continue
 
             if action == "final":
-                final_payload = parsed.get("final")
-                if isinstance(final_payload, dict):
-                    draft = self._to_draft(final_payload)
-                    return draft, traces
                 break
 
         return self._fallback_draft(context), traces
+
+    def _parse_json(self, text: str) -> Optional[Dict[str, Any]]:
+        parsed = parse_json(text)
+        if isinstance(parsed, dict):
+            return parsed
+        try:
+            data = self._json_parser.parse(text)
+            if isinstance(data, dict):
+                return data
+        except Exception:
+            return None
+        return None
+
+    @staticmethod
+    def _coerce_final_payload(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        if "final" in payload and isinstance(payload.get("final"), dict):
+            return payload["final"]
+        required = {
+            "summary",
+            "sentiment",
+            "confidence",
+            "markdown",
+        }
+        if required.issubset(set(payload.keys())):
+            return payload
+        return None
 
     @staticmethod
     def _to_draft(data: Dict[str, Any]) -> RuntimeDraft:
@@ -155,15 +198,14 @@ class ActionJSONRuntime:
 
     @staticmethod
     def _fallback_draft(context: Dict[str, Any]) -> RuntimeDraft:
-        conclusions = [
-            "数据已完成结构化采集，建议结合关键风险项谨慎解读。",
-            "当前为工具优先生成结果，模型结构化结论回退到本地模板。",
-        ]
         return RuntimeDraft(
             summary="模型结构化输出不可用，已回退到本地摘要。",
             sentiment="neutral",
             confidence=0.35,
-            conclusions=conclusions,
+            conclusions=[
+                "数据已完成结构化采集，建议结合关键风险项谨慎解读。",
+                "当前为工具优先生成结果，模型结构化结论回退到本地模板。",
+            ],
             key_levels=[],
             risks=["模型未返回完整 JSON"],
             action_items=["检查 provider 连接与模型可用性"],
@@ -175,6 +217,14 @@ class ActionJSONRuntime:
             markdown=json.dumps(context, ensure_ascii=False)[:1500],
             raw={"fallback": True},
         )
+
+    @staticmethod
+    def _messages_to_prompt(messages: List[BaseMessage]) -> str:
+        rows: List[str] = []
+        for message in messages:
+            message_type = getattr(message, "type", "message")
+            rows.append(f"[{message_type}]\n{message.content}")
+        return "\n\n".join(rows)
 
     @staticmethod
     def _preview_result(result: Dict[str, Any]) -> Dict[str, Any]:

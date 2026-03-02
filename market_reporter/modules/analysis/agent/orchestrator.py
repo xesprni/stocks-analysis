@@ -6,6 +6,9 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from market_reporter.config import AnalysisProviderConfig, AppConfig
 from market_reporter.core.registry import ProviderRegistry
+from market_reporter.modules.analysis.agent.capability_registry import (
+    CapabilityRegistry,
+)
 from market_reporter.modules.analysis.agent.guardrails import AgentGuardrails
 from market_reporter.modules.analysis.agent.report_formatter import AgentReportFormatter
 from market_reporter.modules.analysis.agent.runtime.factory import AgentRuntimeFactory
@@ -16,11 +19,13 @@ from market_reporter.modules.analysis.agent.schemas import (
     RuntimeDraft,
     ToolCallTrace,
 )
+from market_reporter.modules.analysis.agent.skill_catalog import SkillCatalog
 from market_reporter.modules.analysis.agent.skills import (
     AgentSkillRegistry,
     MarketOverviewSkill,
     StockAnalysisSkill,
 )
+from market_reporter.modules.analysis.agent.subagents import SubAgentRegistry
 from market_reporter.modules.analysis.agent.tools import (
     ComputeTools,
     FinancialReportsTools,
@@ -41,6 +46,9 @@ class AgentOrchestrator:
         registry: ProviderRegistry,
         news_service: NewsService,
         fund_flow_service: FundFlowService,
+        skill_catalog: Optional[SkillCatalog] = None,
+        subagent_registry: Optional[SubAgentRegistry] = None,
+        capability_registry: Optional[CapabilityRegistry] = None,
     ) -> None:
         self.config = config
         self.registry = registry
@@ -72,6 +80,15 @@ class AgentOrchestrator:
                 ),
             ]
         )
+        self.skill_catalog = skill_catalog or SkillCatalog.from_default_path()
+        self.subagent_registry = subagent_registry or SubAgentRegistry()
+        self.capability_registry = (
+            capability_registry
+            or CapabilityRegistry.build_default(
+                skill_catalog=self.skill_catalog,
+                subagent_registry=self.subagent_registry,
+            )
+        )
 
     async def run(
         self,
@@ -86,24 +103,28 @@ class AgentOrchestrator:
             mode=request.mode,
         )
         mode = resolved_skill.mode
+        if mode == "stock" and (not request.symbol or not request.market):
+            raise ValueError("Stock mode requires symbol and market")
+
         question = self._resolve_question(request=request, mode=mode)
         ranges = self._resolve_ranges(request)
-        prepared = await resolved_skill.prepare(
-            request=request,
-            ranges=ranges,
-            trace_builder=self._trace,
-        )
-        tool_results = dict(prepared.tool_results)
-        traces = list(prepared.traces)
+        fallback_symbol = (request.symbol or "").strip().upper()
+        fallback_market = (request.market or "").strip().upper()
+        if not fallback_market:
+            fallback_market = "US"
+
+        tool_results: Dict[str, Dict[str, Any]] = {}
+        traces: List[ToolCallTrace] = []
 
         runtime_context = {
             "question": question,
             "mode": mode,
-            "market": request.market,
-            "tool_results": tool_results,
+            "symbol": fallback_symbol,
+            "market": fallback_market,
+            "date_ranges": ranges,
         }
 
-        tool_specs = prepared.tool_specs
+        tool_specs = self.capability_registry.tool_specs_for_mode(mode)
 
         async def executor(tool: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
             result = await self._execute_tool(
@@ -111,10 +132,19 @@ class AgentOrchestrator:
                 arguments=arguments,
                 request=request,
                 ranges=ranges,
-                fallback_symbol=prepared.fallback_symbol,
-                fallback_market=prepared.fallback_market,
+                fallback_symbol=fallback_symbol,
+                fallback_market=fallback_market,
                 resolved_mode=mode,
+                tool_results=tool_results,
             )
+            normalized_tool = (tool or "").strip().lower()
+            if self.capability_registry.include_in_evidence(normalized_tool):
+                if normalized_tool == "get_price_history":
+                    self._record_price_history_timeframe(
+                        tool_results=tool_results,
+                        payload=result,
+                    )
+                tool_results[normalized_tool] = result
             return result
 
         runtime_draft, runtime_traces = await self._run_runtime(
@@ -132,10 +162,26 @@ class AgentOrchestrator:
 
         # Merge runtime-called tool outputs into the canonical result map.
         for call in runtime_traces:
-            if call.tool and call.result_preview and call.tool not in tool_results:
-                tool_results[call.tool] = call.result_preview
+            tool_name = (call.tool or "").strip().lower()
+            if not self.capability_registry.include_in_evidence(tool_name):
+                continue
+            if call.tool and call.result_preview and tool_name not in tool_results:
+                tool_results[tool_name] = call.result_preview
 
         evidence = self._build_evidence(tool_results)
+        if not evidence:
+            fallback_traces = await self._hydrate_minimum_evidence(
+                request=request,
+                ranges=ranges,
+                resolved_mode=mode,
+                fallback_symbol=fallback_symbol,
+                fallback_market=fallback_market,
+                tool_results=tool_results,
+            )
+            if fallback_traces:
+                traces.extend(fallback_traces)
+                evidence = self._build_evidence(tool_results)
+
         normalized_conclusions = self.formatter._build_conclusions(
             runtime_draft=runtime_draft,
             evidence_map=evidence,
@@ -243,9 +289,14 @@ class AgentOrchestrator:
         fallback_symbol: str,
         fallback_market: str,
         resolved_mode: str,
+        tool_results: Dict[str, Dict[str, Any]],
     ) -> Dict[str, Any]:
         name = (tool or "").strip()
-        if name == "get_price_history":
+        lowered_name = name.lower()
+        if not self.capability_registry.has(lowered_name):
+            raise ValueError(f"Unsupported tool: {name}")
+
+        if lowered_name == "get_price_history":
             result = await self.market_tools.get_price_history(
                 symbol=str(arguments.get("symbol") or fallback_symbol),
                 market=str(arguments.get("market") or fallback_market),
@@ -255,20 +306,20 @@ class AgentOrchestrator:
                 adjusted=bool(arguments.get("adjusted", True)),
             )
             return result.model_dump(mode="json")
-        if name in {"get_fundamentals_info", "get_fundamentals"}:
+        if lowered_name in {"get_fundamentals_info", "get_fundamentals"}:
             result = await self.fundamentals_tools.get_fundamentals_info(
                 symbol=str(arguments.get("symbol") or fallback_symbol),
                 market=str(arguments.get("market") or fallback_market),
             )
             return result.model_dump(mode="json")
-        if name == "get_financial_reports":
+        if lowered_name == "get_financial_reports":
             result = await self.financial_reports_tools.get_financial_reports(
                 symbol=str(arguments.get("symbol") or fallback_symbol),
                 market=str(arguments.get("market") or fallback_market),
                 limit=int(arguments.get("limit") or 6),
             )
             return result.model_dump(mode="json")
-        if name == "search_news":
+        if lowered_name == "search_news":
             resolved_symbol = str(arguments.get("symbol") or fallback_symbol)
             resolved_market = str(arguments.get("market") or fallback_market)
             result = await self.news_tools.search_news(
@@ -282,7 +333,7 @@ class AgentOrchestrator:
                 market=resolved_market,
             )
             return result.model_dump(mode="json")
-        if name == "search_web":
+        if lowered_name == "search_web":
             result = await self.web_search_tools.search_web(
                 query=str(
                     arguments.get("query") or request.question or fallback_symbol
@@ -292,10 +343,16 @@ class AgentOrchestrator:
                 to_date=str(arguments.get("to") or ranges["news_to"]),
             )
             return result.model_dump(mode="json")
-        if name == "compute_indicators":
+        if lowered_name == "compute_indicators":
             payload = arguments.get("price_df")
             if not isinstance(payload, (list, dict)):
-                payload = []
+                payload = await self._resolve_indicator_price_payload(
+                    request=request,
+                    ranges=ranges,
+                    fallback_symbol=fallback_symbol,
+                    fallback_market=fallback_market,
+                    tool_results=tool_results,
+                )
             result = self.compute_tools.compute_indicators(
                 price_df=payload,
                 indicators=arguments.get("indicators")
@@ -309,7 +366,7 @@ class AgentOrchestrator:
                 ),
             )
             return result.model_dump(mode="json")
-        if name == "peer_compare":
+        if lowered_name == "peer_compare":
             peer_list = arguments.get("peer_list")
             result = await self.compute_tools.peer_compare(
                 symbol=str(arguments.get("symbol") or fallback_symbol),
@@ -320,7 +377,7 @@ class AgentOrchestrator:
                 market=str(arguments.get("market") or fallback_market),
             )
             return result.model_dump(mode="json")
-        if name == "get_macro_data":
+        if lowered_name == "get_macro_data":
             requested_market = arguments.get("market")
             if requested_market is None and resolved_mode == "market":
                 requested_market = request.market
@@ -333,7 +390,174 @@ class AgentOrchestrator:
                 else None,
             )
             return result.model_dump(mode="json")
+        if lowered_name == "skill":
+            requested = str(arguments.get("name") or "").strip()
+            retrieved_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            if not requested:
+                return {
+                    "name": "",
+                    "description": "",
+                    "content": "",
+                    "as_of": retrieved_at,
+                    "source": "skill_catalog",
+                    "retrieved_at": retrieved_at,
+                    "warnings": ["skill_name_missing"],
+                }
+
+            summary = self.skill_catalog.get_summary(requested)
+            if summary is None:
+                return {
+                    "name": requested,
+                    "description": "",
+                    "content": "",
+                    "as_of": retrieved_at,
+                    "source": "skill_catalog",
+                    "retrieved_at": retrieved_at,
+                    "warnings": ["skill_not_found"],
+                }
+
+            content = self.skill_catalog.load_skill_content(summary.name)
+            return {
+                "name": summary.name,
+                "description": summary.description,
+                "content": content or "",
+                "as_of": retrieved_at,
+                "source": str(summary.path),
+                "retrieved_at": retrieved_at,
+                "warnings": [] if content else ["skill_content_empty"],
+            }
+        if lowered_name == "subagent":
+            requested = str(arguments.get("name") or "").strip()
+            task = str(arguments.get("task") or "").strip()
+            retrieved_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            payload = await self.subagent_registry.run(
+                name=requested,
+                task=task,
+                context={
+                    "mode": resolved_mode,
+                    "symbol": fallback_symbol,
+                    "market": fallback_market,
+                    "question": request.question,
+                },
+                tool_results=tool_results,
+            )
+            return {
+                "name": requested,
+                "task": task,
+                "result": payload,
+                "as_of": retrieved_at,
+                "source": "subagent_registry",
+                "retrieved_at": retrieved_at,
+                "warnings": []
+                if payload.get("status") == "ok"
+                else ["subagent_failed"],
+            }
         raise ValueError(f"Unsupported tool: {name}")
+
+    async def _hydrate_minimum_evidence(
+        self,
+        request: AgentRunRequest,
+        ranges: Dict[str, str],
+        resolved_mode: str,
+        fallback_symbol: str,
+        fallback_market: str,
+        tool_results: Dict[str, Dict[str, Any]],
+    ) -> List[ToolCallTrace]:
+        traces: List[ToolCallTrace] = []
+
+        if resolved_mode == "stock":
+            fallback_calls: List[Tuple[str, Dict[str, Any]]] = [
+                (
+                    "get_price_history",
+                    {
+                        "symbol": fallback_symbol,
+                        "market": fallback_market,
+                        "start": ranges.get("price_from"),
+                        "end": ranges.get("price_to"),
+                        "interval": "1d",
+                        "adjusted": True,
+                    },
+                ),
+                (
+                    "get_fundamentals_info",
+                    {
+                        "symbol": fallback_symbol,
+                        "market": fallback_market,
+                    },
+                ),
+            ]
+        else:
+            fallback_calls = [
+                (
+                    "search_news",
+                    {
+                        "query": request.question or f"{fallback_market} market",
+                        "market": fallback_market,
+                        "from": ranges.get("news_from"),
+                        "to": ranges.get("news_to"),
+                        "limit": 20,
+                    },
+                ),
+                (
+                    "get_macro_data",
+                    {
+                        "market": fallback_market,
+                        "periods": min(self.config.flow_periods, 20),
+                    },
+                ),
+            ]
+
+        for tool_name, arguments in fallback_calls:
+            normalized = tool_name.lower()
+            if normalized in tool_results:
+                continue
+
+            try:
+                result = await self._execute_tool(
+                    tool=tool_name,
+                    arguments=arguments,
+                    request=request,
+                    ranges=ranges,
+                    fallback_symbol=fallback_symbol,
+                    fallback_market=fallback_market,
+                    resolved_mode=resolved_mode,
+                    tool_results=tool_results,
+                )
+            except Exception as exc:
+                traces.append(
+                    ToolCallTrace(
+                        tool=tool_name,
+                        arguments=arguments,
+                        result_preview={
+                            "source": "fallback_evidence",
+                            "as_of": datetime.now(timezone.utc).isoformat(
+                                timespec="seconds"
+                            ),
+                            "warnings": [
+                                f"evidence_fallback_failed:{type(exc).__name__}"
+                            ],
+                        },
+                    )
+                )
+                continue
+
+            if normalized == "get_price_history":
+                self._record_price_history_timeframe(
+                    tool_results=tool_results,
+                    payload=result,
+                )
+            if self.capability_registry.include_in_evidence(normalized):
+                tool_results[normalized] = result
+
+            traces.append(
+                self._trace(
+                    tool=tool_name,
+                    arguments=arguments,
+                    result=result,
+                )
+            )
+
+        return traces
 
     def _build_evidence(
         self, tool_results: Dict[str, Dict[str, Any]]
@@ -491,3 +715,123 @@ class AgentOrchestrator:
             "price_from": price_from,
             "price_to": price_to,
         }
+
+    async def _resolve_indicator_price_payload(
+        self,
+        request: AgentRunRequest,
+        ranges: Dict[str, str],
+        fallback_symbol: str,
+        fallback_market: str,
+        tool_results: Dict[str, Dict[str, Any]],
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        timeframe_payload = tool_results.get("get_price_history_timeframes")
+        if isinstance(timeframe_payload, dict):
+            rows = timeframe_payload.get("timeframes")
+            if isinstance(rows, dict):
+                normalized: Dict[str, List[Dict[str, Any]]] = {}
+                for timeframe, payload in rows.items():
+                    if not isinstance(payload, dict):
+                        continue
+                    bars = payload.get("bars")
+                    if isinstance(bars, list):
+                        normalized[str(timeframe)] = bars
+                if normalized:
+                    return normalized
+
+        fallback_payload = tool_results.get("get_price_history")
+        if isinstance(fallback_payload, dict):
+            bars = fallback_payload.get("bars")
+            interval = str(fallback_payload.get("interval") or "1d")
+            if isinstance(bars, list) and bars:
+                return {interval: bars}
+
+        resolved_timeframes = self._resolve_indicator_timeframes(request.timeframes)
+        output: Dict[str, List[Dict[str, Any]]] = {}
+        for timeframe in resolved_timeframes:
+            result = await self.market_tools.get_price_history(
+                symbol=fallback_symbol,
+                market=fallback_market,
+                start=ranges["price_from"],
+                end=ranges["price_to"],
+                interval=timeframe,
+                adjusted=True,
+            )
+            payload = result.model_dump(mode="json")
+            self._record_price_history_timeframe(
+                tool_results=tool_results, payload=payload
+            )
+            bars = payload.get("bars")
+            if isinstance(bars, list):
+                output[timeframe] = bars
+        return output
+
+    @staticmethod
+    def _resolve_indicator_timeframes(raw_timeframes: List[str]) -> List[str]:
+        allowed = {"1d", "5m", "1m"}
+        cleaned = [
+            str(item).strip().lower()
+            for item in raw_timeframes
+            if str(item).strip().lower() in allowed
+        ]
+        dedup = list(dict.fromkeys(cleaned))
+        if not dedup:
+            return ["1d", "5m"]
+        if "1d" not in dedup:
+            dedup.append("1d")
+        if "5m" not in dedup:
+            dedup.append("5m")
+        return dedup
+
+    @staticmethod
+    def _record_price_history_timeframe(
+        tool_results: Dict[str, Dict[str, Any]],
+        payload: Dict[str, Any],
+    ) -> None:
+        if not isinstance(payload, dict):
+            return
+
+        interval = str(payload.get("interval") or "1d").strip().lower()
+        if not interval:
+            interval = "1d"
+
+        map_payload = tool_results.get("get_price_history_timeframes")
+        if not isinstance(map_payload, dict):
+            map_payload = {
+                "timeframes": {},
+                "as_of": "",
+                "source": "",
+                "retrieved_at": datetime.now(timezone.utc).isoformat(
+                    timespec="seconds"
+                ),
+                "warnings": [],
+            }
+
+        timeframes = map_payload.get("timeframes")
+        if not isinstance(timeframes, dict):
+            timeframes = {}
+        timeframes[interval] = payload
+        map_payload["timeframes"] = timeframes
+
+        selected = payload
+        if "1d" in timeframes and isinstance(timeframes.get("1d"), dict):
+            selected = timeframes["1d"]
+
+        map_payload["as_of"] = str(selected.get("as_of") or payload.get("as_of") or "")
+        map_payload["source"] = str(
+            selected.get("source") or payload.get("source") or "unknown"
+        )
+        map_payload["retrieved_at"] = datetime.now(timezone.utc).isoformat(
+            timespec="seconds"
+        )
+
+        all_warnings: List[str] = []
+        existing_warnings = map_payload.get("warnings")
+        if isinstance(existing_warnings, list):
+            all_warnings.extend([str(item) for item in existing_warnings])
+        row_warnings = payload.get("warnings")
+        if isinstance(row_warnings, list):
+            all_warnings.extend([str(item) for item in row_warnings])
+        map_payload["warnings"] = list(dict.fromkeys(all_warnings))
+
+        tool_results["get_price_history_timeframes"] = map_payload
+        tool_results["get_price_history"] = selected

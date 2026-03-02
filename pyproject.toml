@@ -23,6 +23,8 @@ dependencies = [
   "cryptography>=43.0.0",
   "keyring>=25.3.0",
   "openai>=1.43.0",
+  "langchain>=0.3.0",
+  "langchain-openai>=0.2.0",
   "pandas>=2.2.0",
   "pandas-ta>=0.3.14b0; python_version >= '3.12'",
   "akshare>=1.15.70",
@@ -31,6 +33,7 @@ dependencies = [
   "apscheduler>=3.10.4",
   "PyJWT>=2.8.0",
   "bcrypt>=4.0.0,<5.0.0",
+  "longbridge>=0.2.77",
 ]
 
 [project.scripts]
