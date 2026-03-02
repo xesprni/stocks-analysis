@@ -150,6 +150,13 @@ def _ensure_sqlite_columns(engine) -> None:
                 connection.exec_driver_sql(
                     "ALTER TABLE analysis_provider_secrets ADD COLUMN user_id INTEGER REFERENCES users(id)"
                 )
+            _ensure_scoped_unique_index(
+                connection=connection,
+                table_name="analysis_provider_secrets",
+                legacy_columns=("provider_id",),
+                scoped_index_name="uq_analysis_provider_secrets_user_provider",
+                scoped_columns=("user_id", "provider_id"),
+            )
         except Exception:
             pass
 
@@ -164,6 +171,13 @@ def _ensure_sqlite_columns(engine) -> None:
                 connection.exec_driver_sql(
                     "ALTER TABLE analysis_provider_accounts ADD COLUMN user_id INTEGER REFERENCES users(id)"
                 )
+            _ensure_scoped_unique_index(
+                connection=connection,
+                table_name="analysis_provider_accounts",
+                legacy_columns=("provider_id",),
+                scoped_index_name="uq_analysis_provider_accounts_user_provider",
+                scoped_columns=("user_id", "provider_id"),
+            )
         except Exception:
             pass
 
@@ -220,6 +234,49 @@ def _ensure_sqlite_columns(engine) -> None:
             connection.exec_driver_sql(
                 "ALTER TABLE watchlist_items ADD COLUMN keywords_json TEXT"
             )
+
+
+def _ensure_scoped_unique_index(
+    *,
+    connection,
+    table_name: str,
+    legacy_columns: tuple[str, ...],
+    scoped_index_name: str,
+    scoped_columns: tuple[str, ...],
+) -> None:
+    index_rows = connection.exec_driver_sql(
+        f"PRAGMA index_list('{table_name}')"
+    ).fetchall()
+    has_scoped_unique = False
+    legacy_indexes: list[str] = []
+
+    for row in index_rows:
+        index_name = str(row[1])
+        is_unique = bool(row[2])
+        if not is_unique:
+            continue
+        indexed_columns = tuple(
+            item[2]
+            for item in connection.exec_driver_sql(
+                f"PRAGMA index_info('{index_name}')"
+            ).fetchall()
+        )
+        if indexed_columns == scoped_columns:
+            has_scoped_unique = True
+        if indexed_columns == legacy_columns:
+            legacy_indexes.append(index_name)
+
+    for index_name in legacy_indexes:
+        connection.exec_driver_sql(f'DROP INDEX IF EXISTS "{index_name}"')
+
+    if has_scoped_unique:
+        return
+
+    columns_sql = ", ".join(f'"{name}"' for name in scoped_columns)
+    connection.exec_driver_sql(
+        f'CREATE UNIQUE INDEX IF NOT EXISTS "{scoped_index_name}" '
+        f'ON "{table_name}" ({columns_sql})'
+    )
 
 
 def init_default_admin(
