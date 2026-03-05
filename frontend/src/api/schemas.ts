@@ -391,6 +391,17 @@ export const providerModelsSchema = z.object({
   source: z.string(),
 });
 
+export const providerAvailabilitySchema = z.object({
+  provider_id: z.string(),
+  model: z.string(),
+  available: z.boolean(),
+  status: z.string(),
+  message: z.string(),
+  checked_at: z.string(),
+  latency_ms: z.number(),
+  details: z.record(z.any()),
+});
+
 export const reportSummarySchema = z.object({
   run_id: z.string(),
   generated_at: z.string(),
@@ -518,4 +529,5 @@ export type NewsFeedResponse = z.infer<typeof newsFeedResponseSchema>;
 export type ProviderAuthStart = z.infer<typeof providerAuthStartSchema>;
 export type ProviderAuthStatus = z.infer<typeof providerAuthStatusSchema>;
 export type ProviderModels = z.infer<typeof providerModelsSchema>;
+export type ProviderAvailability = z.infer<typeof providerAvailabilitySchema>;
 export type TelegramConfig = z.infer<typeof telegramConfigSchema>;

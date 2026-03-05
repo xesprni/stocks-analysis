@@ -81,8 +81,8 @@ class TelegramNotifierTest(unittest.TestCase):
             raw_data_path=Path("output/20260222_120000/raw_data.json"),
             warnings_count=1,
             news_total=12,
-            provider_id="mock",
-            model="market-default",
+            provider_id="openai_compatible",
+            model="gpt-4o-mini",
             mode="stock",
         )
         result = RunResult(summary=summary, warnings=["fallback used"])

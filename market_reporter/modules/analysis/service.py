@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+import time
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 from typing import Any, Dict, List, Optional, Tuple
+
+from openai import AsyncOpenAI
 
 from market_reporter.config import AnalysisProviderConfig, AppConfig
 from market_reporter.core.registry import ProviderRegistry
@@ -26,14 +29,12 @@ from market_reporter.infra.security.keychain_store import KeychainStore
 from market_reporter.modules.analysis.providers.codex_app_server_provider import (
     CodexAppServerProvider,
 )
-from market_reporter.modules.analysis.providers.mock_provider import (
-    MockAnalysisProvider,
-)
 from market_reporter.modules.analysis.providers.openai_compatible_provider import (
     OpenAICompatibleProvider,
 )
 from market_reporter.modules.analysis.schemas import (
     AnalysisProviderView,
+    ProviderAvailabilityView,
     ProviderAuthStartResponse,
     ProviderAuthStatusView,
     ProviderModelsView,
@@ -72,16 +73,12 @@ class AnalysisService:
         )
 
         # Register provider factories by type; actual instances are created per invocation.
-        self.registry.register(self.MODULE_NAME, "mock", self._build_mock)
         self.registry.register(
             self.MODULE_NAME, "openai_compatible", self._build_openai_compatible
         )
         self.registry.register(
             self.MODULE_NAME, "codex_app_server", self._build_codex_app_server
         )
-
-    def _build_mock(self, provider_config: AnalysisProviderConfig):
-        return MockAnalysisProvider()
 
     def _build_openai_compatible(self, provider_config: AnalysisProviderConfig):
         return OpenAICompatibleProvider(provider_config=provider_config)
@@ -111,7 +108,7 @@ class AnalysisService:
                 credential_expires_at = account.expires_at if account else None
                 connected = self._is_account_connected(account)
                 secret_required = auth_mode == "api_key"
-                base_url_required = provider.type not in {"mock", "codex_app_server"}
+                base_url_required = provider.type not in {"codex_app_server"}
                 has_base_url = (
                     bool((provider.base_url or "").strip())
                     if base_url_required
@@ -420,6 +417,152 @@ class AnalysisService:
             source="config",
         )
 
+    async def check_provider_availability(
+        self,
+        provider_id: str,
+        model: Optional[str] = None,
+    ) -> ProviderAvailabilityView:
+        started = time.perf_counter()
+        checked_at = datetime.now(timezone.utc)
+
+        try:
+            provider_cfg = self.ensure_provider_ready(
+                provider_id=provider_id, model=model
+            )
+        except Exception as exc:
+            return ProviderAvailabilityView(
+                provider_id=provider_id,
+                model=(model or "").strip(),
+                available=False,
+                status="not-ready",
+                message=str(exc),
+                checked_at=checked_at,
+                latency_ms=self._elapsed_ms(started),
+                details={"error_type": type(exc).__name__},
+            )
+
+        selected_model = self._resolve_healthcheck_model(
+            provider_cfg=provider_cfg,
+            requested_model=model,
+        )
+        if not selected_model:
+            return ProviderAvailabilityView(
+                provider_id=provider_id,
+                model="",
+                available=False,
+                status="missing-model",
+                message="No model available for availability check.",
+                checked_at=checked_at,
+                latency_ms=self._elapsed_ms(started),
+            )
+
+        try:
+            if provider_cfg.type == "openai_compatible":
+                auth_mode = self._resolve_auth_mode(provider_cfg)
+                api_key = (
+                    self._resolve_api_key(provider_cfg=provider_cfg)
+                    if auth_mode == "api_key"
+                    else None
+                )
+                if auth_mode == "api_key" and not api_key:
+                    raise ValueError("Provider API key is not configured.")
+
+                client = AsyncOpenAI(
+                    api_key=api_key,
+                    base_url=provider_cfg.base_url,
+                    timeout=max(3, min(provider_cfg.timeout, 20)),
+                )
+                response = await client.chat.completions.create(
+                    model=selected_model,
+                    temperature=0,
+                    max_tokens=1,
+                    messages=[{"role": "user", "content": "ping"}],
+                )
+                content = (response.choices[0].message.content or "").strip()
+                return ProviderAvailabilityView(
+                    provider_id=provider_id,
+                    model=selected_model,
+                    available=True,
+                    status="ready",
+                    message="Provider response is available.",
+                    checked_at=checked_at,
+                    latency_ms=self._elapsed_ms(started),
+                    details={
+                        "probe": "chat.completions",
+                        "content_preview": content[:80],
+                    },
+                )
+
+            if provider_cfg.type == "codex_app_server":
+                provider = self.registry.resolve(
+                    self.MODULE_NAME,
+                    provider_cfg.type,
+                    provider_config=provider_cfg,
+                )
+                text = await provider.complete_text(
+                    prompt='{"ping": true}',
+                    model=selected_model,
+                    system_prompt='Reply with JSON: {"status":"ok"}',
+                    access_token=None,
+                )
+                return ProviderAvailabilityView(
+                    provider_id=provider_id,
+                    model=selected_model,
+                    available=True,
+                    status="ready",
+                    message="Provider response is available.",
+                    checked_at=checked_at,
+                    latency_ms=self._elapsed_ms(started),
+                    details={"probe": "complete_text", "content_preview": text[:80]},
+                )
+
+            provider = self.registry.resolve(
+                self.MODULE_NAME,
+                provider_cfg.type,
+                provider_config=provider_cfg,
+            )
+            if hasattr(provider, "complete_text"):
+                text = await provider.complete_text(
+                    prompt="ping",
+                    model=selected_model,
+                    system_prompt="Reply with ok",
+                    access_token=None,
+                )
+                return ProviderAvailabilityView(
+                    provider_id=provider_id,
+                    model=selected_model,
+                    available=True,
+                    status="ready",
+                    message="Provider response is available.",
+                    checked_at=checked_at,
+                    latency_ms=self._elapsed_ms(started),
+                    details={
+                        "probe": "complete_text",
+                        "content_preview": str(text)[:80],
+                    },
+                )
+
+            return ProviderAvailabilityView(
+                provider_id=provider_id,
+                model=selected_model,
+                available=False,
+                status="unsupported",
+                message="Provider does not expose a health probe interface.",
+                checked_at=checked_at,
+                latency_ms=self._elapsed_ms(started),
+            )
+        except Exception as exc:
+            return ProviderAvailabilityView(
+                provider_id=provider_id,
+                model=selected_model,
+                available=False,
+                status="unavailable",
+                message=str(exc),
+                checked_at=checked_at,
+                latency_ms=self._elapsed_ms(started),
+                details={"error_type": type(exc).__name__},
+            )
+
     def ensure_provider_ready(
         self,
         provider_id: str,
@@ -429,7 +572,7 @@ class AnalysisService:
         auth_mode = self._resolve_auth_mode(provider)
         has_secret = self._has_secret(provider.provider_id)
         connected = self._has_connected_account(provider.provider_id)
-        base_url_required = provider.type not in {"mock", "codex_app_server"}
+        base_url_required = provider.type not in {"codex_app_server"}
         has_base_url = (
             bool((provider.base_url or "").strip()) if base_url_required else True
         )
@@ -549,9 +692,24 @@ class AnalysisService:
         This is the public entry-point for callers that need to construct an
         ``AgentService`` without going through ``run_stock_analysis``.
         """
+        requested_provider_id = (provider_id or "").strip() or None
         provider_cfg, selected_model = self._select_provider_and_model(
             provider_id=provider_id, model=model
         )
+
+        try:
+            self.ensure_provider_ready(
+                provider_id=provider_cfg.provider_id,
+                model=selected_model or None,
+            )
+        except Exception:
+            if requested_provider_id:
+                raise
+            fallback = self._select_first_ready_provider(preferred_model=model)
+            if fallback is None:
+                raise
+            provider_cfg, selected_model = fallback
+
         auth_mode = self._resolve_auth_mode(provider_cfg)
         api_key: Optional[str] = None
         access_token: Optional[str] = None
@@ -828,6 +986,32 @@ class AnalysisService:
             selected_model = provider_cfg.models[0]
         return provider_cfg, selected_model
 
+    def _select_first_ready_provider(
+        self,
+        preferred_model: Optional[str] = None,
+    ) -> Optional[Tuple[AnalysisProviderConfig, str]]:
+        for provider in self.config.analysis.providers:
+            candidate_model = self._resolve_fallback_model_for_provider(
+                provider_cfg=provider,
+                preferred_model=preferred_model,
+            )
+            try:
+                self.ensure_provider_ready(
+                    provider_id=provider.provider_id,
+                    model=candidate_model or None,
+                )
+            except Exception:
+                continue
+
+            resolved_model = candidate_model
+            if not resolved_model and provider.models:
+                resolved_model = str(provider.models[0]).strip()
+            if not resolved_model:
+                resolved_model = str(self.config.analysis.default_model or "").strip()
+
+            return provider, resolved_model
+        return None
+
     def _save_run(
         self,
         symbol: str,
@@ -855,12 +1039,53 @@ class AnalysisService:
             created_at = row.created_at
         return int(run_id), created_at
 
+    def _resolve_healthcheck_model(
+        self,
+        provider_cfg: AnalysisProviderConfig,
+        requested_model: Optional[str],
+    ) -> str:
+        candidate = (requested_model or "").strip()
+        if candidate:
+            return candidate
+
+        default_model = (self.config.analysis.default_model or "").strip()
+        if default_model:
+            return default_model
+
+        if provider_cfg.models:
+            first = provider_cfg.models[0]
+            if isinstance(first, str):
+                return first.strip()
+        return ""
+
+    def _resolve_fallback_model_for_provider(
+        self,
+        provider_cfg: AnalysisProviderConfig,
+        preferred_model: Optional[str],
+    ) -> str:
+        candidate = (preferred_model or "").strip()
+        if candidate:
+            if self._resolve_auth_mode(provider_cfg) == "chatgpt_oauth":
+                return candidate
+            if candidate in provider_cfg.models:
+                return candidate
+
+        if provider_cfg.models:
+            first = provider_cfg.models[0]
+            if isinstance(first, str):
+                return first.strip()
+
+        default_model = (self.config.analysis.default_model or "").strip()
+        return default_model
+
+    @staticmethod
+    def _elapsed_ms(started: float) -> int:
+        return max(0, int((time.perf_counter() - started) * 1000))
+
     @staticmethod
     def _resolve_auth_mode(provider_cfg: AnalysisProviderConfig) -> str:
         if provider_cfg.auth_mode:
             return provider_cfg.auth_mode
-        if provider_cfg.type == "mock":
-            return "none"
         if provider_cfg.type == "codex_app_server":
             return "chatgpt_oauth"
         return "api_key"

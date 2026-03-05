@@ -253,6 +253,26 @@ def providers_set_default(
     console.print(f"[green]Updated default analysis:[/green] {provider} / {model}")
 
 
+@providers_app.command("check")
+def providers_check(
+    provider: str = typer.Option(..., help="Provider ID"),
+    model: Optional[str] = typer.Option(None, help="Optional model override"),
+) -> None:
+    config = _load_config()
+    service = AnalysisService(config=config, registry=ProviderRegistry())
+    result = asyncio.run(
+        service.check_provider_availability(provider_id=provider, model=model)
+    )
+
+    status_color = "green" if result.available else "yellow"
+    console.print(
+        f"[{status_color}]Availability:[/{status_color}] "
+        f"{result.provider_id} / {result.model or '-'} -> {result.status}"
+    )
+    console.print(f"Message: {result.message}")
+    console.print(f"Latency: {result.latency_ms}ms")
+
+
 @analyze_app.command("stock")
 def analyze_stock(
     symbol: str = typer.Option(...),

@@ -1,6 +1,4 @@
 from __future__ import annotations
-
-import json
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -260,25 +258,11 @@ class AgentOrchestrator:
         except NotImplementedError:
             raise
         except Exception as exc:
-            return (
-                RuntimeDraft(
-                    summary=f"运行时失败，已回退到本地结构化输出: {exc}",
-                    sentiment="neutral",
-                    key_levels=[],
-                    risks=["运行时不可用"],
-                    action_items=["检查 provider 配置与鉴权状态"],
-                    confidence=0.4,
-                    conclusions=["本次报告基于工具结果生成，模型总结回退。"],
-                    scenario_assumptions={
-                        "base": "维持当前趋势",
-                        "bull": "数据改善并扩张估值",
-                        "bear": "数据恶化并压缩估值",
-                    },
-                    markdown=json.dumps(context, ensure_ascii=False)[:1500],
-                    raw={"runtime_error": str(exc)},
-                ),
-                [],
-            )
+            raise RuntimeError(
+                "Agent runtime failed: "
+                f"provider={provider_cfg.provider_id}, model={model}, "
+                f"timeout={provider_cfg.timeout}s, error={exc}"
+            ) from exc
 
     async def _execute_tool(
         self,

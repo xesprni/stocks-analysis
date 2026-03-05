@@ -62,6 +62,17 @@ class ProviderModelsView(BaseModel):
     source: str = "config"
 
 
+class ProviderAvailabilityView(BaseModel):
+    provider_id: str
+    model: str
+    available: bool
+    status: str
+    message: str
+    checked_at: datetime
+    latency_ms: int = 0
+    details: Dict[str, Any] = Field(default_factory=dict)
+
+
 class StockAnalysisRunRequest(BaseModel):
     market: str = Field(pattern="^(CN|HK|US)$")
     skill_id: Optional[str] = None

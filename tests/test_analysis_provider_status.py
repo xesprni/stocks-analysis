@@ -2,6 +2,7 @@ import asyncio
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from market_reporter.config import AnalysisConfig, AnalysisProviderConfig, AppConfig
 from market_reporter.core.registry import ProviderRegistry
@@ -29,16 +30,17 @@ class AnalysisProviderStatusTest(unittest.TestCase):
                 config_file=root / "config" / "settings.yaml",
                 database={"url": db_url},
                 analysis=AnalysisConfig(
-                    default_provider="mock",
-                    default_model="market-default",
+                    default_provider="openai_noauth",
+                    default_model="gpt-4o-mini",
                     providers=[
                         AnalysisProviderConfig(
-                            provider_id="mock",
-                            type="mock",
-                            base_url="",
-                            models=["market-default"],
+                            provider_id="openai_noauth",
+                            type="openai_compatible",
+                            base_url="https://api.openai.com/v1",
+                            models=["gpt-4o-mini"],
                             timeout=5,
                             enabled=True,
+                            auth_mode="none",
                         ),
                         AnalysisProviderConfig(
                             provider_id="openai_compatible",
@@ -59,9 +61,9 @@ class AnalysisProviderStatusTest(unittest.TestCase):
             )
 
             providers = {row.provider_id: row for row in service.list_providers()}
-            self.assertTrue(providers["mock"].ready)
-            self.assertFalse(providers["mock"].secret_required)
-            self.assertEqual(providers["mock"].status, "ready")
+            self.assertTrue(providers["openai_noauth"].ready)
+            self.assertFalse(providers["openai_noauth"].secret_required)
+            self.assertEqual(providers["openai_noauth"].status, "ready")
 
             self.assertFalse(providers["openai_compatible"].ready)
             self.assertTrue(providers["openai_compatible"].secret_required)
@@ -118,14 +120,14 @@ class AnalysisProviderStatusTest(unittest.TestCase):
                 config_file=root / "config" / "settings.yaml",
                 database={"url": db_url},
                 analysis=AnalysisConfig(
-                    default_provider="mock",
-                    default_model="market-default",
+                    default_provider="openai_noauth",
+                    default_model="gpt-4o-mini",
                     providers=[
                         AnalysisProviderConfig(
-                            provider_id="mock",
-                            type="mock",
-                            base_url="",
-                            models=["market-default"],
+                            provider_id="openai_noauth",
+                            type="openai_compatible",
+                            base_url="https://api.openai.com/v1",
+                            models=["gpt-4o-mini"],
                             timeout=5,
                             enabled=True,
                             auth_mode="none",
@@ -140,7 +142,7 @@ class AnalysisProviderStatusTest(unittest.TestCase):
                 keychain_store=DummyKeychainStore(),
             )
 
-            status = asyncio.run(service.get_provider_auth_status("mock"))
+            status = asyncio.run(service.get_provider_auth_status("openai_noauth"))
             self.assertEqual(status.status, "ready")
             self.assertTrue(status.connected)
 
@@ -220,6 +222,189 @@ class AnalysisProviderStatusTest(unittest.TestCase):
             )
             self.assertEqual(provider.provider_id, "codex_app_server")
             self.assertEqual(selected_model, "gpt-5-codex-high")
+
+    def test_provider_availability_probe_for_noauth_openai(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            (root / "data").mkdir(parents=True, exist_ok=True)
+            db_url = f"sqlite:///{root / 'data' / 'market_reporter.db'}"
+            config = AppConfig(
+                output_root=root / "output",
+                config_file=root / "config" / "settings.yaml",
+                database={"url": db_url},
+                analysis=AnalysisConfig(
+                    default_provider="openai_noauth",
+                    default_model="gpt-4o-mini",
+                    providers=[
+                        AnalysisProviderConfig(
+                            provider_id="openai_noauth",
+                            type="openai_compatible",
+                            base_url="https://api.openai.com/v1",
+                            models=["gpt-4o-mini"],
+                            timeout=5,
+                            enabled=True,
+                            auth_mode="none",
+                        )
+                    ],
+                ),
+            )
+            init_db(config.database.url)
+            service = AnalysisService(
+                config=config,
+                registry=ProviderRegistry(),
+                keychain_store=DummyKeychainStore(),
+            )
+
+            fake_response = MagicMock()
+            fake_choice = MagicMock()
+            fake_choice.message.content = "ok"
+            fake_response.choices = [fake_choice]
+            with patch("market_reporter.modules.analysis.service.AsyncOpenAI") as cls:
+                instance = cls.return_value
+                instance.chat.completions.create = AsyncMock(return_value=fake_response)
+                result = asyncio.run(
+                    service.check_provider_availability("openai_noauth")
+                )
+            self.assertTrue(result.available)
+            self.assertEqual(result.status, "ready")
+            self.assertEqual(result.provider_id, "openai_noauth")
+
+    def test_provider_availability_probe_returns_not_ready(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            (root / "data").mkdir(parents=True, exist_ok=True)
+            db_url = f"sqlite:///{root / 'data' / 'market_reporter.db'}"
+            config = AppConfig(
+                output_root=root / "output",
+                config_file=root / "config" / "settings.yaml",
+                database={"url": db_url},
+                analysis=AnalysisConfig(
+                    default_provider="openai_compatible",
+                    default_model="gpt-4o-mini",
+                    providers=[
+                        AnalysisProviderConfig(
+                            provider_id="openai_compatible",
+                            type="openai_compatible",
+                            base_url="https://api.openai.com/v1",
+                            models=["gpt-4o-mini"],
+                            timeout=20,
+                            enabled=True,
+                        )
+                    ],
+                ),
+            )
+            init_db(config.database.url)
+            service = AnalysisService(
+                config=config,
+                registry=ProviderRegistry(),
+                keychain_store=DummyKeychainStore(),
+            )
+
+            result = asyncio.run(
+                service.check_provider_availability("openai_compatible")
+            )
+            self.assertFalse(result.available)
+            self.assertEqual(result.status, "not-ready")
+            self.assertIn("API key", result.message)
+
+    def test_resolve_credentials_falls_back_to_first_ready_provider(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            (root / "data").mkdir(parents=True, exist_ok=True)
+            db_url = f"sqlite:///{root / 'data' / 'market_reporter.db'}"
+            config = AppConfig(
+                output_root=root / "output",
+                config_file=root / "config" / "settings.yaml",
+                database={"url": db_url},
+                analysis=AnalysisConfig(
+                    default_provider="openai_compatible",
+                    default_model="gpt-4o-mini",
+                    providers=[
+                        AnalysisProviderConfig(
+                            provider_id="openai_compatible",
+                            type="openai_compatible",
+                            base_url="https://api.openai.com/v1",
+                            models=["gpt-4o-mini"],
+                            timeout=20,
+                            enabled=True,
+                            auth_mode="api_key",
+                        ),
+                        AnalysisProviderConfig(
+                            provider_id="openai_noauth",
+                            type="openai_compatible",
+                            base_url="https://api.openai.com/v1",
+                            models=["gpt-4o-mini"],
+                            timeout=5,
+                            enabled=True,
+                            auth_mode="none",
+                        ),
+                    ],
+                ),
+            )
+            init_db(config.database.url)
+            service = AnalysisService(
+                config=config,
+                registry=ProviderRegistry(),
+                keychain_store=DummyKeychainStore(),
+            )
+
+            provider_cfg, selected_model, api_key, access_token = (
+                service.resolve_credentials(
+                    provider_id=None,
+                    model=None,
+                )
+            )
+            self.assertEqual(provider_cfg.provider_id, "openai_noauth")
+            self.assertEqual(selected_model, "gpt-4o-mini")
+            self.assertIsNone(api_key)
+            self.assertIsNone(access_token)
+
+    def test_resolve_credentials_respects_explicit_unready_provider(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            (root / "data").mkdir(parents=True, exist_ok=True)
+            db_url = f"sqlite:///{root / 'data' / 'market_reporter.db'}"
+            config = AppConfig(
+                output_root=root / "output",
+                config_file=root / "config" / "settings.yaml",
+                database={"url": db_url},
+                analysis=AnalysisConfig(
+                    default_provider="openai_noauth",
+                    default_model="gpt-4o-mini",
+                    providers=[
+                        AnalysisProviderConfig(
+                            provider_id="openai_noauth",
+                            type="openai_compatible",
+                            base_url="https://api.openai.com/v1",
+                            models=["gpt-4o-mini"],
+                            timeout=5,
+                            enabled=True,
+                            auth_mode="none",
+                        ),
+                        AnalysisProviderConfig(
+                            provider_id="openai_compatible",
+                            type="openai_compatible",
+                            base_url="https://api.openai.com/v1",
+                            models=["gpt-4o-mini"],
+                            timeout=20,
+                            enabled=True,
+                            auth_mode="api_key",
+                        ),
+                    ],
+                ),
+            )
+            init_db(config.database.url)
+            service = AnalysisService(
+                config=config,
+                registry=ProviderRegistry(),
+                keychain_store=DummyKeychainStore(),
+            )
+
+            with self.assertRaisesRegex(ValueError, "API key"):
+                service.resolve_credentials(
+                    provider_id="openai_compatible",
+                    model="gpt-4o-mini",
+                )
 
 
 if __name__ == "__main__":

@@ -69,8 +69,8 @@ class AnalysisProviderConfig(BaseModel):
 
 
 class AnalysisConfig(BaseModel):
-    default_provider: str = "mock"
-    default_model: str = "market-default"
+    default_provider: str = "openai_compatible"
+    default_model: str = "gpt-4o-mini"
     providers: List[AnalysisProviderConfig] = Field(default_factory=list)
 
 
@@ -208,15 +208,6 @@ def default_fred_series() -> List[FredSeries]:
 
 def default_analysis_providers() -> List[AnalysisProviderConfig]:
     return [
-        AnalysisProviderConfig(
-            provider_id="mock",
-            type="mock",
-            base_url="",
-            models=["market-default"],
-            timeout=5,
-            enabled=True,
-            auth_mode="none",
-        ),
         AnalysisProviderConfig(
             provider_id="openai_compatible",
             type="openai_compatible",

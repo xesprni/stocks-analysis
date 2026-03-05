@@ -52,7 +52,7 @@
 
 ## 2.1 默认值
 
-- 默认分析 provider：`mock`、`openai_compatible`、`codex_app_server`
+- 默认分析 provider：`openai_compatible`、`codex_app_server`
 - 默认新闻源与 FRED 序列内置在 `default_news_sources/default_fred_series`
 
 ## 2.2 配置规范化
@@ -152,9 +152,6 @@ analysis:
   default_provider: openai_compatible
   default_model: gpt-4
   providers:
-    - id: mock
-      enabled: true
-      auth_mode: none
     - id: openai_compatible
       enabled: true
       auth_mode: api_key
@@ -212,11 +209,14 @@ database:
   url: sqlite:///data/market_reporter.db
 
 analysis:
-  default_provider: mock
+  default_provider: openai_compatible
   providers:
-    - id: mock
+    - id: openai_compatible
       enabled: true
-      auth_mode: none
+      auth_mode: api_key
+      base_url: https://api.openai.com/v1
+      models:
+        - gpt-4o-mini
 ```
 
 ## 6. 环境变量说明

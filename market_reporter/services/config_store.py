@@ -88,13 +88,7 @@ class ConfigStore:
                 continue
             seen.add(provider_id)
             inferred_auth_mode = provider.auth_mode or (
-                "none"
-                if provider.type == "mock"
-                else (
-                    "chatgpt_oauth"
-                    if provider.type == "codex_app_server"
-                    else "api_key"
-                )
+                "chatgpt_oauth" if provider.type == "codex_app_server" else "api_key"
             )
             providers.append(
                 provider.model_copy(
@@ -132,7 +126,7 @@ class ConfigStore:
         if selected_default is None or not selected_default.enabled:
             fallback_provider = next(
                 (provider.provider_id for provider in providers if provider.enabled),
-                providers[0].provider_id if providers else "mock",
+                providers[0].provider_id if providers else "openai_compatible",
             )
             analysis = analysis.model_copy(
                 update={"default_provider": fallback_provider}

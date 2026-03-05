@@ -17,10 +17,42 @@ class _FakeCodexProvider:
         del prompt, model, system_prompt, access_token
         if not self._responses:
             return '{"action":"final","final":{"summary":"done"}}'
-        return self._responses.pop(0)
+        response = self._responses.pop(0)
+        if isinstance(response, Exception):
+            raise response
+        return response
 
 
 class CodexLangChainRuntimeTest(unittest.TestCase):
+    def test_model_timeout_retries_then_succeeds(self):
+        provider = _FakeCodexProvider(
+            responses=[
+                TimeoutError("Request timed out."),
+                '{"action":"final","final":{"summary":"ok-after-timeout","sentiment":"neutral","key_levels":[],"risks":[],"action_items":[],"confidence":0.6,"conclusions":["结论 [E1]"],"scenario_assumptions":{"base":"b","bull":"u","bear":"d"},"markdown":"m"}}',
+            ]
+        )
+        runtime = CodexLangChainRuntime(provider=cast(Any, provider))
+
+        async def executor(tool, args):
+            del tool, args
+            return {"ok": True}
+
+        async def scenario():
+            return await runtime.run(
+                model="test-model",
+                question="analyze",
+                mode="stock",
+                context={"x": 1},
+                tool_specs=[],
+                tool_executor=executor,
+                max_steps=3,
+                max_tool_calls=3,
+            )
+
+        draft, traces = asyncio.run(scenario())
+        self.assertEqual(draft.summary, "ok-after-timeout")
+        self.assertEqual(len(traces), 0)
+
     def test_runtime_calls_tool_then_returns_final(self):
         provider = _FakeCodexProvider(
             responses=[

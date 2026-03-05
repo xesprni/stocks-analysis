@@ -1,7 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { Plus, RefreshCw, Save, Settings2, Trash2 } from "lucide-react";
 
-import type { AnalysisProviderConfig, AnalysisProviderView, AppConfig, NewsSource, UIOptions } from "@/api/client";
+import type {
+  AnalysisProviderConfig,
+  AnalysisProviderView,
+  AppConfig,
+  NewsSource,
+  ProviderAvailability,
+  UIOptions,
+} from "@/api/client";
 import { ProvidersPage } from "@/pages/Providers";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -28,6 +35,7 @@ type Props = {
   onConnectAuth: (providerId: string) => Promise<void>;
   onDisconnectAuth: (providerId: string) => Promise<void>;
   onLoadModels: (providerId: string) => Promise<string[]>;
+  onCheckAvailability: (providerId: string, model?: string) => Promise<ProviderAvailability>;
   onDeleteProvider: (providerId: string) => Promise<void>;
   onSaveProviderConfig: (
     providerId: string,
@@ -81,6 +89,7 @@ export function ConfigPage({
   onConnectAuth,
   onDisconnectAuth,
   onLoadModels,
+  onCheckAvailability,
   onDeleteProvider,
   onSaveProviderConfig,
   setConfig,
@@ -948,6 +957,7 @@ export function ConfigPage({
         onConnectAuth={onConnectAuth}
         onDisconnectAuth={onDisconnectAuth}
         onLoadModels={onLoadModels}
+        onCheckAvailability={onCheckAvailability}
         onDeleteProvider={onDeleteProvider}
         onSaveProviderConfig={onSaveProviderConfig}
       />

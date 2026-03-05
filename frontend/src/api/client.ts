@@ -14,6 +14,7 @@ import {
   newsSourceSchema,
   providerAuthStartSchema,
   providerAuthStatusSchema,
+  providerAvailabilitySchema,
   providerModelsSchema,
   quoteSchema,
   reportDetailSchema,
@@ -366,6 +367,10 @@ export const api = {
     }),
   listAnalysisProviderModels: (providerId: string) =>
     request(`/providers/analysis/${providerId}/models`, providerModelsSchema),
+  getAnalysisProviderAvailability: (providerId: string, model?: string) => {
+    const query = model ? `?model=${encodeURIComponent(model)}` : "";
+    return request(`/providers/analysis/${providerId}/availability${query}`, providerAvailabilitySchema);
+  },
 
   // ---- news sources ----
   listNewsSources: () => request("/news-sources", z.array(newsSourceSchema)),

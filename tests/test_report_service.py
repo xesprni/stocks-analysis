@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from market_reporter.api import reports
 from market_reporter.config import AnalysisConfig, AnalysisProviderConfig, AppConfig
 from market_reporter.core.types import AnalysisInput, AnalysisOutput
+from market_reporter.modules.analysis.service import AnalysisService
 from market_reporter.modules.analysis.agent.schemas import (
     AgentFinalReport,
     AgentRunResult,
@@ -125,8 +126,8 @@ class ReportServiceTest(unittest.TestCase):
                     raw_data_path=(output_root / "20260207_010101" / "raw_data.json"),
                     warnings_count=0,
                     news_total=0,
-                    provider_id="mock",
-                    model="market-default",
+                    provider_id="openai_compatible",
+                    model="gpt-4o-mini",
                 )
                 return RunResult(summary=summary, warnings=[])
 
@@ -152,7 +153,7 @@ class ReportServiceTest(unittest.TestCase):
             result = final_state.result
             self.assertIsNotNone(result)
             assert result is not None
-            self.assertEqual(result.summary.provider_id, "mock")
+            self.assertEqual(result.summary.provider_id, "openai_compatible")
 
     def test_async_report_task_failed(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -271,14 +272,14 @@ class ReportServiceTest(unittest.TestCase):
                     output_root=output_root,
                     config_file=config_path,
                     analysis=AnalysisConfig(
-                        default_provider="mock",
-                        default_model="market-default",
+                        default_provider="openai_compatible",
+                        default_model="gpt-4o-mini",
                         providers=[
                             AnalysisProviderConfig(
-                                provider_id="mock",
-                                type="mock",
-                                base_url="",
-                                models=["market-default"],
+                                provider_id="openai_compatible",
+                                type="openai_compatible",
+                                base_url="https://api.openai.com/v1",
+                                models=["gpt-4o-mini"],
                                 timeout=5,
                                 enabled=True,
                                 auth_mode="none",
@@ -343,7 +344,7 @@ class ReportServiceTest(unittest.TestCase):
                 "warnings_count": 2,
                 "news_total": 6,
                 "provider_id": "mock",
-                "model": "market-default",
+                "model": "gpt-4o-mini",
             }
             (run_dir / "meta.json").write_text(
                 json.dumps({"summary": legacy_summary, "warnings": []}),
@@ -395,7 +396,7 @@ class ReportServiceTest(unittest.TestCase):
                             "warnings_count": 1,
                             "news_total": 3,
                             "provider_id": "mock",
-                            "model": "market-default",
+                            "model": "gpt-4o-mini",
                         },
                         "warnings": [],
                     }
@@ -492,14 +493,14 @@ class ReportServiceTest(unittest.TestCase):
                     output_root=output_root,
                     config_file=config_path,
                     analysis=AnalysisConfig(
-                        default_provider="mock",
-                        default_model="market-default",
+                        default_provider="openai_compatible",
+                        default_model="gpt-4o-mini",
                         providers=[
                             AnalysisProviderConfig(
-                                provider_id="mock",
-                                type="mock",
-                                base_url="",
-                                models=["market-default"],
+                                provider_id="openai_compatible",
+                                type="openai_compatible",
+                                base_url="https://api.openai.com/v1",
+                                models=["gpt-4o-mini"],
                                 timeout=5,
                                 enabled=True,
                                 auth_mode="none",
@@ -527,6 +528,123 @@ class ReportServiceTest(unittest.TestCase):
                 )
                 self.assertEqual(raw_payload.get("skill_id"), "stock_report")
         finally:
+            AgentService.run = original_run  # type: ignore[method-assign]
+            AgentService.to_analysis_payload = original_to_payload  # type: ignore[method-assign]
+
+    def test_run_report_passes_provider_and_model_overrides_to_resolver(self):
+        original_run = AgentService.run
+        original_to_payload = AgentService.to_analysis_payload
+        original_resolve = AnalysisService.resolve_credentials
+
+        captured: dict[str, str | None] = {"provider_id": None, "model": None}
+
+        def fake_resolve(self, provider_id=None, model=None):
+            captured["provider_id"] = provider_id
+            captured["model"] = model
+            provider_cfg = self._find_provider(
+                provider_id or self.config.analysis.default_provider
+            )
+            selected_model = model or self.config.analysis.default_model
+            return provider_cfg, selected_model, None, None
+
+        async def fake_run(self, request, provider_cfg, model, api_key, access_token):
+            del self, provider_cfg, model, api_key, access_token
+            markdown = f"# Agent 分析报告\n\n- 模式: {request.mode}\n"
+            return AgentRunResult(
+                analysis_input={"tool_results": {}},
+                runtime_draft=RuntimeDraft(
+                    summary="summary",
+                    sentiment="neutral",
+                    key_levels=[],
+                    risks=[],
+                    action_items=[],
+                    confidence=0.66,
+                    conclusions=[],
+                    scenario_assumptions={"base": "b", "bull": "u", "bear": "d"},
+                    markdown=markdown,
+                    raw={},
+                ),
+                final_report=AgentFinalReport(
+                    mode=request.mode,
+                    question=request.question,
+                    conclusions=[],
+                    market_technical="x",
+                    fundamentals="x",
+                    catalysts_risks="x",
+                    valuation_scenarios="x",
+                    data_sources=[],
+                    guardrail_issues=[],
+                    confidence=0.66,
+                    markdown=markdown,
+                    raw={},
+                ),
+                tool_calls=[],
+                guardrail_issues=[],
+                evidence_map=[],
+            )
+
+        def fake_to_payload(self, request, run_result):
+            del self, request
+            return (
+                AnalysisInput(symbol="MARKET", market="GLOBAL"),
+                AnalysisOutput(
+                    summary="summary",
+                    sentiment="neutral",
+                    key_levels=[],
+                    risks=[],
+                    action_items=[],
+                    confidence=0.66,
+                    markdown=run_result.final_report.markdown,
+                    raw={},
+                ),
+            )
+
+        AnalysisService.resolve_credentials = fake_resolve  # type: ignore[method-assign]
+        AgentService.run = fake_run  # type: ignore[method-assign]
+        AgentService.to_analysis_payload = fake_to_payload  # type: ignore[method-assign]
+
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                root = Path(tmpdir)
+                output_root = root / "output"
+                output_root.mkdir(parents=True, exist_ok=True)
+                config_path = root / "config" / "settings.yaml"
+                store = ConfigStore(config_path=config_path)
+                config = AppConfig(
+                    output_root=output_root,
+                    config_file=config_path,
+                    analysis=AnalysisConfig(
+                        default_provider="openai_compatible",
+                        default_model="gpt-4o-mini",
+                        providers=[
+                            AnalysisProviderConfig(
+                                provider_id="openai_compatible",
+                                type="openai_compatible",
+                                base_url="https://api.openai.com/v1",
+                                models=["gpt-4o-mini"],
+                                timeout=5,
+                                enabled=True,
+                                auth_mode="none",
+                            )
+                        ],
+                    ),
+                )
+                store.save(config)
+                service = ReportService(config_store=store)
+                asyncio.run(
+                    service.run_report(
+                        RunRequest(
+                            mode="market",
+                            provider_id="openai_compatible",
+                            model="gpt-4o-mini",
+                        )
+                    )
+                )
+
+                self.assertEqual(captured["provider_id"], "openai_compatible")
+                self.assertEqual(captured["model"], "gpt-4o-mini")
+        finally:
+            AnalysisService.resolve_credentials = original_resolve  # type: ignore[method-assign]
             AgentService.run = original_run  # type: ignore[method-assign]
             AgentService.to_analysis_payload = original_to_payload  # type: ignore[method-assign]
 

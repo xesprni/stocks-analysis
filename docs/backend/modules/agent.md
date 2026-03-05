@@ -52,7 +52,8 @@ market 模式仅保留新闻 + 宏观数据工具。
 - `ActionJSONRuntime`：未知 provider 的协议兜底（`action_json_v1`）。
 - 工具调用异常默认转为结构化 `tool_execution_error`/`tool_argument_error` 观察结果并继续循环，模型可据此自我纠错。
 - 同一 `tool + arguments` 失败重试默认上限 2 次（超限写入 `tool_retry_limit_exceeded`），再叠加 `max_steps/max_tool_calls`，避免死循环。
-- 失败时生成 fallback `RuntimeDraft`，保证输出可用。
+- 模型请求超时会自动重试（默认最多 3 次尝试，短退避），仍失败则抛出超时错误。
+- provider 连接或鉴权失败时直接抛错，由上层任务标记为 FAILED（不再生成占位降级报告）。
 
 ## 5.1 Skills（能力抽象）
 

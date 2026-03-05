@@ -32,10 +32,59 @@ class _FakeChatOpenAI:
             return _FakeAIMessage(
                 content='{"summary":"done","sentiment":"neutral","key_levels":[],"risks":[],"action_items":[],"confidence":0.5,"conclusions":[],"scenario_assumptions":{},"markdown":"m"}'
             )
-        return self.queued_responses.pop(0)
+        response = self.queued_responses.pop(0)
+        if isinstance(response, Exception):
+            raise response
+        return response
 
 
 class OpenAIToolRuntimeTest(unittest.TestCase):
+    def test_model_timeout_retries_then_succeeds(self):
+        provider_cfg = AnalysisProviderConfig(
+            provider_id="openai",
+            type="openai_compatible",
+            base_url="https://example.com/v1",
+            models=["gpt-test"],
+            timeout=10,
+            enabled=True,
+            auth_mode="api_key",
+        )
+
+        original_cls = openai_tool_runtime.ChatOpenAI
+        _FakeChatOpenAI.queued_responses = [
+            TimeoutError("Request timed out."),
+            _FakeAIMessage(
+                content='{"summary":"ok-after-timeout","sentiment":"neutral","key_levels":[],"risks":[],"action_items":[],"confidence":0.6,"conclusions":["结论 [E1]"],"scenario_assumptions":{"base":"b","bull":"u","bear":"d"},"markdown":"m"}'
+            ),
+        ]
+        openai_tool_runtime.ChatOpenAI = _FakeChatOpenAI
+
+        runtime = OpenAIToolRuntime(provider_config=provider_cfg, api_key="test-key")
+
+        async def executor(tool, arguments):
+            del tool, arguments
+            return {"ok": True}
+
+        async def scenario():
+            return await runtime.run(
+                model="gpt-test",
+                question="analyze",
+                mode="stock",
+                context={"x": 1},
+                tool_specs=[],
+                tool_executor=executor,
+                max_steps=2,
+                max_tool_calls=2,
+            )
+
+        try:
+            draft, traces = asyncio.run(scenario())
+        finally:
+            openai_tool_runtime.ChatOpenAI = original_cls
+
+        self.assertEqual(draft.summary, "ok-after-timeout")
+        self.assertEqual(len(traces), 0)
+
     def test_tool_error_does_not_abort_runtime(self):
         provider_cfg = AnalysisProviderConfig(
             provider_id="openai",

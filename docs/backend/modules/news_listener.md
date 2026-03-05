@@ -72,7 +72,7 @@ modules:
 | `move_window_minutes` | `60` | 价格变动计算窗口（分钟） |
 | `move_threshold_percent` | `2.0` | 触发告警的价格变动阈值（%） |
 | `max_news_per_cycle` | `100` | 每轮最大处理新闻数 |
-| `analysis_provider` | `mock` | 分析模型 provider |
+| `analysis_provider` | `openai_compatible` | 分析模型 provider |
 | `analysis_model` | - | 分析模型名称 |
 
 ## 9. 匹配规则说明

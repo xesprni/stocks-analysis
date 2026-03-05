@@ -262,61 +262,41 @@ class ReportService:
                     news_service=news_service,
                     fund_flow_service=fund_flow_service,
                 )
-                try:
-                    provider_cfg, selected_model, api_key, access_token = (
-                        analysis_service.resolve_credentials(
-                            provider_id=None,
-                            model=None,
-                        )
+                requested_provider = overrides.provider_id if overrides else None
+                requested_model = overrides.model if overrides else None
+                provider_cfg, selected_model, api_key, access_token = (
+                    analysis_service.resolve_credentials(
+                        provider_id=requested_provider,
+                        model=requested_model,
                     )
-                    provider_id = provider_cfg.provider_id
-                    model = selected_model
+                )
+                provider_id = provider_cfg.provider_id
+                model = selected_model
 
-                    agent_service = AgentService(
+                agent_service = AgentService(
+                    config=config,
+                    registry=registry,
+                    news_service=news_service,
+                    fund_flow_service=fund_flow_service,
+                )
+                skill_result = await resolved_skill.run(
+                    ReportSkillContext(
                         config=config,
-                        registry=registry,
-                        news_service=news_service,
-                        fund_flow_service=fund_flow_service,
+                        overrides=overrides,
+                        generated_at=generated_at,
+                        agent_service=agent_service,
+                        provider_cfg=provider_cfg,
+                        selected_model=selected_model,
+                        api_key=api_key,
+                        access_token=access_token,
                     )
-                    skill_result = await resolved_skill.run(
-                        ReportSkillContext(
-                            config=config,
-                            overrides=overrides,
-                            generated_at=generated_at,
-                            agent_service=agent_service,
-                            provider_cfg=provider_cfg,
-                            selected_model=selected_model,
-                            api_key=api_key,
-                            access_token=access_token,
-                        )
-                    )
-                    markdown = skill_result.markdown
-                    analysis_payload = skill_result.analysis_payload
-                    news_total = skill_result.news_total
-                    warnings.extend(skill_result.warnings)
-                    agent_mode = skill_result.mode
-                    report_skill_id = skill_result.skill_id
-                except Exception as exc:
-                    provider_id = provider_id or "fallback-local"
-                    model = model or "n/a"
-                    warnings.append(f"agent_report_fallback: {exc}")
-                    markdown = (
-                        "# Agent 分析报告\n\n"
-                        "- 模式: fallback\n"
-                        f"- 生成时间: {generated_at}\n\n"
-                        "模型执行失败，已生成降级占位报告。\n"
-                    )
-                    analysis_payload = {
-                        "summary": "模型执行失败，报告已降级。",
-                        "sentiment": "neutral",
-                        "key_levels": [],
-                        "risks": ["agent runtime unavailable"],
-                        "action_items": ["检查 provider 配置和鉴权状态"],
-                        "confidence": 0.2,
-                        "markdown": markdown,
-                        "raw": {"error": str(exc)},
-                    }
-                    report_skill_id = report_skill_id or "fallback"
+                )
+                markdown = skill_result.markdown
+                analysis_payload = skill_result.analysis_payload
+                news_total = skill_result.news_total
+                warnings.extend(skill_result.warnings)
+                agent_mode = skill_result.mode
+                report_skill_id = skill_result.skill_id
 
             run_output_root = self._resolve_output_root(config=config, user_id=user_id)
             run_dir = self._build_run_dir(output_root=run_output_root)

@@ -15,6 +15,10 @@ export function useProviderActions() {
     return payload.models;
   }, []);
 
+  const checkProviderAvailability = useCallback(async (providerId: string, model?: string) => {
+    return api.getAnalysisProviderAvailability(providerId, model);
+  }, []);
+
   const connectProviderAuth = useCallback(
     async (providerId: string) => {
       const preStatus = await api.getAnalysisProviderAuthStatus(providerId).catch(() => null);
@@ -69,5 +73,5 @@ export function useProviderActions() {
     [notifier, queryClient]
   );
 
-  return { loadAnalysisModels, connectProviderAuth, disconnectProviderAuth };
+  return { loadAnalysisModels, connectProviderAuth, disconnectProviderAuth, checkProviderAvailability };
 }

@@ -16,14 +16,13 @@
 - `market_reporter/modules/analysis/schemas.py`
 - `market_reporter/modules/analysis/prompt_builder.py`
 - providers:
-  - `mock_provider.py`
   - `openai_compatible_provider.py`
   - `codex_app_server_provider.py`
 - agent 子包（见 [agent 子包文档](./agent.md)）
 
 ## 3. Provider 管理
 
-- provider 类型：`mock/openai_compatible/codex_app_server`
+- provider 类型：`openai_compatible/codex_app_server`
 - 认证模式：`none/api_key/chatgpt_oauth`
 - 状态计算维度：
   - enabled

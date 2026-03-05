@@ -16,7 +16,7 @@
 1. 新闻源管理与新闻聚合。
 2. A/H/US 行情能力：搜索、单股报价、批量报价、K 线、分时曲线。
 3. Watchlist 管理（含 alias / display_name / keywords）。
-4. 多 Provider / 多 Model 分析引擎（mock / openai_compatible / codex_app_server）。
+4. 多 Provider / 多 Model 分析引擎（openai_compatible / codex_app_server）。
 5. 报告生成与历史回看（市场报告 + 个股分析，均支持异步任务）。
 6. 可选 Telegram 报告完成推送（成功/失败）。
 7. Skill 文档懒加载：支持从 `skills/*/SKILL.md` 动态加载能力说明并作为 `skill` 工具返回。
@@ -368,7 +368,8 @@ UV_CACHE_DIR=.uv-cache uv run market-reporter db init
 7. `GET /api/providers/analysis/{provider_id}/auth/callback`
 8. `POST /api/providers/analysis/{provider_id}/auth/logout`
 9. `GET /api/providers/analysis/{provider_id}/models`
-10. `DELETE /api/providers/analysis/{provider_id}`
+10. `GET /api/providers/analysis/{provider_id}/availability`
+11. `DELETE /api/providers/analysis/{provider_id}`
 
 ## CLI 常用命令
 
@@ -383,7 +384,8 @@ UV_CACHE_DIR=.uv-cache uv run market-reporter watchlist remove --item-id 1
 
 # provider
 UV_CACHE_DIR=.uv-cache uv run market-reporter providers list
-UV_CACHE_DIR=.uv-cache uv run market-reporter providers set-default --provider mock --model market-default
+UV_CACHE_DIR=.uv-cache uv run market-reporter providers set-default --provider openai_compatible --model gpt-4o-mini
+UV_CACHE_DIR=.uv-cache uv run market-reporter providers check --provider openai_compatible --model gpt-4o-mini
 
 # 个股分析
 UV_CACHE_DIR=.uv-cache uv run market-reporter analyze stock --symbol AAPL --market US

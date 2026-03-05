@@ -59,8 +59,8 @@ class StockAnalysisResultsApiTest(unittest.TestCase):
                 row1 = repo.add(
                     symbol="AAPL",
                     market="US",
-                    provider_id="mock",
-                    model="market-default",
+                    provider_id="openai_compatible",
+                    model="gpt-4o-mini",
                     status="SUCCESS",
                     input_json=json.dumps({"symbol": "AAPL"}),
                     output_json=json.dumps(
@@ -76,8 +76,8 @@ class StockAnalysisResultsApiTest(unittest.TestCase):
                 row2 = repo.add(
                     symbol="PDD",
                     market="US",
-                    provider_id="mock",
-                    model="market-default",
+                    provider_id="openai_compatible",
+                    model="gpt-4o-mini",
                     status="SUCCESS",
                     input_json=json.dumps({"symbol": "PDD"}),
                     output_json=json.dumps(

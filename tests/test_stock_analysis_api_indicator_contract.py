@@ -137,14 +137,14 @@ class StockAnalysisIndicatorContractTest(unittest.TestCase):
                     config_file=root / "config" / "settings.yaml",
                     database=DatabaseConfig(url=f"sqlite:///{db_path}"),
                     analysis=AnalysisConfig(
-                        default_provider="mock",
-                        default_model="market-default",
+                        default_provider="openai_compatible",
+                        default_model="gpt-4o-mini",
                         providers=[
                             AnalysisProviderConfig(
-                                provider_id="mock",
-                                type="mock",
-                                base_url="",
-                                models=["market-default"],
+                                provider_id="openai_compatible",
+                                type="openai_compatible",
+                                base_url="https://api.openai.com/v1",
+                                models=["gpt-4o-mini"],
                                 timeout=5,
                                 enabled=True,
                                 auth_mode="none",

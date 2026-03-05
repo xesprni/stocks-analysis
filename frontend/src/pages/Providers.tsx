@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { KeyRound, Layers, LogIn, LogOut, Save, Settings2, Trash2 } from "lucide-react";
+import { KeyRound, Layers, Loader2, LogIn, LogOut, Save, Settings2, Trash2 } from "lucide-react";
 
-import type { AnalysisProviderConfig, AnalysisProviderView } from "@/api/client";
+import type { AnalysisProviderConfig, AnalysisProviderView, ProviderAvailability } from "@/api/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -21,6 +21,7 @@ type Props = {
   onConnectAuth: (providerId: string) => Promise<void>;
   onDisconnectAuth: (providerId: string) => Promise<void>;
   onLoadModels: (providerId: string) => Promise<string[]>;
+  onCheckAvailability: (providerId: string, model?: string) => Promise<ProviderAvailability>;
   onDeleteProvider: (providerId: string) => Promise<void>;
   onSaveProviderConfig: (
     providerId: string,
@@ -45,6 +46,7 @@ export function ProvidersPage({
   onConnectAuth,
   onDisconnectAuth,
   onLoadModels,
+  onCheckAvailability,
   onDeleteProvider,
   onSaveProviderConfig,
 }: Props) {
@@ -58,6 +60,8 @@ export function ProvidersPage({
   const [configModelsText, setConfigModelsText] = useState("");
   const [configCallbackUrl, setConfigCallbackUrl] = useState("");
   const [configLoginTimeout, setConfigLoginTimeout] = useState("600");
+  const [checkingAvailabilityProviderId, setCheckingAvailabilityProviderId] = useState<string | null>(null);
+  const [availabilityByProvider, setAvailabilityByProvider] = useState<Record<string, ProviderAvailability>>({});
 
   const orderedProviders = useMemo(
     () => [...providers].sort((a, b) => a.provider_id.localeCompare(b.provider_id)),
@@ -99,10 +103,11 @@ export function ProvidersPage({
   const isOauthProvider = selectedAuthMode === "chatgpt_oauth";
   const isOauthConnected = Boolean(selected?.connected);
   const canConnectOauth = Boolean(selected);
-  const showBaseUrlField = selectedProviderConfig?.type !== "mock" && selectedProviderConfig?.type !== "codex_app_server";
+  const showBaseUrlField = selectedProviderConfig?.type !== "codex_app_server";
   const selectedStatusVariant = selected?.ready ? "default" : selected?.status === "disabled" ? "outline" : "destructive";
   const canSetDefault = Boolean(selected?.ready && model);
   const canSaveSecret = Boolean(selected?.secret_required && selectedAuthMode === "api_key");
+  const selectedAvailability = selected ? availabilityByProvider[selected.provider_id] : undefined;
 
   useEffect(() => {
     let cancelled = false;
@@ -241,6 +246,38 @@ export function ProvidersPage({
             <Save className="mr-2 h-4 w-4" />
             更新默认 Provider/Model
           </Button>
+          <Button
+            className="w-full"
+            variant="outline"
+            disabled={!selected || checkingAvailabilityProviderId === selected.provider_id}
+            onClick={async () => {
+              if (!selected) {
+                return;
+              }
+              setCheckingAvailabilityProviderId(selected.provider_id);
+              try {
+                const result = await onCheckAvailability(selected.provider_id, model || undefined);
+                setAvailabilityByProvider((prev) => ({
+                  ...prev,
+                  [selected.provider_id]: result,
+                }));
+              } finally {
+                setCheckingAvailabilityProviderId(null);
+              }
+            }}
+          >
+            {checkingAvailabilityProviderId === selected?.provider_id ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                检测中...
+              </>
+            ) : (
+              <>
+                <Settings2 className="mr-2 h-4 w-4" />
+                检测 Provider 可用性
+              </>
+            )}
+          </Button>
           {selected ? (
             <div className="rounded-lg border border-indigo-200/50 bg-indigo-50/30 p-3 text-xs text-muted-foreground dark:border-indigo-800/30 dark:bg-indigo-950/20">
               <div className="flex flex-wrap items-center gap-2">
@@ -254,6 +291,21 @@ export function ProvidersPage({
                 ) : null}
               </div>
               <div className="mt-2">{selected.status_message}</div>
+            </div>
+          ) : null}
+          {selectedAvailability ? (
+            <div className="rounded-lg border border-violet-200/50 bg-violet-50/30 p-3 text-xs text-muted-foreground dark:border-violet-800/30 dark:bg-violet-950/20">
+              <div className="flex flex-wrap items-center gap-2">
+                <span>最近检测:</span>
+                <Badge variant={selectedAvailability.available ? "secondary" : "destructive"}>
+                  {selectedAvailability.status}
+                </Badge>
+                <Badge variant="outline">{selectedAvailability.latency_ms}ms</Badge>
+              </div>
+              <div className="mt-2">{selectedAvailability.message || "无详细信息"}</div>
+              <div className="mt-1 text-[11px] opacity-80">
+                checked at {new Date(selectedAvailability.checked_at).toLocaleString()}
+              </div>
             </div>
           ) : null}
 
@@ -469,39 +521,58 @@ export function ProvidersPage({
                   <TableHead>Type</TableHead>
                   <TableHead>Models</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>可用性检测</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {orderedProviders.map((provider) => (
-                  <TableRow key={provider.provider_id} className="hover:bg-violet-50/30 dark:hover:bg-violet-950/10">
-                    <TableCell className="font-medium">{provider.provider_id}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline">{provider.type}</Badge>
-                    </TableCell>
-                    <TableCell className="max-w-[200px] truncate text-xs text-muted-foreground">
-                      {provider.models.join(", ")}
-                    </TableCell>
-                    <TableCell className="space-x-1">
-                      <Badge variant={provider.enabled ? "default" : "outline"}>
-                        {provider.enabled ? "enabled" : "disabled"}
-                      </Badge>
-                      <Badge
-                        variant={provider.ready ? "secondary" : provider.status === "disabled" ? "outline" : "destructive"}
-                      >
-                        {provider.status}
-                      </Badge>
-                      <Badge variant={provider.secret_required ? (provider.has_secret ? "secondary" : "outline") : "outline"}>
-                        {provider.secret_required ? (provider.has_secret ? "secret-ready" : "missing-secret") : "not-required"}
-                      </Badge>
-                      {provider.auth_mode === "chatgpt_oauth" ? (
-                        <Badge variant={provider.connected ? "secondary" : "outline"}>
-                          {provider.connected ? "connected" : "disconnected"}
+                {orderedProviders.map((provider) => {
+                  const availability = availabilityByProvider[provider.provider_id];
+                  return (
+                    <TableRow key={provider.provider_id} className="hover:bg-violet-50/30 dark:hover:bg-violet-950/10">
+                      <TableCell className="font-medium">{provider.provider_id}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline">{provider.type}</Badge>
+                      </TableCell>
+                      <TableCell className="max-w-[200px] truncate text-xs text-muted-foreground">
+                        {provider.models.join(", ")}
+                      </TableCell>
+                      <TableCell className="space-x-1">
+                        <Badge variant={provider.enabled ? "default" : "outline"}>
+                          {provider.enabled ? "enabled" : "disabled"}
                         </Badge>
-                      ) : null}
-                      {provider.is_default ? <Badge variant="default">default</Badge> : null}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                        <Badge
+                          variant={provider.ready ? "secondary" : provider.status === "disabled" ? "outline" : "destructive"}
+                        >
+                          {provider.status}
+                        </Badge>
+                        <Badge variant={provider.secret_required ? (provider.has_secret ? "secondary" : "outline") : "outline"}>
+                          {provider.secret_required ? (provider.has_secret ? "secret-ready" : "missing-secret") : "not-required"}
+                        </Badge>
+                        {provider.auth_mode === "chatgpt_oauth" ? (
+                          <Badge variant={provider.connected ? "secondary" : "outline"}>
+                            {provider.connected ? "connected" : "disconnected"}
+                          </Badge>
+                        ) : null}
+                        {provider.is_default ? <Badge variant="default">default</Badge> : null}
+                      </TableCell>
+                      <TableCell>
+                        {availability ? (
+                          <div className="flex flex-col gap-1 text-xs">
+                            <div className="flex items-center gap-1">
+                              <Badge variant={availability.available ? "secondary" : "destructive"}>{availability.status}</Badge>
+                              <Badge variant="outline">{availability.latency_ms}ms</Badge>
+                            </div>
+                            <div className="max-w-[260px] truncate text-muted-foreground" title={availability.message}>
+                              {availability.message}
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">未检测</span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </div>

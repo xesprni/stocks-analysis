@@ -52,8 +52,8 @@ const emptyConfig: AppConfig = {
     symbol_search: { default_provider: "longbridge" },
   },
   analysis: {
-    default_provider: "mock",
-    default_model: "market-default",
+    default_provider: "openai_compatible",
+    default_model: "gpt-4o-mini",
     providers: [],
   },
   watchlist: {
@@ -213,7 +213,8 @@ export default function App() {
     setWarningMessage,
   );
 
-  const { loadAnalysisModels, connectProviderAuth, disconnectProviderAuth } = useProviderActions();
+  const { loadAnalysisModels, connectProviderAuth, disconnectProviderAuth, checkProviderAvailability } =
+    useProviderActions();
 
   const applySectionFromDraft = (target: AppConfig, source: AppConfig, section: ConfigSaveSection): AppConfig => {
     if (section === "basic") {
@@ -489,6 +490,25 @@ export default function App() {
               }
             }}
             onLoadModels={loadAnalysisModels}
+            onCheckAvailability={async (providerId, model) => {
+              try {
+                const result = await checkProviderAvailability(providerId, model);
+                if (result.available) {
+                  notifier.success(
+                    "可用性检测通过",
+                    `${result.provider_id} / ${result.model || "-"} (${result.latency_ms}ms)`
+                  );
+                } else {
+                  notifier.warning("可用性检测失败", result.message || `${providerId} unavailable`);
+                }
+                return result;
+              } catch (error) {
+                const message = toErrorMessage(error);
+                setErrorMessage(message);
+                notifier.error("可用性检测失败", message);
+                throw error;
+              }
+            }}
             onDeleteProvider={async (providerId) => {
               try {
                 if (!window.confirm(`确认删除 Provider: ${providerId} ?`)) {

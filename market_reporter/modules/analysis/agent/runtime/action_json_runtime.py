@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import asyncio
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
@@ -15,6 +16,7 @@ ToolExecutor = Callable[[str, Dict[str, Any]], Awaitable[Dict[str, Any]]]
 
 class ActionJSONRuntime:
     MAX_RETRIES_PER_TOOL_SIGNATURE = 2
+    MAX_MODEL_CALL_RETRIES = 2
 
     def __init__(
         self,
@@ -75,14 +77,13 @@ class ActionJSONRuntime:
                     },
                 },
             }
-            response_text = await self.provider.complete_text(
+            response_text = await self._complete_text_with_retry(
                 prompt=json.dumps(instruction, ensure_ascii=False),
                 model=model,
                 system_prompt=(
                     "Respond with pure JSON only. "
                     "Either request a tool call or return final structured result."
                 ),
-                access_token=self.access_token,
             )
             parsed = parse_json(response_text)
             if not isinstance(parsed, dict):
@@ -135,6 +136,46 @@ class ActionJSONRuntime:
                 break
 
         return self._fallback_draft(context), traces
+
+    async def _complete_text_with_retry(
+        self,
+        prompt: str,
+        model: str,
+        system_prompt: str,
+    ) -> str:
+        last_error: Exception | None = None
+        for attempt in range(self.MAX_MODEL_CALL_RETRIES + 1):
+            try:
+                return await self.provider.complete_text(
+                    prompt=prompt,
+                    model=model,
+                    system_prompt=system_prompt,
+                    access_token=self.access_token,
+                )
+            except Exception as exc:
+                last_error = exc
+                if not self._is_timeout_error(exc):
+                    raise
+                if attempt >= self.MAX_MODEL_CALL_RETRIES:
+                    break
+                await asyncio.sleep(0.1 * (attempt + 1))
+
+        if last_error is None:
+            raise RuntimeError("Provider request failed unexpectedly.")
+        raise TimeoutError(
+            f"Provider request timed out after {self.MAX_MODEL_CALL_RETRIES + 1} attempts: {last_error}"
+        )
+
+    @staticmethod
+    def _is_timeout_error(exc: Exception) -> bool:
+        name = type(exc).__name__.lower()
+        message = str(exc).lower()
+        return (
+            "timeout" in name
+            or "timed out" in message
+            or "timeout" in message
+            or "deadline exceeded" in message
+        )
 
     @staticmethod
     def _to_draft(data: Dict[str, Any]) -> RuntimeDraft:

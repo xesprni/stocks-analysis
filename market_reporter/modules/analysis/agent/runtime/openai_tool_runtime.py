@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import asyncio
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Dict, List, Tuple
 
@@ -17,6 +18,7 @@ ToolExecutor = Callable[[str, Dict[str, Any]], Awaitable[Dict[str, Any]]]
 
 class OpenAIToolRuntime:
     MAX_RETRIES_PER_TOOL_SIGNATURE = 2
+    MAX_MODEL_CALL_RETRIES = 2
 
     def __init__(
         self,
@@ -81,7 +83,10 @@ class OpenAIToolRuntime:
         tool_attempts: Dict[str, int] = {}
 
         for _ in range(max_steps):
-            response = await llm_with_tools.ainvoke(messages)
+            response = await self._invoke_model_with_retry(
+                llm_with_tools=llm_with_tools,
+                messages=messages,
+            )
             tool_calls = list(getattr(response, "tool_calls", []) or [])
 
             if tool_calls and used_calls < max_tool_calls:
@@ -160,6 +165,40 @@ class OpenAIToolRuntime:
             }
         )
         return draft, traces
+
+    async def _invoke_model_with_retry(
+        self,
+        llm_with_tools: Any,
+        messages: List[Any],
+    ) -> Any:
+        last_error: Exception | None = None
+        for attempt in range(self.MAX_MODEL_CALL_RETRIES + 1):
+            try:
+                return await llm_with_tools.ainvoke(messages)
+            except Exception as exc:
+                last_error = exc
+                if not self._is_timeout_error(exc):
+                    raise
+                if attempt >= self.MAX_MODEL_CALL_RETRIES:
+                    break
+                await asyncio.sleep(0.1 * (attempt + 1))
+
+        if last_error is None:
+            raise RuntimeError("Model invocation failed unexpectedly.")
+        raise TimeoutError(
+            f"Model request timed out after {self.MAX_MODEL_CALL_RETRIES + 1} attempts: {last_error}"
+        )
+
+    @staticmethod
+    def _is_timeout_error(exc: Exception) -> bool:
+        name = type(exc).__name__.lower()
+        message = str(exc).lower()
+        return (
+            "timeout" in name
+            or "timed out" in message
+            or "timeout" in message
+            or "deadline exceeded" in message
+        )
 
     @staticmethod
     def _content_to_text(content: Any) -> str:

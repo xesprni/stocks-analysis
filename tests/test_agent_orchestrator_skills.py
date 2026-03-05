@@ -160,9 +160,9 @@ class AgentOrchestratorSkillsTest(unittest.TestCase):
         orchestrator._run_runtime = fake_runtime  # type: ignore[method-assign]
 
         provider_cfg = AnalysisProviderConfig(
-            provider_id="mock",
-            type="mock",
-            base_url="",
+            provider_id="openai_compatible",
+            type="openai_compatible",
+            base_url="https://api.openai.com/v1",
             models=["m"],
             timeout=5,
             enabled=True,

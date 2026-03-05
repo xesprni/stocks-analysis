@@ -105,6 +105,7 @@
 | GET | `/api/providers/analysis/{provider_id}/auth/callback` | OAuth 回调 |
 | POST | `/api/providers/analysis/{provider_id}/auth/logout` | 退出登录 |
 | GET | `/api/providers/analysis/{provider_id}/models` | 查询模型列表 |
+| GET | `/api/providers/analysis/{provider_id}/availability` | 探测 provider+model 可用性 |
 | DELETE | `/api/providers/analysis/{provider_id}` | 删除 provider 配置 |
 
 ## 3. API 设计要点

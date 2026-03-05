@@ -18,6 +18,7 @@ from market_reporter.core.registry import ProviderRegistry
 from market_reporter.infra.db.session import init_db
 from market_reporter.modules.analysis.schemas import (
     AnalysisProviderView,
+    ProviderAvailabilityView,
     ProviderAuthStartRequest,
     ProviderAuthStartResponse,
     ProviderAuthStatusView,
@@ -233,6 +234,26 @@ async def analysis_provider_models(
         return await service.list_provider_models(provider_id=provider_id)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get(
+    "/providers/analysis/{provider_id}/availability",
+    response_model=ProviderAvailabilityView,
+)
+async def analysis_provider_availability(
+    provider_id: str,
+    model: Optional[str] = Query(None),
+    config: AppConfig = Depends(get_user_config),
+    user: CurrentUser = Depends(require_user),
+) -> ProviderAvailabilityView:
+    service = _get_analysis_service(
+        config,
+        user_id=get_effective_user_id(user),
+    )
+    return await service.check_provider_availability(
+        provider_id=provider_id,
+        model=model,
+    )
 
 
 @router.delete("/providers/analysis/{provider_id}/secret")
