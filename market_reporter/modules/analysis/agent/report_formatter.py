@@ -153,6 +153,10 @@ class AgentReportFormatter:
         recent_patterns = AgentReportFormatter._format_patterns(
             patterns_primary.get("recent")
         )
+        position_size = AgentReportFormatter._format_percent(
+            strategy.get("position_size")
+        )
+        entry_zone = AgentReportFormatter._format_metric(strategy.get("entry_zone"))
 
         lines = [
             f"数据日期: {as_of}",
@@ -183,8 +187,8 @@ class AgentReportFormatter:
             "[策略级输出]",
             (
                 f"score={AgentReportFormatter._format_metric(strategy.get('score'))}, stance={strategy.get('stance') or 'N/A'}, "
-                f"position_size={AgentReportFormatter._format_metric(strategy.get('position_size'))}%, "
-                f"entry_zone={AgentReportFormatter._format_metric(strategy.get('entry_zone'))}, stop_loss={AgentReportFormatter._format_metric(strategy.get('stop_loss'))}, "
+                f"position_size={position_size}, "
+                f"entry_zone={entry_zone}, stop_loss={AgentReportFormatter._format_metric(strategy.get('stop_loss'))}, "
                 f"take_profit={AgentReportFormatter._format_metric(strategy.get('take_profit'))}"
             ),
         ]
@@ -404,15 +408,20 @@ class AgentReportFormatter:
         ]
 
         if not risks and not actions:
-            return "\n".join(header + ["| N/A | N/A | N/A |"])
+            return "\n".join(
+                header
+                + ["| 暂未识别高置信风险 | 继续跟踪关键指标与新闻催化 | 暂无新增动作 |"]
+            )
 
         rows: List[str] = []
         total = max(len(risks), len(actions))
         for index in range(total):
-            risk = risks[index] if index < len(risks) else "N/A"
-            action = actions[index] if index < len(actions) else "N/A"
+            risk = risks[index] if index < len(risks) else "待补充风险项"
+            action = actions[index] if index < len(actions) else "继续观察"
             trigger = (
-                f"{risk} 出现明确扩散信号" if risk != "N/A" else "关键指标偏离预设区间"
+                f"{risk} 出现明确扩散信号"
+                if risk != "待补充风险项"
+                else "关键指标偏离预设区间"
             )
             rows.append(
                 "| "
@@ -432,7 +441,7 @@ class AgentReportFormatter:
         if value is None:
             return "N/A"
         if isinstance(value, bool):
-            return "Yes" if value else "No"
+            return "是" if value else "否"
         if isinstance(value, (int, float)):
             if value != value:
                 return "N/A"
@@ -441,8 +450,27 @@ class AgentReportFormatter:
             if abs(float(value)) >= 1:
                 return f"{float(value):.2f}"
             return f"{float(value):.4f}".rstrip("0").rstrip(".") or "0"
+        if isinstance(value, dict):
+            low = value.get("low", value.get("min"))
+            high = value.get("high", value.get("max"))
+            low_text = AgentReportFormatter._format_metric(low)
+            high_text = AgentReportFormatter._format_metric(high)
+            if low_text != "N/A" and high_text != "N/A":
+                return f"{low_text} ~ {high_text}"
+            if low_text != "N/A":
+                return low_text
+            if high_text != "N/A":
+                return high_text
+            return "结构化数据"
         text = str(value).strip()
         return text or "N/A"
+
+    @staticmethod
+    def _format_percent(value: Any) -> str:
+        text = AgentReportFormatter._format_metric(value)
+        if text == "N/A":
+            return text
+        return f"{text}%"
 
     @staticmethod
     def _escape_table_cell(value: Any) -> str:
@@ -502,16 +530,24 @@ class AgentReportFormatter:
         if not merged:
             return "基本面数据不足。"
 
-        def value_of(name: str) -> Any:
-            return merged.get(name)
-
-        return (
-            f"营收: {value_of('revenue')}; 净利润: {value_of('net_income')}; "
-            f"经营现金流: {value_of('operating_cash_flow')}; 自由现金流: {value_of('free_cash_flow')}; "
-            f"总资产: {value_of('total_assets')}; 总负债: {value_of('total_liabilities')}; "
-            f"股东权益: {value_of('shareholder_equity')}; "
-            f"TTM PE: {value_of('trailing_pe')}; PB: {value_of('pb_ratio')}。"
-        )
+        labels = [
+            ("营收", "revenue"),
+            ("净利润", "net_income"),
+            ("经营现金流", "operating_cash_flow"),
+            ("自由现金流", "free_cash_flow"),
+            ("总资产", "total_assets"),
+            ("总负债", "total_liabilities"),
+            ("股东权益", "shareholder_equity"),
+            ("TTM PE", "trailing_pe"),
+            ("PB", "pb_ratio"),
+        ]
+        parts: List[str] = []
+        for label, key in labels:
+            text = AgentReportFormatter._format_metric(merged.get(key))
+            if text == "N/A":
+                continue
+            parts.append(f"{label}: {text}")
+        return "；".join(parts) + "。" if parts else "基本面数据不足。"
 
     @staticmethod
     def _build_catalysts_and_risks(
@@ -521,10 +557,15 @@ class AgentReportFormatter:
     ) -> str:
         news = tool_results.get("search_news", {})
         items = news.get("items") if isinstance(news, dict) else []
+        news_warnings = news.get("warnings") if isinstance(news, dict) else []
         web_search = tool_results.get("search_web", {})
         web_items = web_search.get("items") if isinstance(web_search, dict) else []
         top_news = []
-        if isinstance(items, list):
+        fallback_recent_headlines = (
+            isinstance(news_warnings, list)
+            and "news_fallback_recent_headlines" in news_warnings
+        )
+        if isinstance(items, list) and not fallback_recent_headlines:
             for row in items[:3]:
                 if not isinstance(row, dict):
                     continue
@@ -544,7 +585,16 @@ class AgentReportFormatter:
             if guardrail_issues
             else "无一致性冲突。"
         )
-        catalyst_text = "；".join(top_news) if top_news else "新闻催化不足。"
+        if fallback_recent_headlines:
+            if top_news:
+                catalyst_text = (
+                    "未命中标的相关新闻，改用联网检索补充："
+                    + "；".join(top_news)
+                )
+            else:
+                catalyst_text = "未命中标的相关新闻，建议人工复核公告与舆情。"
+        else:
+            catalyst_text = "；".join(top_news) if top_news else "新闻催化不足。"
         return (
             f"短中期催化: {catalyst_text}\n"
             f"风险清单: {risk_text}\n"

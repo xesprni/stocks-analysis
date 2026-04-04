@@ -173,6 +173,35 @@ class CodexLangChainRuntimeTest(unittest.TestCase):
         warnings = traces[2].result_preview.get("warnings") or []
         self.assertIn("tool_retry_limit_exceeded", warnings)
 
+    def test_runtime_coerces_mapping_confidence(self):
+        provider = _FakeCodexProvider(
+            responses=[
+                '{"action":"final","final":{"summary":"mapped-confidence","sentiment":"neutral","key_levels":[],"risks":[],"action_items":[],"confidence":{"score":65},"conclusions":[],"scenario_assumptions":{},"markdown":"m"}}'
+            ]
+        )
+        runtime = CodexLangChainRuntime(provider=cast(Any, provider))
+
+        async def executor(tool, args):
+            del tool, args
+            return {}
+
+        async def scenario():
+            return await runtime.run(
+                model="test-model",
+                question="analyze",
+                mode="market",
+                context={"x": 1},
+                tool_specs=[],
+                tool_executor=executor,
+                max_steps=2,
+                max_tool_calls=2,
+            )
+
+        draft, traces = asyncio.run(scenario())
+        self.assertEqual(draft.summary, "mapped-confidence")
+        self.assertAlmostEqual(draft.confidence, 0.65)
+        self.assertEqual(len(traces), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

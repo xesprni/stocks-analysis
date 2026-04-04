@@ -221,6 +221,35 @@ class ActionJSONRuntimeTest(unittest.TestCase):
         self.assertIn("deterministic final", draft.summary)
         self.assertEqual(len(traces), 0)
 
+    def test_runtime_coerces_mapping_confidence(self):
+        provider = _FakeProvider(
+            responses=[
+                '{"action":"final","final":{"summary":"mapped-confidence","sentiment":"neutral","key_levels":[],"risks":[],"action_items":[],"confidence":{"score":75},"conclusions":[],"scenario_assumptions":{},"markdown":"m"}}'
+            ]
+        )
+        runtime = ActionJSONRuntime(provider=cast(Any, provider))
+
+        async def executor(tool, args):
+            del tool, args
+            return {}
+
+        async def scenario():
+            return await runtime.run(
+                model="test-model",
+                question="analyze",
+                mode="market",
+                context={"x": 1},
+                tool_specs=[],
+                tool_executor=executor,
+                max_steps=2,
+                max_tool_calls=2,
+            )
+
+        draft, traces = asyncio.run(scenario())
+        self.assertEqual(draft.summary, "mapped-confidence")
+        self.assertAlmostEqual(draft.confidence, 0.75)
+        self.assertEqual(len(traces), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

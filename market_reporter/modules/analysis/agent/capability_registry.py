@@ -146,18 +146,6 @@ def _default_data_capabilities() -> Iterable[RegisteredCapability]:
             modes=("stock",),
         ),
         RegisteredCapability(
-            name="get_fundamentals",
-            description="Get company fundamentals",
-            parameters={
-                "type": "object",
-                "properties": {
-                    "symbol": {"type": "string"},
-                    "market": {"type": "string"},
-                },
-            },
-            modes=("stock",),
-        ),
-        RegisteredCapability(
             name="get_financial_reports",
             description="Get company financial statements",
             parameters={

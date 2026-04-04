@@ -229,6 +229,124 @@ class OpenAIToolRuntimeTest(unittest.TestCase):
         warnings = traces[2].result_preview.get("warnings") or []
         self.assertIn("tool_retry_limit_exceeded", warnings)
 
+    def test_runtime_reports_tool_budget_exhaustion(self):
+        provider_cfg = AnalysisProviderConfig(
+            provider_id="openai",
+            type="openai_compatible",
+            base_url="https://example.com/v1",
+            models=["gpt-test"],
+            timeout=10,
+            enabled=True,
+            auth_mode="api_key",
+        )
+
+        original_cls = openai_tool_runtime.ChatOpenAI
+        _FakeChatOpenAI.queued_responses = [
+            _FakeAIMessage(
+                tool_calls=[
+                    {
+                        "id": "tool_call_1",
+                        "name": "search_news",
+                        "args": {"query": "AAPL"},
+                    }
+                ]
+            ),
+            _FakeAIMessage(
+                tool_calls=[
+                    {
+                        "id": "tool_call_2",
+                        "name": "search_web",
+                        "args": {"query": "AAPL"},
+                    }
+                ]
+            ),
+            _FakeAIMessage(
+                tool_calls=[
+                    {
+                        "id": "tool_call_3",
+                        "name": "get_macro_data",
+                        "args": {"market": "US"},
+                    }
+                ]
+            ),
+        ]
+        openai_tool_runtime.ChatOpenAI = _FakeChatOpenAI
+
+        runtime = OpenAIToolRuntime(provider_config=provider_cfg, api_key="test-key")
+
+        async def executor(tool, arguments):
+            return {"tool": tool, "arguments": arguments, "warnings": []}
+
+        async def scenario():
+            return await runtime.run(
+                model="gpt-test",
+                question="analyze",
+                mode="market",
+                context={"x": 1},
+                tool_specs=[
+                    {"type": "function", "function": {"name": "search_news"}},
+                    {"type": "function", "function": {"name": "search_web"}},
+                    {"type": "function", "function": {"name": "get_macro_data"}},
+                ],
+                tool_executor=executor,
+                max_steps=5,
+                max_tool_calls=2,
+            )
+
+        try:
+            draft, traces = asyncio.run(scenario())
+        finally:
+            openai_tool_runtime.ChatOpenAI = original_cls
+
+        self.assertEqual(len(traces), 2)
+        self.assertIn("工具调用上限", draft.summary)
+        self.assertIn("未完成最终结构化归纳", draft.summary)
+
+    def test_runtime_coerces_mapping_confidence(self):
+        provider_cfg = AnalysisProviderConfig(
+            provider_id="openai",
+            type="openai_compatible",
+            base_url="https://example.com/v1",
+            models=["gpt-test"],
+            timeout=10,
+            enabled=True,
+            auth_mode="api_key",
+        )
+
+        original_cls = openai_tool_runtime.ChatOpenAI
+        _FakeChatOpenAI.queued_responses = [
+            _FakeAIMessage(
+                content='{"summary":"coerced","sentiment":"neutral","key_levels":[],"risks":[],"action_items":[],"confidence":{"score":80},"conclusions":[],"scenario_assumptions":{},"markdown":"m"}'
+            )
+        ]
+        openai_tool_runtime.ChatOpenAI = _FakeChatOpenAI
+
+        runtime = OpenAIToolRuntime(provider_config=provider_cfg, api_key="test-key")
+
+        async def executor(tool, arguments):
+            del tool, arguments
+            return {"ok": True}
+
+        async def scenario():
+            return await runtime.run(
+                model="gpt-test",
+                question="analyze",
+                mode="stock",
+                context={"x": 1},
+                tool_specs=[],
+                tool_executor=executor,
+                max_steps=2,
+                max_tool_calls=2,
+            )
+
+        try:
+            draft, _ = asyncio.run(scenario())
+        finally:
+            openai_tool_runtime.ChatOpenAI = original_cls
+
+        self.assertEqual(draft.summary, "coerced")
+        self.assertAlmostEqual(draft.confidence, 0.8)
+
 
 if __name__ == "__main__":
     unittest.main()

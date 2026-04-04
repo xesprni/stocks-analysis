@@ -11,6 +11,9 @@ from pydantic import SecretStr
 
 from market_reporter.config import AnalysisProviderConfig
 from market_reporter.core.utils import parse_json
+from market_reporter.modules.analysis.agent.runtime.payload_normalizer import (
+    runtime_draft_from_payload,
+)
 from market_reporter.modules.analysis.agent.schemas import RuntimeDraft, ToolCallTrace
 
 ToolExecutor = Callable[[str, Dict[str, Any]], Awaitable[Dict[str, Any]]]
@@ -80,6 +83,7 @@ class OpenAIToolRuntime:
         traces: List[ToolCallTrace] = []
         used_calls = 0
         content_text = ""
+        structured: Dict[str, Any] | None = None
         tool_attempts: Dict[str, int] = {}
 
         for _ in range(max_steps):
@@ -89,7 +93,14 @@ class OpenAIToolRuntime:
             )
             tool_calls = list(getattr(response, "tool_calls", []) or [])
 
-            if tool_calls and used_calls < max_tool_calls:
+            if tool_calls:
+                if used_calls >= max_tool_calls:
+                    structured = self._tool_budget_exhausted_payload(
+                        tool_calls=tool_calls,
+                        max_tool_calls=max_tool_calls,
+                    )
+                    break
+
                 messages.append(response)
                 for call in tool_calls:
                     if used_calls >= max_tool_calls:
@@ -134,36 +145,12 @@ class OpenAIToolRuntime:
             content_text = self._content_to_text(response.content)
             break
 
-        structured = parse_json(content_text)
         if structured is None:
-            structured = {
-                "summary": content_text[:240]
-                if content_text
-                else "模型未返回结构化内容。",
-                "sentiment": "neutral",
-                "key_levels": [],
-                "risks": [],
-                "action_items": [],
-                "confidence": 0.4,
-                "conclusions": [],
-                "scenario_assumptions": {},
-                "markdown": content_text or "模型未返回可读内容。",
-            }
+            structured = parse_json(content_text)
+        if structured is None:
+            structured = self._unstructured_content_payload(content_text)
 
-        draft = RuntimeDraft.model_validate(
-            {
-                "summary": structured.get("summary", ""),
-                "sentiment": structured.get("sentiment", "neutral"),
-                "key_levels": structured.get("key_levels", []),
-                "risks": structured.get("risks", []),
-                "action_items": structured.get("action_items", []),
-                "confidence": float(structured.get("confidence", 0.5)),
-                "conclusions": structured.get("conclusions", []),
-                "scenario_assumptions": structured.get("scenario_assumptions", {}),
-                "markdown": structured.get("markdown", ""),
-                "raw": structured,
-            }
-        )
+        draft = runtime_draft_from_payload(structured)
         return draft, traces
 
     async def _invoke_model_with_retry(
@@ -300,4 +287,56 @@ class OpenAIToolRuntime:
             "retrieved_at": timestamp,
             "warnings": ["tool_result_invalid"],
             "raw": result,
+        }
+
+    @staticmethod
+    def _unstructured_content_payload(content_text: str) -> Dict[str, Any]:
+        text = content_text.strip()
+        return {
+            "summary": text[:240] if text else "模型未返回结构化内容。",
+            "sentiment": "neutral",
+            "key_levels": [],
+            "risks": [],
+            "action_items": [],
+            "confidence": 0.4,
+            "conclusions": [],
+            "scenario_assumptions": {},
+            "markdown": text or "模型未返回可读内容。",
+            "raw_model_response": text,
+            "parse_fallback": True,
+        }
+
+    @staticmethod
+    def _tool_budget_exhausted_payload(
+        *,
+        tool_calls: List[Dict[str, Any]],
+        max_tool_calls: int,
+    ) -> Dict[str, Any]:
+        requested_tools = [
+            str(call.get("name") or "").strip()
+            for call in tool_calls
+            if str(call.get("name") or "").strip()
+        ]
+        deduped_tools = list(dict.fromkeys(requested_tools))
+        summary = (
+            f"已达到工具调用上限（{max_tool_calls} 次），"
+            "以下报告基于已收集证据自动整理，模型未完成最终结构化归纳。"
+        )
+        action_items = ["减少重复工具调用，必要时适度提高 max_tool_calls。"]
+        if deduped_tools:
+            action_items.append(
+                "达到上限后模型仍请求工具: " + ", ".join(deduped_tools[:4])
+            )
+        return {
+            "summary": summary,
+            "sentiment": "neutral",
+            "key_levels": [],
+            "risks": ["模型在达到工具调用上限后仍请求更多工具。"],
+            "action_items": action_items,
+            "confidence": 0.4,
+            "conclusions": [summary],
+            "scenario_assumptions": {},
+            "markdown": "模型在达到工具调用上限后未返回最终结构化结论。",
+            "tool_budget_exhausted": True,
+            "requested_tools_after_limit": deduped_tools,
         }

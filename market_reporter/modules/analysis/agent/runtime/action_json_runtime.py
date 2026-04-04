@@ -6,6 +6,9 @@ from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
 from market_reporter.core.utils import parse_json
+from market_reporter.modules.analysis.agent.runtime.payload_normalizer import (
+    runtime_draft_from_payload,
+)
 from market_reporter.modules.analysis.agent.schemas import RuntimeDraft, ToolCallTrace
 from market_reporter.modules.analysis.providers.codex_app_server_provider import (
     CodexAppServerProvider,
@@ -179,20 +182,7 @@ class ActionJSONRuntime:
 
     @staticmethod
     def _to_draft(data: Dict[str, Any]) -> RuntimeDraft:
-        return RuntimeDraft.model_validate(
-            {
-                "summary": data.get("summary", ""),
-                "sentiment": data.get("sentiment", "neutral"),
-                "key_levels": data.get("key_levels", []),
-                "risks": data.get("risks", []),
-                "action_items": data.get("action_items", []),
-                "confidence": float(data.get("confidence", 0.5)),
-                "conclusions": data.get("conclusions", []),
-                "scenario_assumptions": data.get("scenario_assumptions", {}),
-                "markdown": data.get("markdown", ""),
-                "raw": data,
-            }
-        )
+        return runtime_draft_from_payload(data)
 
     @staticmethod
     def _fallback_draft(context: Dict[str, Any]) -> RuntimeDraft:
