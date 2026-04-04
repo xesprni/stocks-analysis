@@ -1,11 +1,10 @@
-"""Analysis provider CRUD, auth, models, secrets routes."""
+"""Analysis provider CRUD, secrets, models, availability routes."""
 
 from __future__ import annotations
 
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from market_reporter.api.auth import CurrentUser, require_user
 from market_reporter.api.deps import (
@@ -19,9 +18,6 @@ from market_reporter.infra.db.session import init_db
 from market_reporter.modules.analysis.schemas import (
     AnalysisProviderView,
     ProviderAvailabilityView,
-    ProviderAuthStartRequest,
-    ProviderAuthStartResponse,
-    ProviderAuthStatusView,
     ProviderModelsView,
     ProviderModelSelectionRequest,
     ProviderSecretRequest,
@@ -106,115 +102,6 @@ async def put_analysis_secret(
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"ok": True}
-
-
-@router.post(
-    "/providers/analysis/{provider_id}/auth/start",
-    response_model=ProviderAuthStartResponse,
-)
-async def start_analysis_auth(
-    provider_id: str,
-    request: Request,
-    payload: Optional[ProviderAuthStartRequest] = None,
-    config: AppConfig = Depends(get_user_config),
-    user: CurrentUser = Depends(require_user),
-) -> ProviderAuthStartResponse:
-    service = _get_analysis_service(
-        config,
-        user_id=get_effective_user_id(user),
-    )
-    callback_url = str(
-        request.url_for("analysis_auth_callback", provider_id=provider_id)
-    )
-    try:
-        return await service.start_provider_auth(
-            provider_id=provider_id,
-            callback_url=callback_url,
-            redirect_to=payload.redirect_to if payload else None,
-        )
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-@router.get(
-    "/providers/analysis/{provider_id}/auth/status",
-    response_model=ProviderAuthStatusView,
-)
-async def analysis_auth_status(
-    provider_id: str,
-    config: AppConfig = Depends(get_user_config),
-    user: CurrentUser = Depends(require_user),
-) -> ProviderAuthStatusView:
-    service = _get_analysis_service(
-        config,
-        user_id=get_effective_user_id(user),
-    )
-    try:
-        return await service.get_provider_auth_status(provider_id=provider_id)
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-@router.get(
-    "/providers/analysis/{provider_id}/auth/callback",
-    response_class=HTMLResponse,
-    name="analysis_auth_callback",
-)
-async def analysis_auth_callback(
-    provider_id: str,
-    request: Request,
-    state: str = Query(..., min_length=8),
-    code: Optional[str] = Query(None),
-    error: Optional[str] = Query(None),
-    config: AppConfig = Depends(get_user_config),
-    user: CurrentUser = Depends(require_user),
-) -> str:
-    if error:
-        return (
-            "<html><body><h3>Login failed</h3>"
-            f"<p>{error}</p><p>You can close this page.</p></body></html>"
-        )
-
-    service = _get_analysis_service(
-        config,
-        user_id=get_effective_user_id(user),
-    )
-    callback_url = str(
-        request.url_for("analysis_auth_callback", provider_id=provider_id)
-    )
-    params = {key: value for key, value in request.query_params.items()}
-    try:
-        await service.complete_provider_auth(
-            provider_id=provider_id,
-            state=state,
-            code=code,
-            callback_url=callback_url,
-            query_params=params,
-        )
-        return (
-            "<html><body><h3>Login succeeded</h3>"
-            "<p>You can close this page and return to the app.</p>"
-            "<script>window.close();</script></body></html>"
-        )
-    except Exception as exc:
-        return (
-            "<html><body><h3>Login failed</h3>"
-            f"<p>{str(exc)}</p><p>You can close this page.</p></body></html>"
-        )
-
-
-@router.post("/providers/analysis/{provider_id}/auth/logout")
-async def logout_analysis_auth(
-    provider_id: str,
-    config: AppConfig = Depends(get_user_config),
-    user: CurrentUser = Depends(require_user),
-) -> dict:
-    service = _get_analysis_service(
-        config,
-        user_id=get_effective_user_id(user),
-    )
-    deleted = await service.logout_provider_auth(provider_id=provider_id)
-    return {"deleted": deleted}
 
 
 @router.get(
@@ -323,8 +210,5 @@ async def delete_analysis_provider(
     )
     saved = config_store.save(next_config)
     init_db(saved.database.url)
-    # Use pre-delete provider metadata for credential cleanup. After config save,
-    # the provider no longer exists in `saved.analysis.providers`.
-    await cleanup_service.logout_provider_auth(provider_id=provider_id)
     cleanup_service.delete_secret(provider_id=provider_id)
     return saved

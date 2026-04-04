@@ -218,15 +218,6 @@ def default_analysis_providers() -> List[AnalysisProviderConfig]:
             auth_mode="api_key",
         ),
         AnalysisProviderConfig(
-            provider_id="codex_app_server",
-            type="codex_app_server",
-            base_url="",
-            models=["gpt-5-codex"],
-            timeout=30,
-            enabled=False,
-            auth_mode="chatgpt_oauth",
-        ),
-        AnalysisProviderConfig(
             provider_id="glm_coding_plan",
             type="openai_compatible",
             base_url="https://api.z.ai/api/coding/paas/v4",

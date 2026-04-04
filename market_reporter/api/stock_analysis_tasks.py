@@ -18,9 +18,7 @@ from market_reporter.modules.analysis.schemas import (
     StockAnalysisTaskView,
 )
 from market_reporter.modules.analysis.service import AnalysisService
-from market_reporter.modules.fund_flow.service import FundFlowService
 from market_reporter.modules.market_data.service import MarketDataService
-from market_reporter.modules.news.service import NewsService
 from market_reporter.services.config_store import ConfigStore
 from market_reporter.services.user_config_store import UserConfigStore
 
@@ -76,18 +74,12 @@ class StockAnalysisTaskManager:
             user_agent=config.user_agent,
         ) as client:
             registry = ProviderRegistry()
-            news_service = NewsService(config=config, client=client, registry=registry)
-            fund_flow_service = FundFlowService(
-                config=config, client=client, registry=registry
-            )
             market_data_service = MarketDataService(config=config, registry=registry)
             analysis_service = AnalysisService(
                 config=config,
                 registry=registry,
                 user_id=user_id,
                 market_data_service=market_data_service,
-                news_service=news_service,
-                fund_flow_service=fund_flow_service,
             )
             return await analysis_service.run_stock_analysis(
                 symbol=symbol,

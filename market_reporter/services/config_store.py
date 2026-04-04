@@ -87,9 +87,7 @@ class ConfigStore:
             if not provider_id or provider_id in seen:
                 continue
             seen.add(provider_id)
-            inferred_auth_mode = provider.auth_mode or (
-                "chatgpt_oauth" if provider.type == "codex_app_server" else "api_key"
-            )
+            inferred_auth_mode = provider.auth_mode or "api_key"
             providers.append(
                 provider.model_copy(
                     update={
@@ -134,19 +132,7 @@ class ConfigStore:
 
         default_provider = provider_map.get(analysis.default_provider)
         if default_provider is not None and default_provider.models:
-            auth_mode = default_provider.auth_mode or (
-                "chatgpt_oauth"
-                if default_provider.type == "codex_app_server"
-                else "api_key"
-            )
-            if (
-                auth_mode != "chatgpt_oauth"
-                and analysis.default_model not in default_provider.models
-            ):
-                analysis = analysis.model_copy(
-                    update={"default_model": default_provider.models[0]}
-                )
-            if auth_mode == "chatgpt_oauth" and not analysis.default_model:
+            if analysis.default_model not in default_provider.models:
                 analysis = analysis.model_copy(
                     update={"default_model": default_provider.models[0]}
                 )

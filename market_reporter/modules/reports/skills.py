@@ -21,7 +21,6 @@ class ReportSkillContext:
     provider_cfg: AnalysisProviderConfig
     selected_model: str
     api_key: Optional[str]
-    access_token: Optional[str]
 
 
 @dataclass
@@ -193,7 +192,6 @@ class WatchlistReportSkill:
                 provider_cfg=context.provider_cfg,
                 model=context.selected_model,
                 api_key=context.api_key,
-                access_token=context.access_token,
             )
             _, output = context.agent_service.to_analysis_payload(
                 request=request,
@@ -368,7 +366,6 @@ async def _run_single_agent_report(
         provider_cfg=context.provider_cfg,
         model=context.selected_model,
         api_key=context.api_key,
-        access_token=context.access_token,
     )
     _, analysis_output = context.agent_service.to_analysis_payload(
         request=agent_request,

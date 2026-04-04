@@ -15,6 +15,7 @@ from market_reporter.modules.analysis.agent.runtime.payload_normalizer import (
     runtime_draft_from_payload,
 )
 from market_reporter.modules.analysis.agent.schemas import RuntimeDraft, ToolCallTrace
+from market_reporter.modules.analysis.prompt_builder import get_system_prompt_with_tools
 
 ToolExecutor = Callable[[str, Dict[str, Any]], Awaitable[Dict[str, Any]]]
 
@@ -52,18 +53,7 @@ class OpenAIToolRuntime:
         llm_with_tools = llm.bind_tools(tool_specs, tool_choice="auto")
 
         messages: List[Any] = [
-            SystemMessage(
-                content=(
-                    "You are a financial analysis orchestrator. "
-                    "Decide which registered tools to call based on the task and evidence needs. "
-                    "Use the skill tool when you need detailed skill markdown content. "
-                    "Use the subagent tool when you need specialized intermediate synthesis. "
-                    "For numeric statements, rely on tool outputs. "
-                    "Return final answer as JSON with keys: "
-                    "summary,sentiment,key_levels,risks,action_items,confidence,"
-                    "conclusions,scenario_assumptions,markdown."
-                )
-            ),
+            SystemMessage(content=get_system_prompt_with_tools(tool_specs)),
             HumanMessage(
                 content=json.dumps(
                     {

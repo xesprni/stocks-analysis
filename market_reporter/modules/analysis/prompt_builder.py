@@ -1,102 +1,139 @@
 from __future__ import annotations
 
 import json
-from typing import Dict
+from typing import Any, Dict, List, Optional, Sequence
 
 from market_reporter.core.types import AnalysisInput
 
 
 # ---------------------------------------------------------------------------
-# System prompt: Market overview / news alert analyst persona
+# System prompt sections
 # ---------------------------------------------------------------------------
 
-MARKET_OVERVIEW_SYSTEM_PROMPT = """\
-You are a senior macro strategist and chief market analyst covering global equity markets \
-(CN A-shares, HK equities, US equities). You synthesize news, fund flows, and cross-market \
-signals to provide a comprehensive market outlook.
+_BASE_SYSTEM_PROMPT = """\
+You are a professional stock analysis assistant. You help users analyze stocks, market trends, \
+financial data, and news for A-shares (CN), Hong Kong (HK), and US markets.
 
-## Your analysis framework
+## Working Principles
 
-1. **Market Sentiment Scan**
-   - Overall risk appetite: risk-on vs. risk-off signals
-   - Cross-market divergence: are CN/HK/US moving in sync or diverging?
-   - Sector rotation patterns visible from news flow
+1. **Data-driven**: Base all analysis on tool-returned data. Never fabricate numbers.
+2. **Tool selection**: Choose appropriate tools based on the user's question. Fetch only what you need.
+3. **Chinese output**: Provide analysis conclusions in Chinese.
+4. **Fact vs opinion**: Clearly distinguish factual data from analytical opinions.
+"""
 
-2. **News & Event Impact**
-   - Cluster news by theme: monetary policy, earnings, geopolitical, regulatory, trade
-   - Rank events by market-moving potential
-   - Identify overnight developments and their expected impact on each market
-
-3. **Fund Flow Synopsis**
-   - Northbound/southbound flow trends for CN-HK connect
-   - ETF flow signals for US markets
-   - Institutional vs. retail positioning shifts
-
-4. **Macro & Political Landscape**
-   - Central bank policy signals (PBOC, Fed, HKMA)
-   - Key economic data releases and their implications
-   - Political/regulatory events affecting market structure
-
-5. **Cross-Market Opportunities & Risks**
-   - Identify relative value opportunities across markets
-   - Flag systemic risks that could cause correlated drawdowns
-   - Suggest defensive vs. offensive positioning
-
-## Output requirements
+_OUTPUT_FORMAT_SECTION = """
+## Output Format
 
 Return exactly one valid JSON object with these keys:
-- "summary": One-sentence market outlook (in Chinese)
+- "summary": One-sentence conclusion (in Chinese)
 - "sentiment": "bullish" | "neutral" | "bearish"
-- "key_levels": Array of key market levels or themes to watch
-- "risks": Array of main macro risks
-- "action_items": Array of strategic recommendations
+- "key_levels": Array of key price levels or themes to watch
+- "risks": Array of main risk factors
+- "action_items": Array of actionable recommendations
 - "confidence": Decimal between 0 and 1
-- "markdown": Structured Chinese market overview in markdown, organized as:
-
-## 市场总览
-## 各市场动态
-## 热点事件解读
-## 资金流向分析
-## 宏观与政策
-## 风险提示
-## 策略建议
+- "conclusions": Array of detailed analytical conclusions
+- "scenario_assumptions": Object with "base", "bull", "bear" scenario descriptions
+- "markdown": Structured analysis report in Chinese markdown
 
 Do NOT wrap output with markdown code fences. Return raw JSON only.
 """
 
 
 # ---------------------------------------------------------------------------
-# Prompt builder
+# Dynamic prompt builders
+# ---------------------------------------------------------------------------
+
+
+def build_tools_section(tool_specs: Sequence[Dict[str, Any]]) -> str:
+    """Build the Available Tools section dynamically from tool specifications."""
+    if not tool_specs:
+        return ""
+    lines = ["\n## Available Tools\n", "You have access to the following tools:"]
+    for spec in tool_specs:
+        func = spec.get("function", {})
+        name = func.get("name", "unknown")
+        desc = func.get("description", "")
+        lines.append(f"- **{name}**: {desc}")
+        params = func.get("parameters", {}).get("properties", {})
+        if params:
+            for pname, pval in params.items():
+                ptype = pval.get("type", "any")
+                pdesc = pval.get("description", "")
+                lines.append(f"  - `{pname}` ({ptype}): {pdesc}")
+    return "\n".join(lines)
+
+
+def build_system_prompt(
+    tool_specs: Optional[Sequence[Dict[str, Any]]] = None,
+    include_output_format: bool = True,
+) -> str:
+    """Build the complete system prompt with dynamic tools section.
+
+    Args:
+        tool_specs: Tool specifications from ToolRegistry.get_tool_specs().
+            If None, the Available Tools section is omitted.
+        include_output_format: Whether to include the output format section.
+    """
+    parts = [_BASE_SYSTEM_PROMPT]
+    if tool_specs:
+        parts.append(build_tools_section(tool_specs))
+    if include_output_format:
+        parts.append(_OUTPUT_FORMAT_SECTION)
+    return "\n".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# Prompt builder (user prompts)
 # ---------------------------------------------------------------------------
 
 
 def build_user_prompt(payload: AnalysisInput) -> str:
     """Build the user prompt for market overview / news alert triage."""
-    return _build_market_overview_prompt(payload)
+    if payload.watch_meta.get("mode") == "watchlist_news_listener":
+        return _build_watchlist_listener_prompt(payload)
+    return _build_analysis_prompt(payload)
 
 
 def get_system_prompt(payload: AnalysisInput) -> str:
     """Return the system prompt for LLM-based analysis."""
-    return MARKET_OVERVIEW_SYSTEM_PROMPT
+    return build_system_prompt()
 
 
-def _build_market_overview_prompt(payload: AnalysisInput) -> str:
-    # For watchlist_news_listener mode, preserve the original format
-    if payload.watch_meta.get("mode") == "watchlist_news_listener":
-        request_json = {
-            "task": "对以下新闻告警候选进行专业分析，评估其市场影响。",
-            "analysis_mode": "watchlist_news_listener",
-            "candidates": payload.watch_meta.get("candidates", []),
-            "required_output": payload.watch_meta.get("required_output", {}),
-            "analysis_instructions": [
-                "对每条新闻评估其对相关股票的影响程度和紧急性。",
-                "结合市场环境判断新闻的实际影响力。",
-                "给出severity评级：LOW/MEDIUM/HIGH。",
-                "只返回JSON对象。",
-            ],
-        }
-        return json.dumps(request_json, ensure_ascii=False)
+def get_system_prompt_text() -> str:
+    """Return the system prompt text directly (without dynamic tools)."""
+    return build_system_prompt()
 
+
+def get_system_prompt_with_tools(
+    tool_specs: Sequence[Dict[str, Any]],
+) -> str:
+    """Return the system prompt with dynamically generated tools section."""
+    return build_system_prompt(tool_specs=tool_specs)
+
+
+# ---------------------------------------------------------------------------
+# User prompt builders
+# ---------------------------------------------------------------------------
+
+
+def _build_watchlist_listener_prompt(payload: AnalysisInput) -> str:
+    request_json = {
+        "task": "对以下新闻告警候选进行专业分析，评估其市场影响。",
+        "analysis_mode": "watchlist_news_listener",
+        "candidates": payload.watch_meta.get("candidates", []),
+        "required_output": payload.watch_meta.get("required_output", {}),
+        "analysis_instructions": [
+            "对每条新闻评估其对相关股票的影响程度和紧急性。",
+            "结合市场环境判断新闻的实际影响力。",
+            "给出severity评级：LOW/MEDIUM/HIGH。",
+            "只返回JSON对象。",
+        ],
+    }
+    return json.dumps(request_json, ensure_ascii=False)
+
+
+def _build_analysis_prompt(payload: AnalysisInput) -> str:
     news_digest = _categorize_news(payload.news[:50])
     fund_flow: Dict[str, list] = {
         key: [point.model_dump(mode="json") for point in value[-12:]]
@@ -104,25 +141,7 @@ def _build_market_overview_prompt(payload: AnalysisInput) -> str:
     }
 
     request_json = {
-        "task": "综合分析当前市场形势，提供跨市场宏观策略建议。",
-        "analysis_mode": "market_overview",
-        "output_contract": {
-            "summary": "一句话市场总览结论（中文）",
-            "sentiment": "bullish|neutral|bearish（整体市场情绪）",
-            "key_levels": ["各主要指数关键点位、重要事件时间节点"],
-            "risks": ["系统性风险、政策风险、地缘政治风险等"],
-            "action_items": ["策略建议：仓位管理、行业配置、防御/进攻策略"],
-            "confidence": "0到1之间的小数",
-            "markdown": "结构化中文市场分析报告",
-        },
-        "analysis_instructions": [
-            "1. 按市场分类分析：A股、港股、美股各自的运行状态和驱动因素。",
-            "2. 识别跨市场联动或背离信号。",
-            "3. 评估新闻事件的市场影响力，按影响级别排序。",
-            "4. 分析资金流向趋势，判断机构动向。",
-            "5. 提供明确的仓位管理和配置建议。",
-            "6. 只返回JSON对象。",
-        ],
+        "task": payload.watch_meta.get("question", "请综合分析当前市场形势。"),
         "data": {
             "news_digest": news_digest,
             "fund_flow": fund_flow,
@@ -149,42 +168,15 @@ def _categorize_news(news_items: list) -> Dict[str, list]:
     }
 
     macro_keywords = {
-        "央行",
-        "利率",
-        "降息",
-        "加息",
-        "GDP",
-        "CPI",
-        "PMI",
-        "货币政策",
-        "财政",
-        "fed",
-        "pboc",
-        "interest rate",
-        "inflation",
-        "monetary",
-        "fiscal",
-        "就业",
-        "失业",
-        "贸易",
-        "关税",
-        "汇率",
-        "美联储",
-        "国务院",
+        "央行", "利率", "降息", "加息", "GDP", "CPI", "PMI",
+        "货币政策", "财政", "fed", "pboc", "interest rate",
+        "inflation", "monetary", "fiscal", "就业", "失业",
+        "贸易", "关税", "汇率", "美联储", "国务院",
     }
     geo_keywords = {
-        "战争",
-        "制裁",
-        "冲突",
-        "地缘",
-        "military",
-        "sanction",
-        "war",
-        "tension",
-        "选举",
-        "election",
-        "政变",
-        "外交",
+        "战争", "制裁", "冲突", "地缘", "military",
+        "sanction", "war", "tension", "选举", "election",
+        "政变", "外交",
     }
 
     for item in news_items:
@@ -208,7 +200,6 @@ def _categorize_news(news_items: list) -> Dict[str, list]:
         else:
             categories["other"].append(entry)
 
-    # Remove empty categories to reduce prompt noise.
     return {k: v for k, v in categories.items() if v}
 
 

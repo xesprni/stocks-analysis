@@ -12,9 +12,7 @@ from market_reporter.core.registry import ProviderRegistry
 from market_reporter.infra.db.session import init_db
 from market_reporter.infra.http.client import HttpClient
 from market_reporter.modules.analysis.service import AnalysisService
-from market_reporter.modules.fund_flow.service import FundFlowService
 from market_reporter.modules.market_data.service import MarketDataService
-from market_reporter.modules.news.service import NewsService
 from market_reporter.modules.news_listener.service import NewsListenerService
 from market_reporter.modules.reports.service import ReportService
 from market_reporter.modules.symbol_search.service import SymbolSearchService
@@ -97,16 +95,12 @@ def get_analysis_service(
     config: AppConfig,
     registry: ProviderRegistry | None = None,
     market_data_service: MarketDataService | None = None,
-    news_service: NewsService | None = None,
-    fund_flow_service: FundFlowService | None = None,
 ) -> AnalysisService:
     reg = registry or ProviderRegistry()
     return AnalysisService(
         config=config,
         registry=reg,
         market_data_service=market_data_service,
-        news_service=news_service,
-        fund_flow_service=fund_flow_service,
     )
 
 

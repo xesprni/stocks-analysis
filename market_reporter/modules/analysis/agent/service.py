@@ -3,38 +3,60 @@ from __future__ import annotations
 from typing import Any, Dict, Optional, Tuple
 
 from market_reporter.config import AnalysisProviderConfig, AppConfig
-from market_reporter.core.registry import ProviderRegistry
 from market_reporter.core.types import (
     AnalysisInput,
     AnalysisOutput,
-    FlowPoint,
     KLineBar,
     NewsItem,
 )
+from market_reporter.modules.analysis.agent.core.tool_registry import ToolRegistry
 from market_reporter.modules.analysis.agent.orchestrator import AgentOrchestrator
 from market_reporter.modules.analysis.agent.schemas import (
     AgentRunRequest,
     AgentRunResult,
 )
-from market_reporter.modules.fund_flow.service import FundFlowService
-from market_reporter.modules.news.service import NewsService
+from market_reporter.modules.analysis.agent.tools.builtin_metrics_tool import (
+    BuiltinMetricsTool,
+    get_definition as get_metrics_definition,
+)
+from market_reporter.modules.analysis.agent.tools.builtin_news_tool import (
+    BuiltinNewsTool,
+    get_definition as get_news_definition,
+)
+
+
+def _build_tool_registry(config: AppConfig) -> ToolRegistry:
+    """Construct and populate the ToolRegistry with all builtin tools."""
+    registry = ToolRegistry()
+
+    metrics_tool = BuiltinMetricsTool(lb_config=config.longbridge)
+    registry.register(
+        definition=get_metrics_definition(),
+        executor=metrics_tool.execute,
+    )
+
+    news_tool = BuiltinNewsTool(
+        news_service=None,
+        lb_config=config.longbridge,
+    )
+    registry.register(
+        definition=get_news_definition(),
+        executor=news_tool.execute,
+    )
+
+    return registry
 
 
 class AgentService:
     def __init__(
         self,
         config: AppConfig,
-        registry: ProviderRegistry,
-        news_service: NewsService,
-        fund_flow_service: FundFlowService,
     ) -> None:
         self.config = config
-        self.registry = registry
+        self.tool_registry = _build_tool_registry(config)
         self.orchestrator = AgentOrchestrator(
             config=config,
-            registry=registry,
-            news_service=news_service,
-            fund_flow_service=fund_flow_service,
+            tool_registry=self.tool_registry,
         )
 
     async def run(
@@ -43,14 +65,12 @@ class AgentService:
         provider_cfg: AnalysisProviderConfig,
         model: str,
         api_key: Optional[str],
-        access_token: Optional[str],
     ) -> AgentRunResult:
         return await self.orchestrator.run(
             request=request,
             provider_cfg=provider_cfg,
             model=model,
             api_key=api_key,
-            access_token=access_token,
         )
 
     def to_analysis_payload(
@@ -59,9 +79,11 @@ class AgentService:
         run_result: AgentRunResult,
     ) -> Tuple[AnalysisInput, AnalysisOutput]:
         tool_results = run_result.analysis_input.get("tool_results", {})
-        kline_rows = self._to_kline(tool_results.get("get_price_history"), request)
+
+        # Extract price history from get_metrics action results
+        metrics_payload = tool_results.get("get_metrics", {})
+        kline_rows = self._to_kline(metrics_payload, request)
         news_rows = self._to_news(tool_results.get("search_news"))
-        flow_rows = self._to_flow(tool_results.get("get_macro_data"))
 
         payload = AnalysisInput(
             symbol=request.symbol or "MARKET",
@@ -70,12 +92,19 @@ class AgentService:
             kline=kline_rows,
             curve=[],
             news=news_rows,
-            fund_flow=flow_rows,
+            fund_flow={},
             watch_meta={
                 "mode": request.mode,
                 "question": request.question,
             },
         )
+
+        # Extract strategy/technical from get_metrics technical_indicators
+        strategy = {}
+        signal_timeline = []
+        if isinstance(metrics_payload, dict):
+            strategy = metrics_payload.get("strategy", {})
+            signal_timeline = metrics_payload.get("signal_timeline", [])
 
         output = AnalysisOutput(
             summary=run_result.runtime_draft.summary,
@@ -86,19 +115,9 @@ class AgentService:
             confidence=run_result.final_report.confidence,
             markdown=run_result.final_report.markdown,
             raw={
-                "technical_analysis": tool_results.get("compute_indicators", {}),
-                "strategy": (
-                    tool_results.get("compute_indicators", {}).get("strategy", {})
-                    if isinstance(tool_results.get("compute_indicators"), dict)
-                    else {}
-                ),
-                "signal_timeline": (
-                    tool_results.get("compute_indicators", {}).get(
-                        "signal_timeline", []
-                    )
-                    if isinstance(tool_results.get("compute_indicators"), dict)
-                    else []
-                ),
+                "technical_analysis": metrics_payload,
+                "strategy": strategy,
+                "signal_timeline": signal_timeline,
                 "tool_calls": [
                     item.model_dump(mode="json") for item in run_result.tool_calls
                 ],
@@ -115,10 +134,14 @@ class AgentService:
         return payload, output
 
     @staticmethod
-    def _to_kline(price_payload: Any, request: AgentRunRequest) -> list[KLineBar]:
-        if not isinstance(price_payload, dict):
+    def _to_kline(metrics_payload: Any, request: AgentRunRequest) -> list[KLineBar]:
+        if not isinstance(metrics_payload, dict):
             return []
-        bars = price_payload.get("bars")
+        # Only process price_history action results
+        action = metrics_payload.get("action", "")
+        if action != "price_history":
+            return []
+        bars = metrics_payload.get("bars")
         if not isinstance(bars, list):
             return []
         rows: list[KLineBar] = []
@@ -130,7 +153,7 @@ class AgentService:
                     KLineBar(
                         symbol=request.symbol or "",
                         market=request.market or "",
-                        interval=str(price_payload.get("interval") or "1d"),
+                        interval=str(metrics_payload.get("interval") or "1d"),
                         ts=str(row.get("ts") or ""),
                         open=float(row.get("open") or 0.0),
                         high=float(row.get("high") or 0.0),
@@ -139,7 +162,7 @@ class AgentService:
                         volume=float(row.get("volume"))
                         if row.get("volume") is not None
                         else None,
-                        source=str(price_payload.get("source") or ""),
+                        source=str(metrics_payload.get("source") or ""),
                     )
                 )
             except Exception:
@@ -169,27 +192,3 @@ class AgentService:
                 )
             )
         return rows
-
-    @staticmethod
-    def _to_flow(macro_payload: Any) -> Dict[str, list[FlowPoint]]:
-        if not isinstance(macro_payload, dict):
-            return {}
-        points = macro_payload.get("points")
-        if not isinstance(points, list):
-            return {}
-        grouped: Dict[str, list[FlowPoint]] = {}
-        for row in points:
-            if not isinstance(row, dict):
-                continue
-            key = str(row.get("series_key") or "macro")
-            grouped.setdefault(key, []).append(
-                FlowPoint(
-                    market=str(row.get("market") or "GLOBAL"),
-                    series_key=key,
-                    series_name=str(row.get("series_name") or key),
-                    date=str(row.get("date") or ""),
-                    value=float(row.get("value") or 0.0),
-                    unit=str(row.get("unit") or ""),
-                )
-            )
-        return grouped

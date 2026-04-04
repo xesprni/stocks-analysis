@@ -15,8 +15,6 @@ from market_reporter.core.registry import ProviderRegistry
 from market_reporter.infra.http.client import HttpClient
 from market_reporter.modules.analysis.agent.service import AgentService
 from market_reporter.modules.analysis.service import AnalysisService
-from market_reporter.modules.fund_flow.service import FundFlowService
-from market_reporter.modules.news.service import NewsService
 from market_reporter.modules.reports.skills import (
     MarketReportSkill,
     ReportSkillContext,
@@ -248,23 +246,14 @@ class ReportService:
                 timeout_seconds=config.request_timeout_seconds,
                 user_agent=config.user_agent,
             ) as client:
-                registry = ProviderRegistry()
-                news_service = NewsService(
-                    config=config, client=client, registry=registry
-                )
-                fund_flow_service = FundFlowService(
-                    config=config, client=client, registry=registry
-                )
                 analysis_service = AnalysisService(
                     config=config,
-                    registry=registry,
+                    registry=ProviderRegistry(),
                     user_id=user_id,
-                    news_service=news_service,
-                    fund_flow_service=fund_flow_service,
                 )
                 requested_provider = overrides.provider_id if overrides else None
                 requested_model = overrides.model if overrides else None
-                provider_cfg, selected_model, api_key, access_token = (
+                provider_cfg, selected_model, api_key, _ = (
                     analysis_service.resolve_credentials(
                         provider_id=requested_provider,
                         model=requested_model,
@@ -273,12 +262,7 @@ class ReportService:
                 provider_id = provider_cfg.provider_id
                 model = selected_model
 
-                agent_service = AgentService(
-                    config=config,
-                    registry=registry,
-                    news_service=news_service,
-                    fund_flow_service=fund_flow_service,
-                )
+                agent_service = AgentService(config=config)
                 skill_result = await resolved_skill.run(
                     ReportSkillContext(
                         config=config,
@@ -288,7 +272,6 @@ class ReportService:
                         provider_cfg=provider_cfg,
                         selected_model=selected_model,
                         api_key=api_key,
-                        access_token=access_token,
                     )
                 )
                 markdown = skill_result.markdown

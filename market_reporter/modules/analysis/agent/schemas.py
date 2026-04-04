@@ -5,6 +5,11 @@ from typing import Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, Field
 
 
+# ---------------------------------------------------------------------------
+# Tool-related schemas (kept for backward compatibility with existing code)
+# ---------------------------------------------------------------------------
+
+
 class ToolEnvelope(BaseModel):
     as_of: str = ""
     source: str = ""
@@ -111,6 +116,11 @@ class PeerCompareResult(ToolEnvelope):
     rows: List[PeerCompareRow] = Field(default_factory=list)
 
 
+# ---------------------------------------------------------------------------
+# Agent trace & evidence schemas
+# ---------------------------------------------------------------------------
+
+
 class GuardrailIssue(BaseModel):
     code: str
     severity: Literal["LOW", "MEDIUM", "HIGH"]
@@ -130,6 +140,17 @@ class ToolCallTrace(BaseModel):
     tool: str
     arguments: Dict[str, Any] = Field(default_factory=dict)
     result_preview: Dict[str, Any] = Field(default_factory=dict)
+    # Visualization fields
+    started_at: Optional[str] = None
+    finished_at: Optional[str] = None
+    duration_ms: Optional[int] = None
+    status: Literal["success", "error", "timeout"] = "success"
+    source: Literal["builtin", "mcp", "skill"] = "builtin"
+
+
+# ---------------------------------------------------------------------------
+# Runtime draft & report schemas
+# ---------------------------------------------------------------------------
 
 
 class RuntimeDraft(BaseModel):
@@ -146,13 +167,8 @@ class RuntimeDraft(BaseModel):
 
 
 class AgentFinalReport(BaseModel):
-    mode: Literal["stock", "market"]
     question: str
     conclusions: List[str] = Field(default_factory=list)
-    market_technical: str = ""
-    fundamentals: str = ""
-    catalysts_risks: str = ""
-    valuation_scenarios: str = ""
     data_sources: List[AgentEvidence] = Field(default_factory=list)
     guardrail_issues: List[GuardrailIssue] = Field(default_factory=list)
     confidence: float = 0.5
@@ -160,12 +176,18 @@ class AgentFinalReport(BaseModel):
     raw: Dict[str, Any] = Field(default_factory=dict)
 
 
+# ---------------------------------------------------------------------------
+# Agent run request & result
+# ---------------------------------------------------------------------------
+
+
 class AgentRunRequest(BaseModel):
-    mode: Literal["stock", "market"]
-    skill_id: Optional[str] = None
+    question: str = ""
     symbol: Optional[str] = None
     market: Optional[str] = None
-    question: str = ""
+    # Backward-compatible fields (not required by new agent)
+    mode: Literal["stock", "market"] = "stock"
+    skill_id: Optional[str] = None
     peer_list: List[str] = Field(default_factory=list)
     indicators: List[str] = Field(default_factory=list)
     news_from: Optional[str] = None

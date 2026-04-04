@@ -21,9 +21,7 @@ from market_reporter.infra.db.session import (
 )
 from market_reporter.infra.http.client import HttpClient
 from market_reporter.modules.analysis.service import AnalysisService
-from market_reporter.modules.fund_flow.service import FundFlowService
 from market_reporter.modules.market_data.service import MarketDataService
-from market_reporter.modules.news.service import NewsService
 from market_reporter.modules.reports.service import ReportService
 from market_reporter.modules.watchlist.service import WatchlistService
 from market_reporter.schemas import RunRequest
@@ -291,17 +289,11 @@ def analyze_stock(
             user_agent=config.user_agent,
         ) as client:
             registry = ProviderRegistry()
-            news_service = NewsService(config=config, client=client, registry=registry)
-            flow_service = FundFlowService(
-                config=config, client=client, registry=registry
-            )
             market_data_service = MarketDataService(config=config, registry=registry)
             analysis_service = AnalysisService(
                 config=config,
                 registry=registry,
                 market_data_service=market_data_service,
-                news_service=news_service,
-                fund_flow_service=flow_service,
             )
             result = await analysis_service.run_stock_analysis(
                 symbol=symbol,
