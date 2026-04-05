@@ -99,7 +99,7 @@ class AgentService:
             },
         )
 
-        # Extract strategy/technical from get_metrics technical_indicators
+        # Extract data from get_metrics tool results
         strategy = {}
         signal_timeline = []
         if isinstance(metrics_payload, dict):
@@ -115,7 +115,7 @@ class AgentService:
             confidence=run_result.final_report.confidence,
             markdown=run_result.final_report.markdown,
             raw={
-                "technical_analysis": metrics_payload,
+                "metrics_data": metrics_payload,
                 "strategy": strategy,
                 "signal_timeline": signal_timeline,
                 "tool_calls": [
@@ -137,9 +137,9 @@ class AgentService:
     def _to_kline(metrics_payload: Any, request: AgentRunRequest) -> list[KLineBar]:
         if not isinstance(metrics_payload, dict):
             return []
-        # Only process price_history action results
+        # Only process candlesticks action results
         action = metrics_payload.get("action", "")
-        if action != "price_history":
+        if action != "candlesticks":
             return []
         bars = metrics_payload.get("bars")
         if not isinstance(bars, list):

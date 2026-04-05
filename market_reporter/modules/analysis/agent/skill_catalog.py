@@ -1,10 +1,43 @@
 from __future__ import annotations
 
+import re
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
 
 import yaml
+from pydantic import BaseModel, Field
+
+
+# ---------------------------------------------------------------------------
+# Pydantic schemas for the API layer
+# ---------------------------------------------------------------------------
+
+
+class SkillView(BaseModel):
+    name: str
+    description: str
+
+
+class SkillDetailView(SkillView):
+    content: str
+
+
+class SkillCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    description: str = Field(min_length=1)
+    content: str = Field(default="")
+
+
+class SkillUpdateRequest(BaseModel):
+    description: Optional[str] = None
+    content: Optional[str] = None
+
+
+# ---------------------------------------------------------------------------
+# Internal data class
+# ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -79,6 +112,96 @@ class SkillCatalog:
             description = f"Skill loaded from {path.parent.name}"
 
         return SkillSummary(name=name, description=description, path=path)
+
+    # ------------------------------------------------------------------
+    # CRUD operations
+    # ------------------------------------------------------------------
+
+    def create_skill(self, name: str, description: str, content: str) -> SkillSummary:
+        slug = self._slugify(name)
+        if not slug:
+            raise ValueError("Skill name must contain at least one alphanumeric character.")
+        key = slug.lower()
+        if key in self._skills_by_name:
+            raise ValueError(f"Skill already exists: {slug}")
+
+        self.root_dir.mkdir(parents=True, exist_ok=True)
+        skill_dir = self.root_dir / slug
+        skill_dir.mkdir(exist_ok=True)
+
+        skill_file = skill_dir / "SKILL.md"
+        full_content = self._render_skill_md(name=slug, description=description, body=content)
+        skill_file.write_text(full_content, encoding="utf-8")
+
+        summary = SkillSummary(name=slug, description=description, path=skill_file)
+        self._skills_by_name[key] = summary
+        return summary
+
+    def update_skill(self, name: str, description: Optional[str], content: Optional[str]) -> SkillSummary:
+        key = (name or "").strip().lower()
+        existing = self._skills_by_name.get(key)
+        if existing is None:
+            raise FileNotFoundError(f"Skill not found: {name}")
+
+        # Read existing file to extract current frontmatter values
+        old_text = existing.path.read_text(encoding="utf-8")
+        old_meta = self._parse_frontmatter(old_text)
+        old_body = self._extract_body(old_text)
+
+        new_description = description if description is not None else str(old_meta.get("description", ""))
+        new_body = content if content is not None else old_body
+
+        full_content = self._render_skill_md(name=existing.name, description=new_description, body=new_body)
+        existing.path.write_text(full_content, encoding="utf-8")
+
+        updated = SkillSummary(name=existing.name, description=new_description, path=existing.path)
+        self._skills_by_name[key] = updated
+        return updated
+
+    def delete_skill(self, name: str) -> bool:
+        key = (name or "").strip().lower()
+        existing = self._skills_by_name.get(key)
+        if existing is None:
+            return False
+
+        skill_dir = existing.path.parent
+        if skill_dir.is_dir():
+            shutil.rmtree(skill_dir)
+
+        del self._skills_by_name[key]
+        return True
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _slugify(name: str) -> str:
+        slug = re.sub(r"[^a-zA-Z0-9_-]", "-", name.strip()).strip("-")
+        return re.sub(r"-+", "-", slug)
+
+    @staticmethod
+    def _render_skill_md(name: str, description: str, body: str) -> str:
+        frontmatter = yaml.safe_dump(
+            {"name": name, "description": description},
+            allow_unicode=True,
+            sort_keys=False,
+        ).strip()
+        return f"---\n{frontmatter}\n---\n\n{body.strip()}\n"
+
+    @staticmethod
+    def _extract_body(text: str) -> str:
+        if not text.startswith("---"):
+            return text.strip()
+        lines = text.splitlines()
+        end_index = None
+        for idx in range(1, len(lines)):
+            if lines[idx].strip() == "---":
+                end_index = idx
+                break
+        if end_index is None:
+            return text.strip()
+        return "\n".join(lines[end_index + 1 :]).strip()
 
     @staticmethod
     def _parse_frontmatter(text: str) -> Dict[str, object]:

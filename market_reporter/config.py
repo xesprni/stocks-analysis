@@ -36,10 +36,6 @@ class ModuleMarketDataConfig(BaseModel):
     poll_seconds: int = Field(default=5, ge=3, le=30)
 
 
-class ModuleNewsListenerConfig(BaseModel):
-    default_provider: str = "watchlist_listener"
-
-
 class ModuleSymbolSearchConfig(BaseModel):
     default_provider: str = "longbridge"
 
@@ -48,9 +44,6 @@ class ModulesConfig(BaseModel):
     news: ModuleNewsConfig = Field(default_factory=ModuleNewsConfig)
     fund_flow: ModuleFundFlowConfig = Field(default_factory=ModuleFundFlowConfig)
     market_data: ModuleMarketDataConfig = Field(default_factory=ModuleMarketDataConfig)
-    news_listener: ModuleNewsListenerConfig = Field(
-        default_factory=ModuleNewsListenerConfig
-    )
     symbol_search: ModuleSymbolSearchConfig = Field(
         default_factory=ModuleSymbolSearchConfig
     )
@@ -76,16 +69,6 @@ class AnalysisConfig(BaseModel):
 
 class WatchlistConfig(BaseModel):
     default_market_scope: List[str] = Field(default_factory=lambda: ["CN", "HK", "US"])
-
-
-class NewsListenerConfig(BaseModel):
-    enabled: bool = True
-    interval_minutes: int = Field(default=15, ge=5, le=120)
-    move_window_minutes: int = Field(default=15, ge=5, le=120)
-    move_threshold_percent: float = Field(default=2.0, ge=0.1, le=20.0)
-    max_news_per_cycle: int = Field(default=120, ge=10, le=500)
-    analysis_provider: Optional[str] = None
-    analysis_model: Optional[str] = None
 
 
 class SymbolSearchConfig(BaseModel):
@@ -251,7 +234,6 @@ class AppConfig(BaseModel):
         default_factory=lambda: AnalysisConfig(providers=default_analysis_providers())
     )
     watchlist: WatchlistConfig = Field(default_factory=WatchlistConfig)
-    news_listener: NewsListenerConfig = Field(default_factory=NewsListenerConfig)
     symbol_search: SymbolSearchConfig = Field(default_factory=SymbolSearchConfig)
     dashboard: DashboardConfig = Field(default_factory=DashboardConfig)
     agent: AgentConfig = Field(default_factory=AgentConfig)

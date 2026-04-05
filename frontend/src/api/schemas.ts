@@ -100,7 +100,6 @@ export const appConfigSchema = z.object({
     news: z.object({ default_provider: z.string() }),
     fund_flow: z.object({ providers: z.array(z.string()) }),
     market_data: z.object({ default_provider: z.string(), poll_seconds: z.number() }),
-    news_listener: z.object({ default_provider: z.string() }),
     symbol_search: z.object({ default_provider: z.string() }),
   }),
   analysis: z.object({
@@ -109,15 +108,6 @@ export const appConfigSchema = z.object({
     providers: z.array(analysisProviderConfigSchema),
   }),
   watchlist: z.object({ default_market_scope: z.array(z.string()) }),
-  news_listener: z.object({
-    enabled: z.boolean(),
-    interval_minutes: z.number(),
-    move_window_minutes: z.number(),
-    move_threshold_percent: z.number(),
-    max_news_per_cycle: z.number(),
-    analysis_provider: z.string().nullable().optional(),
-    analysis_model: z.string().nullable().optional(),
-  }),
   symbol_search: z.object({
     default_provider: z.string(),
     max_results: z.number(),
@@ -186,37 +176,6 @@ export const stockSearchResultSchema = z.object({
   score: z.number(),
 });
 
-export const newsListenerRunSchema = z.object({
-  id: z.number(),
-  started_at: z.string(),
-  finished_at: z.string(),
-  status: z.string(),
-  scanned_news_count: z.number(),
-  matched_news_count: z.number(),
-  alerts_count: z.number(),
-  error_message: z.string().nullable().optional(),
-});
-
-export const newsAlertSchema = z.object({
-  id: z.number(),
-  run_id: z.number(),
-  symbol: z.string(),
-  market: z.string(),
-  news_title: z.string(),
-  news_link: z.string(),
-  news_source: z.string(),
-  published_at: z.string(),
-  move_window_minutes: z.number(),
-  price_change_percent: z.number(),
-  threshold_percent: z.number(),
-  severity: z.string(),
-  analysis_summary: z.string(),
-  analysis_markdown: z.string(),
-  analysis_json: z.record(z.any()),
-  status: z.string(),
-  created_at: z.string(),
-});
-
 export const uiOptionsSchema = z.object({
   markets: z.array(z.string()),
   intervals: z.array(z.string()),
@@ -226,8 +185,6 @@ export const uiOptionsSchema = z.object({
   market_data_providers: z.array(z.string()),
   analysis_providers: z.array(z.string()),
   analysis_models_by_provider: z.record(z.array(z.string())),
-  listener_threshold_presets: z.array(z.number()),
-  listener_intervals: z.array(z.number()),
 });
 
 export const newsFeedSourceOptionSchema = z.object({
@@ -520,8 +477,6 @@ export type StockAnalysisRun = z.infer<typeof stockAnalysisRunSchema>;
 export type StockAnalysisTask = z.infer<typeof stockAnalysisTaskSchema>;
 export type StockAnalysisHistoryItem = z.infer<typeof stockAnalysisHistoryItemSchema>;
 export type StockSearchResult = z.infer<typeof stockSearchResultSchema>;
-export type NewsListenerRun = z.infer<typeof newsListenerRunSchema>;
-export type NewsAlert = z.infer<typeof newsAlertSchema>;
 export type UIOptions = z.infer<typeof uiOptionsSchema>;
 export type NewsFeedSourceOption = z.infer<typeof newsFeedSourceOptionSchema>;
 export type NewsFeedItem = z.infer<typeof newsFeedItemSchema>;
@@ -531,3 +486,32 @@ export type ProviderAuthStatus = z.infer<typeof providerAuthStatusSchema>;
 export type ProviderModels = z.infer<typeof providerModelsSchema>;
 export type ProviderAvailability = z.infer<typeof providerAvailabilitySchema>;
 export type TelegramConfig = z.infer<typeof telegramConfigSchema>;
+
+// ---------------------------------------------------------------------------
+// Skills schemas
+// ---------------------------------------------------------------------------
+
+export const skillViewSchema = z.object({
+  name: z.string(),
+  description: z.string(),
+});
+
+export const skillDetailViewSchema = skillViewSchema.extend({
+  content: z.string(),
+});
+
+export const skillCreateRequestSchema = z.object({
+  name: z.string().min(1),
+  description: z.string().min(1),
+  content: z.string(),
+});
+
+export const skillUpdateRequestSchema = z.object({
+  description: z.string().optional(),
+  content: z.string().optional(),
+});
+
+export type SkillView = z.infer<typeof skillViewSchema>;
+export type SkillDetailView = z.infer<typeof skillDetailViewSchema>;
+export type SkillCreateRequest = z.infer<typeof skillCreateRequestSchema>;
+export type SkillUpdateRequest = z.infer<typeof skillUpdateRequestSchema>;

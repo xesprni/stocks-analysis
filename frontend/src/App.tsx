@@ -13,6 +13,7 @@ import {
   Settings2,
   Sun,
   Users,
+  Wrench,
 } from "lucide-react";
 
 import { api, type UserView, type AppConfig, isAuthenticated, clearTokens } from "@/api/client";
@@ -35,6 +36,7 @@ const WatchlistPage = lazy(() => import("@/pages/Watchlist").then((m) => ({ defa
 const StockTerminalPage = lazy(() => import("@/pages/StockTerminal").then((m) => ({ default: m.StockTerminalPage })));
 const ReportsPage = lazy(() => import("@/pages/Reports").then((m) => ({ default: m.ReportsPage })));
 const UsersPage = lazy(() => import("@/pages/Users").then((m) => ({ default: m.UsersPage })));
+const SkillsPage = lazy(() => import("@/pages/Skills").then((m) => ({ default: m.SkillsPage })));
 
 const emptyConfig: AppConfig = {
   output_root: "output",
@@ -48,7 +50,6 @@ const emptyConfig: AppConfig = {
     news: { default_provider: "rss" },
     fund_flow: { providers: ["eastmoney", "fred"] },
     market_data: { default_provider: "longbridge", poll_seconds: 5 },
-    news_listener: { default_provider: "watchlist_listener" },
     symbol_search: { default_provider: "longbridge" },
   },
   analysis: {
@@ -58,15 +59,6 @@ const emptyConfig: AppConfig = {
   },
   watchlist: {
     default_market_scope: ["CN", "HK", "US"],
-  },
-  news_listener: {
-    enabled: true,
-    interval_minutes: 15,
-    move_window_minutes: 15,
-    move_threshold_percent: 2.0,
-    max_news_per_cycle: 120,
-    analysis_provider: null,
-    analysis_model: null,
   },
   symbol_search: {
     default_provider: "longbridge",
@@ -247,11 +239,6 @@ export default function App() {
           },
         },
         symbol_search: source.symbol_search,
-        news_listener: {
-          ...target.news_listener,
-          interval_minutes: source.news_listener.interval_minutes,
-          move_threshold_percent: source.news_listener.move_threshold_percent,
-        },
       };
     }
     return {
@@ -318,6 +305,7 @@ export default function App() {
     { key: "watchlist", label: "Watchlist", icon: ListChecks },
     { key: "terminal", label: "Stock Terminal", icon: ChartCandlestick },
     { key: "reports", label: "Reports", icon: ClipboardList },
+    { key: "skills", label: "Skills", icon: Wrench },
     ...(currentUser?.is_admin ? [{ key: "users", label: "Users", icon: Users }] : []),
   ];
 
@@ -706,6 +694,12 @@ export default function App() {
                 }
               }}
             />
+          </Suspense>
+        </TabsContent>
+
+        <TabsContent value="skills" className="mt-0">
+          <Suspense fallback={<TabFallback />}>
+            <SkillsPage />
           </Suspense>
         </TabsContent>
 

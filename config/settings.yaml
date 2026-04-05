@@ -16,8 +16,6 @@ modules:
   market_data:
     default_provider: longbridge
     poll_seconds: 5
-  news_listener:
-    default_provider: watchlist_listener
   symbol_search:
     default_provider: longbridge
 analysis:
@@ -60,14 +58,6 @@ watchlist:
   - CN
   - HK
   - US
-news_listener:
-  enabled: true
-  interval_minutes: 15
-  move_window_minutes: 15
-  move_threshold_percent: 2.0
-  max_news_per_cycle: 120
-  analysis_provider: null
-  analysis_model: null
 symbol_search:
   default_provider: longbridge
   max_results: 20

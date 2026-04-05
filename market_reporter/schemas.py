@@ -77,7 +77,6 @@ class ConfigUpdateRequest(BaseModel):
     modules: Dict[str, Any]
     analysis: Dict[str, Any]
     watchlist: Dict[str, Any]
-    news_listener: Optional[Dict[str, Any]] = None
     symbol_search: Optional[Dict[str, Any]] = None
     dashboard: Optional[Dict[str, Any]] = None
     agent: Optional[Dict[str, Any]] = None
@@ -99,8 +98,6 @@ class ConfigUpdateRequest(BaseModel):
             "watchlist": self.watchlist,
             "database": self.database,
         }
-        if self.news_listener is not None:
-            patch_data["news_listener"] = self.news_listener
         if self.symbol_search is not None:
             patch_data["symbol_search"] = self.symbol_search
         if self.dashboard is not None:

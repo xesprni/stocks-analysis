@@ -20,6 +20,8 @@ import {
   reportDetailSchema,
   reportSummarySchema,
   reportTaskSchema,
+  skillViewSchema,
+  skillDetailViewSchema,
   stockSearchResultSchema,
   telegramConfigSchema,
   uiOptionsSchema,
@@ -395,4 +397,28 @@ export const api = {
   listNewsFeedOptions: () => request("/news-feed/options", z.array(newsFeedSourceOptionSchema)),
   listNewsFeed: (sourceId = "ALL", limit = 50) =>
     request(`/news-feed?source_id=${encodeURIComponent(sourceId)}&limit=${limit}`, newsFeedResponseSchema),
+
+  // ---- skills ----
+  listSkills: () => request("/skills", z.array(skillViewSchema)),
+  getSkill: (name: string) => request(`/skills/${encodeURIComponent(name)}`, skillDetailViewSchema),
+  createSkill: (payload: { name: string; description: string; content: string }) =>
+    request("/skills", skillDetailViewSchema, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
+  updateSkill: (name: string, payload: { description?: string; content?: string }) =>
+    request(`/skills/${encodeURIComponent(name)}`, skillDetailViewSchema, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
+  deleteSkill: (name: string) =>
+    request(`/skills/${encodeURIComponent(name)}`, z.object({ deleted: z.boolean() }), {
+      method: "DELETE",
+    }),
+  reloadSkills: () =>
+    request("/skills/reload", z.object({ reloaded: z.boolean(), count: z.number() }), {
+      method: "POST",
+    }),
 };

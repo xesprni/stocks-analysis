@@ -12,14 +12,12 @@ from market_reporter.infra.db.models import (
     AnalysisProviderSecretTable,
     ApiKeyTable,
     LongbridgeCredentialTable,
-    NewsListenerRunTable,
     StockAnalysisRunTable,
     StockCurvePointTable,
     StockKLineBarTable,
     TelegramConfigTable,
     UserConfigTable,
     UserTable,
-    WatchlistNewsAlertTable,
     WatchlistItemTable,
 )
 
@@ -735,104 +733,6 @@ class StockAnalysisRunRepo:
         self.session.delete(row)
         self.session.flush()
         return True
-
-
-class NewsListenerRunRepo:
-    def __init__(self, session: Session) -> None:
-        self.session = session
-
-    def add(
-        self,
-        started_at: datetime,
-        finished_at: datetime,
-        status: str,
-        scanned_news_count: int,
-        matched_news_count: int,
-        alerts_count: int,
-        error_message: Optional[str] = None,
-    ) -> NewsListenerRunTable:
-        row = NewsListenerRunTable(
-            started_at=started_at,
-            finished_at=finished_at,
-            status=status,
-            scanned_news_count=scanned_news_count,
-            matched_news_count=matched_news_count,
-            alerts_count=alerts_count,
-            error_message=error_message,
-        )
-        self.session.add(row)
-        self.session.flush()
-        self.session.refresh(row)
-        return row
-
-    def list_recent(self, limit: int = 50) -> List[NewsListenerRunTable]:
-        return list(
-            self.session.exec(
-                select(NewsListenerRunTable)
-                .order_by(NewsListenerRunTable.id.desc())
-                .limit(limit)
-            ).all()
-        )
-
-
-class WatchlistNewsAlertRepo:
-    def __init__(self, session: Session) -> None:
-        self.session = session
-
-    def add_many(
-        self,
-        rows: List[WatchlistNewsAlertTable],
-    ) -> None:
-        for row in rows:
-            self.session.add(row)
-        self.session.flush()
-
-    def list_recent(
-        self,
-        status: Optional[str] = None,
-        symbol: Optional[str] = None,
-        market: Optional[str] = None,
-        limit: int = 50,
-    ) -> List[WatchlistNewsAlertTable]:
-        # Build filters incrementally so callers can combine status/symbol/market constraints.
-        statement = (
-            select(WatchlistNewsAlertTable)
-            .order_by(WatchlistNewsAlertTable.id.desc())
-            .limit(limit)
-        )
-        if status and status != "ALL":
-            statement = statement.where(WatchlistNewsAlertTable.status == status)
-        if symbol:
-            statement = statement.where(WatchlistNewsAlertTable.symbol == symbol)
-        if market:
-            statement = statement.where(WatchlistNewsAlertTable.market == market)
-        return list(self.session.exec(statement).all())
-
-    def get(self, alert_id: int) -> Optional[WatchlistNewsAlertTable]:
-        return self.session.get(WatchlistNewsAlertTable, alert_id)
-
-    def update_status(
-        self, row: WatchlistNewsAlertTable, status: str
-    ) -> WatchlistNewsAlertTable:
-        row.status = status
-        self.session.add(row)
-        self.session.flush()
-        self.session.refresh(row)
-        return row
-
-    def mark_all_read(self) -> int:
-        rows = list(
-            self.session.exec(
-                select(WatchlistNewsAlertTable).where(
-                    WatchlistNewsAlertTable.status == "UNREAD"
-                )
-            ).all()
-        )
-        for row in rows:
-            row.status = "READ"
-            self.session.add(row)
-        self.session.flush()
-        return len(rows)
 
 
 class UserConfigRepo:

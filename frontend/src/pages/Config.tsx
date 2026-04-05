@@ -416,58 +416,6 @@ export function ConfigPage({
                 }
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="listener_interval">监听频率(分钟)</Label>
-              <Select
-                value={String(config.news_listener.interval_minutes)}
-                onValueChange={(value: string) =>
-                  setConfig({
-                    ...config,
-                    news_listener: {
-                      ...config.news_listener,
-                      interval_minutes: Number(value),
-                    },
-                  })
-                }
-              >
-                <SelectTrigger id="listener_interval">
-                  <SelectValue placeholder="监听频率" />
-                </SelectTrigger>
-                <SelectContent>
-                  {options.listener_intervals.map((entry) => (
-                    <SelectItem key={entry} value={String(entry)}>
-                      {entry}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="listener_threshold">异动阈值(%)</Label>
-              <Select
-                value={String(config.news_listener.move_threshold_percent)}
-                onValueChange={(value: string) =>
-                  setConfig({
-                    ...config,
-                    news_listener: {
-                      ...config.news_listener,
-                      move_threshold_percent: Number(value),
-                    },
-                  })
-                }
-              >
-                <SelectTrigger id="listener_threshold">
-                  <SelectValue placeholder="异动阈值" />
-                </SelectTrigger>
-                <SelectContent>
-                  {options.listener_threshold_presets.map((entry) => (
-                    <SelectItem key={entry} value={String(entry)}>
-                      {entry}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
           </div>
         </CardContent>
       </Card>

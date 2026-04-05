@@ -13,7 +13,6 @@ from market_reporter.api.deps import (
     get_user_config_store,
 )
 from market_reporter.config import AppConfig
-from market_reporter.core.registry import ProviderRegistry
 from market_reporter.infra.db.session import init_db
 from market_reporter.modules.analysis.schemas import (
     AnalysisProviderView,
@@ -35,7 +34,6 @@ def _get_analysis_service(
     init_db(config.database.url)
     return AnalysisService(
         config=config,
-        registry=ProviderRegistry(),
         user_id=user_id,
     )
 

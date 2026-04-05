@@ -8,7 +8,6 @@ from typing import Any, Dict, List, Optional, Tuple
 from openai import AsyncOpenAI
 
 from market_reporter.config import AnalysisProviderConfig, AppConfig
-from market_reporter.core.registry import ProviderRegistry
 from market_reporter.core.utils import parse_json
 from market_reporter.core.types import (
     AnalysisInput,
@@ -30,7 +29,6 @@ from market_reporter.modules.analysis.schemas import (
 )
 from market_reporter.modules.analysis.agent.schemas import AgentRunRequest
 from market_reporter.modules.analysis.agent.service import AgentService
-from market_reporter.modules.market_data.service import MarketDataService
 from market_reporter.modules.market_data.symbol_mapper import normalize_symbol
 
 
@@ -40,15 +38,11 @@ class AnalysisService:
     def __init__(
         self,
         config: AppConfig,
-        registry: ProviderRegistry,
         user_id: Optional[int] = None,
-        market_data_service: Optional[MarketDataService] = None,
         keychain_store: Optional[KeychainStore] = None,
     ) -> None:
         self.config = config
-        self.registry = registry
         self.user_id = user_id
-        self.market_data_service = market_data_service
         self.keychain_store = keychain_store or KeychainStore(
             database_url=config.database.url
         )

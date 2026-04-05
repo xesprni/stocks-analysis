@@ -11,9 +11,7 @@ from market_reporter.config import AppConfig
 from market_reporter.core.registry import ProviderRegistry
 from market_reporter.infra.db.session import init_db
 from market_reporter.infra.http.client import HttpClient
-from market_reporter.modules.analysis.service import AnalysisService
 from market_reporter.modules.market_data.service import MarketDataService
-from market_reporter.modules.news_listener.service import NewsListenerService
 from market_reporter.modules.reports.service import ReportService
 from market_reporter.modules.symbol_search.service import SymbolSearchService
 from market_reporter.modules.watchlist.service import WatchlistService
@@ -89,38 +87,6 @@ def get_market_data_service(
     config: AppConfig, registry: ProviderRegistry | None = None
 ) -> MarketDataService:
     return MarketDataService(config=config, registry=registry or ProviderRegistry())
-
-
-def get_analysis_service(
-    config: AppConfig,
-    registry: ProviderRegistry | None = None,
-    market_data_service: MarketDataService | None = None,
-) -> AnalysisService:
-    reg = registry or ProviderRegistry()
-    return AnalysisService(
-        config=config,
-        registry=reg,
-        market_data_service=market_data_service,
-    )
-
-
-def build_listener_query_service(config: AppConfig) -> NewsListenerService:
-    registry = ProviderRegistry()
-    market_data_service = MarketDataService(config=config, registry=registry)
-    watchlist_service = WatchlistService(config)
-    analysis_service = AnalysisService(
-        config=config,
-        registry=registry,
-        market_data_service=market_data_service,
-    )
-    return NewsListenerService(
-        config=config,
-        registry=registry,
-        news_service=None,
-        watchlist_service=watchlist_service,
-        market_data_service=market_data_service,
-        analysis_service=analysis_service,
-    )
 
 
 def build_http_client(config: AppConfig) -> HttpClient:

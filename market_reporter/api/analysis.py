@@ -10,7 +10,6 @@ from market_reporter.api.auth import CurrentUser, require_user
 from market_reporter.api.deps import get_effective_user_id, get_user_config
 from market_reporter.api.stock_analysis_tasks import StockAnalysisTaskManager
 from market_reporter.config import AppConfig
-from market_reporter.core.registry import ProviderRegistry
 from market_reporter.infra.db.session import init_db
 from market_reporter.infra.http.client import HttpClient
 from market_reporter.modules.analysis.schemas import (
@@ -20,7 +19,6 @@ from market_reporter.modules.analysis.schemas import (
     StockAnalysisTaskView,
 )
 from market_reporter.modules.analysis.service import AnalysisService
-from market_reporter.modules.market_data.service import MarketDataService
 
 router = APIRouter(prefix="/api", tags=["analysis"])
 
@@ -39,14 +37,10 @@ async def _run_stock_analysis_once(
     async with HttpClient(
         timeout_seconds=config.request_timeout_seconds,
         user_agent=config.user_agent,
-    ) as client:
-        registry = ProviderRegistry()
-        market_data_service = MarketDataService(config=config, registry=registry)
+    ):
         analysis_service = AnalysisService(
             config=config,
-            registry=registry,
             user_id=user_id,
-            market_data_service=market_data_service,
         )
         return await analysis_service.run_stock_analysis(
             symbol=symbol,

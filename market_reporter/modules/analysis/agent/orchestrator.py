@@ -182,26 +182,21 @@ class AgentOrchestrator:
     def _statement_for_tool(tool_name: str, payload: Dict[str, Any]) -> str:
         if tool_name == "get_metrics":
             action = payload.get("action", "")
-            if action == "price_history":
+            if action == "candlesticks":
                 bars = payload.get("bars")
                 count = len(bars) if isinstance(bars, list) else 0
                 return f"行情历史样本 {count} 条"
-            if action == "fundamentals":
-                return "财务核心字段（PE/PB/EPS/市值）"
-            if action == "financial_reports":
-                reports = payload.get("reports")
-                count = len(reports) if isinstance(reports, list) else 0
-                return f"财报样本 {count} 条"
-            if action == "technical_indicators":
-                strategy = payload.get("strategy", {})
-                score = strategy.get("score")
-                stance = strategy.get("stance")
-                return f"技术指标计算结果 (score={score}, stance={stance})"
+            if action == "calc_indexes":
+                return "计算指标（PE/PB/市值/换手率等）"
             if action == "static_info":
                 return "公司基本信息"
             if action == "quote":
                 price = payload.get("price")
                 return f"实时报价 {price}"
+            if action == "intraday":
+                points = payload.get("points")
+                count = len(points) if isinstance(points, list) else 0
+                return f"分时数据 {count} 条"
             return f"指标数据 ({action})"
 
         if tool_name == "search_news":

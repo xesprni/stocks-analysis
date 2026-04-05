@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from pathlib import Path
 
@@ -23,21 +22,16 @@ from market_reporter.modules.reports.service import ReportService
 from market_reporter.services.config_store import ConfigStore
 from market_reporter.settings import AppSettings
 
-try:
-    from market_reporter.modules.news_listener.scheduler import NewsListenerScheduler
-except ModuleNotFoundError:
-    NewsListenerScheduler = None
-
 from market_reporter.api import (
     analysis,
     config,
     dashboard,
     health,
     news_feed,
-    news_listener,
     news_sources,
     providers,
     reports,
+    skills,
     stocks,
     users,
     watchlist,
@@ -98,7 +92,6 @@ def create_app() -> FastAPI:
     app.state.settings = settings
     app.state.config_store = config_store
     app.state.report_service = report_service
-    app.state.news_listener_lock = asyncio.Lock()
     app.state.stock_analysis_task_manager = StockAnalysisTaskManager(config_store)
 
     # ---------- CORS ---------------------------------------------------------
@@ -121,36 +114,9 @@ def create_app() -> FastAPI:
     app.include_router(reports.router, dependencies=protected_deps)
     app.include_router(watchlist.router, dependencies=protected_deps)
     app.include_router(stocks.router, dependencies=protected_deps)
-    app.include_router(news_listener.router, dependencies=protected_deps)
     app.include_router(providers.router, dependencies=protected_deps)
     app.include_router(analysis.router, dependencies=protected_deps)
-
-    # ---------- news listener cycle wrapper ----------------------------------
-    # The scheduler needs a zero-arg async callable.  The router-level
-    # ``_run_news_listener_cycle`` expects (config_store, lock), so we bind
-    # those here and store the wrapper on ``app.state`` for the scheduler and
-    # for ``config.py``'s ``_restart_listener_scheduler``.
-
-    async def _run_news_listener_cycle_wrapper():
-        return await news_listener._run_news_listener_cycle(
-            config_store=config_store,
-            lock=app.state.news_listener_lock,
-        )
-
-    app.state._run_news_listener_cycle = _run_news_listener_cycle_wrapper
-
-    # ---------- scheduler helper ---------------------------------------------
-    def _start_scheduler(app_inst: FastAPI) -> None:
-        cfg = config_store.load()
-        if NewsListenerScheduler is None:
-            app_inst.state.news_listener_scheduler = None
-            return
-        scheduler = NewsListenerScheduler(
-            config=cfg,
-            run_func=app_inst.state._run_news_listener_cycle,
-        )
-        scheduler.start()
-        app_inst.state.news_listener_scheduler = scheduler
+    app.include_router(skills.router, dependencies=protected_deps)
 
     # ---------- lifecycle events ---------------------------------------------
     @app.on_event("startup")
@@ -173,15 +139,8 @@ def create_app() -> FastAPI:
                 logger.warning("PLEASE CHANGE THIS PASSWORD IMMEDIATELY")
                 logger.warning("=" * 60)
 
-        _start_scheduler(app)
-
     @app.on_event("shutdown")
     async def shutdown_event() -> None:
-        # Stop scheduler
-        scheduler = getattr(app.state, "news_listener_scheduler", None)
-        if scheduler is not None:
-            scheduler.shutdown()
-
         # Cancel in-flight stock analysis tasks
         task_manager: StockAnalysisTaskManager = app.state.stock_analysis_task_manager
         await task_manager.cancel_all()

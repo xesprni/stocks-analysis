@@ -75,7 +75,6 @@ async def update_config(
     saved = store.save(updated)
     init_db(saved.database.url)
 
-    _restart_listener_scheduler(request.app.state, saved)
     return _redact_sensitive_config(saved)
 
 
@@ -206,26 +205,3 @@ async def delete_telegram_config(
     next_config = current.model_copy(update={"telegram": TelegramConfig()})
     store.save(next_config)
     return {"ok": True}
-
-
-def _restart_listener_scheduler(app_state, config: AppConfig) -> None:
-    existing = getattr(app_state, "news_listener_scheduler", None)
-    if existing is not None:
-        existing.shutdown()
-
-    try:
-        from market_reporter.modules.news_listener.scheduler import (
-            NewsListenerScheduler,
-        )
-    except ModuleNotFoundError:
-        app_state.news_listener_scheduler = None
-        return
-
-    run_func = getattr(app_state, "_run_news_listener_cycle", None)
-    if run_func is None:
-        app_state.news_listener_scheduler = None
-        return
-
-    scheduler = NewsListenerScheduler(config=config, run_func=run_func)
-    scheduler.start()
-    app_state.news_listener_scheduler = scheduler

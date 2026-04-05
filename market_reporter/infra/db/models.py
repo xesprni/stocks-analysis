@@ -192,41 +192,6 @@ class StockAnalysisRunTable(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
 
 
-class NewsListenerRunTable(SQLModel, table=True):
-    __tablename__ = "news_listener_runs"
-
-    id: Optional[int] = Field(default=None, primary_key=True)
-    started_at: datetime = Field(default_factory=datetime.utcnow, index=True)
-    finished_at: datetime = Field(default_factory=datetime.utcnow)
-    status: str = Field(index=True)
-    scanned_news_count: int = 0
-    matched_news_count: int = 0
-    alerts_count: int = 0
-    error_message: Optional[str] = None
-
-
-class WatchlistNewsAlertTable(SQLModel, table=True):
-    __tablename__ = "watchlist_news_alerts"
-
-    id: Optional[int] = Field(default=None, primary_key=True)
-    run_id: int = Field(foreign_key="news_listener_runs.id", index=True)
-    symbol: str = Field(index=True)
-    market: str = Field(index=True)
-    news_title: str
-    news_link: Optional[str] = None
-    news_source: Optional[str] = None
-    published_at: Optional[str] = None
-    move_window_minutes: int
-    price_change_percent: float
-    threshold_percent: float
-    severity: str = Field(index=True)
-    analysis_summary: str
-    analysis_markdown: str
-    analysis_json: str
-    status: str = Field(default="UNREAD", index=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
-
-
 class NewsSourceTable(SQLModel, table=True):
     __tablename__ = "news_sources"
     __table_args__ = (UniqueConstraint("source_id", name="uq_news_source_id"),)

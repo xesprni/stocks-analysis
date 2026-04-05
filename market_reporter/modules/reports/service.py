@@ -11,7 +11,6 @@ from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 from market_reporter.config import AppConfig
-from market_reporter.core.registry import ProviderRegistry
 from market_reporter.infra.http.client import HttpClient
 from market_reporter.modules.analysis.agent.service import AgentService
 from market_reporter.modules.analysis.service import AnalysisService
@@ -248,7 +247,6 @@ class ReportService:
             ) as client:
                 analysis_service = AnalysisService(
                     config=config,
-                    registry=ProviderRegistry(),
                     user_id=user_id,
                 )
                 requested_provider = overrides.provider_id if overrides else None
