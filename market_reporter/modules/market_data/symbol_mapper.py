@@ -5,7 +5,9 @@ def normalize_symbol(symbol: str, market: str) -> str:
     raw = symbol.strip().upper()
     market = market.strip().upper()
     if market == "US":
-        # US symbols are mostly consumed as-is.
+        # Strip Longbridge-style .US suffix so internal representation is clean.
+        if raw.endswith(".US"):
+            raw = raw[:-3]
         return raw
     if market == "HK":
         # Keep Yahoo-style HK index tickers unchanged, for example "^HSI".
@@ -57,6 +59,8 @@ def to_longbridge_symbol(symbol: str, market: str) -> str:
         # Index tickers like ^GSPC are not supported by Longbridge;
         # equities use suffix ".US".
         raw = normalized.lstrip("^")
+        if raw.endswith(".US"):
+            raw = raw[:-3]
         return f"{raw}.US"
     if market == "HK":
         if normalized.startswith("^"):
