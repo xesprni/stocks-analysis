@@ -20,7 +20,7 @@ from market_reporter.modules.analysis.agent.service import AgentService
 from market_reporter.modules.watchlist.service import WatchlistService
 from market_reporter.schemas import RunRequest
 from market_reporter.services.config_store import ConfigStore
-from market_reporter.services.report_service import ReportService
+from market_reporter.modules.reports.service import ReportService
 
 
 class ReportServiceAgentModesTest(unittest.TestCase):

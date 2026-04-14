@@ -10,7 +10,7 @@ from market_reporter.infra.db.repos import UserRepo
 from market_reporter.infra.db.session import hash_password, init_db, session_scope
 from market_reporter.schemas import ReportRunSummary
 from market_reporter.services.config_store import ConfigStore
-from market_reporter.services.report_service import ReportService
+from market_reporter.modules.reports.service import ReportService
 
 
 class ReportServiceUserIsolationTest(unittest.TestCase):

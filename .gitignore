@@ -14,10 +14,7 @@ output/*
 !output/.gitkeep
 .idea/
 .vscode/
-<<<<<<< HEAD
 .jarvis/
+.opencode/
 *.egg-info/
-=======
-.jarvis/
->>>>>>> 494ddf4 (delete some code)
 CLAUDE.md

@@ -24,7 +24,7 @@ from market_reporter.schemas import (
     RunResult,
 )
 from market_reporter.services.config_store import ConfigStore
-from market_reporter.services.report_service import ReportService
+from market_reporter.modules.reports.service import ReportService
 from market_reporter.settings import AppSettings
 
 
