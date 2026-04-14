@@ -7,6 +7,7 @@ from market_reporter.config import AnalysisProviderConfig, AppConfig
 from market_reporter.infra.db.session import init_db
 from market_reporter.modules.analysis.agent.schemas import AgentRunRequest
 from market_reporter.modules.analysis.agent.service import AgentService
+from market_reporter.modules.analysis.agent.skill_catalog import SkillCatalog
 from market_reporter.modules.watchlist.schemas import WatchlistItem
 from market_reporter.modules.watchlist.service import WatchlistService
 from market_reporter.schemas import RunRequest
@@ -21,6 +22,7 @@ class ReportSkillContext:
     provider_cfg: AnalysisProviderConfig
     selected_model: str
     api_key: Optional[str]
+    skill_content: str = ""
 
 
 @dataclass
@@ -41,31 +43,39 @@ class ReportSkill(Protocol):
     async def run(self, context: ReportSkillContext) -> ReportSkillResult: ...
 
 
-class MarketReportSkill:
-    skill_id = "market_report"
-    mode = "market"
-    aliases = ("market",)
+class CatalogReportSkill:
+    """Report skill loaded from a SKILL.md file in the SkillCatalog."""
+
+    def __init__(
+        self,
+        skill_id: str,
+        mode: str,
+        aliases: Tuple[str, ...],
+        require_symbol: bool,
+        skill_content: str,
+    ) -> None:
+        self.skill_id = skill_id
+        self.mode = mode
+        self.aliases = aliases
+        self._require_symbol = require_symbol
+        self._skill_content = skill_content
 
     async def run(self, context: ReportSkillContext) -> ReportSkillResult:
-        return await _run_single_agent_report(
-            context=context,
-            mode="market",
-            skill_id=self.skill_id,
-            require_symbol_and_market=False,
+        context = ReportSkillContext(
+            config=context.config,
+            overrides=context.overrides,
+            generated_at=context.generated_at,
+            agent_service=context.agent_service,
+            provider_cfg=context.provider_cfg,
+            selected_model=context.selected_model,
+            api_key=context.api_key,
+            skill_content=self._skill_content,
         )
-
-
-class StockReportSkill:
-    skill_id = "stock_report"
-    mode = "stock"
-    aliases = ("stock",)
-
-    async def run(self, context: ReportSkillContext) -> ReportSkillResult:
         return await _run_single_agent_report(
             context=context,
-            mode="stock",
+            mode=self.mode,
             skill_id=self.skill_id,
-            require_symbol_and_market=True,
+            require_symbol_and_market=self._require_symbol,
         )
 
 
@@ -73,6 +83,9 @@ class WatchlistReportSkill:
     skill_id = "watchlist_report"
     mode = "watchlist"
     aliases = ("watchlist",)
+
+    def __init__(self, skill_content: str = "") -> None:
+        self._skill_content = skill_content
 
     async def run(self, context: ReportSkillContext) -> ReportSkillResult:
         init_db(context.config.database.url)
@@ -192,6 +205,7 @@ class WatchlistReportSkill:
                 provider_cfg=context.provider_cfg,
                 model=context.selected_model,
                 api_key=context.api_key,
+                skill_content=self._skill_content,
             )
             _, output = context.agent_service.to_analysis_payload(
                 request=request,
@@ -304,13 +318,68 @@ class WatchlistReportSkill:
 
 
 class ReportSkillRegistry:
-    def __init__(self, skills: List[Any]) -> None:
+    """Registry that loads report skills from both SkillCatalog and built-in strategies."""
+
+    def __init__(self, catalog: Optional[SkillCatalog] = None) -> None:
         self._skills_by_alias: Dict[str, ReportSkill] = {}
-        for skill in skills:
-            self._register_alias(skill.skill_id, skill)
-            self._register_alias(skill.mode, skill)
-            for alias in skill.aliases:
-                self._register_alias(alias, skill)
+        self._catalog = catalog
+        self._reload()
+
+    def _reload(self) -> None:
+        self._skills_by_alias = {}
+
+        # Load catalog-based skills
+        if self._catalog is not None:
+            self._catalog.reload()
+            for summary in self._catalog.list_skills():
+                if not summary.mode:
+                    continue  # Skip non-report skills (e.g. git-release)
+                body = self._catalog.load_skill_body(summary.name) or ""
+                if summary.mode == "watchlist":
+                    skill: ReportSkill = WatchlistReportSkill(skill_content=body)
+                else:
+                    skill = CatalogReportSkill(
+                        skill_id=summary.name,
+                        mode=summary.mode,
+                        aliases=summary.aliases,
+                        require_symbol=summary.require_symbol,
+                        skill_content=body,
+                    )
+                self._register(skill)
+
+        # Fallback: if no catalog skills loaded, register hardcoded builtins
+        if not self._skills_by_alias:
+            self._register_builtin_defaults()
+
+    def reload(self) -> None:
+        self._reload()
+
+    def _register_builtin_defaults(self) -> None:
+        self._register(
+            CatalogReportSkill(
+                skill_id="market_report",
+                mode="market",
+                aliases=("market",),
+                require_symbol=False,
+                skill_content="",
+            )
+        )
+        self._register(
+            CatalogReportSkill(
+                skill_id="stock_report",
+                mode="stock",
+                aliases=("stock",),
+                require_symbol=True,
+                skill_content="",
+            )
+        )
+        self._register(WatchlistReportSkill())
+
+    def _register(self, skill: Any) -> None:
+        self._register_alias(skill.skill_id, skill)
+        self._register_alias(skill.mode, skill)
+        for alias in skill.aliases:
+            self._register_alias(alias, skill)
 
     def resolve(self, skill_id: Optional[str], mode: str) -> ReportSkill:
         requested = (skill_id or "").strip().lower()
@@ -366,6 +435,7 @@ async def _run_single_agent_report(
         provider_cfg=context.provider_cfg,
         model=context.selected_model,
         api_key=context.api_key,
+        skill_content=context.skill_content,
     )
     _, analysis_output = context.agent_service.to_analysis_payload(
         request=agent_request,

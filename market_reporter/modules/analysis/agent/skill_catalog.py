@@ -45,6 +45,9 @@ class SkillSummary:
     name: str
     description: str
     path: Path
+    mode: str = ""
+    require_symbol: bool = False
+    aliases: tuple = ()
 
 
 class SkillCatalog:
@@ -97,6 +100,13 @@ class SkillCatalog:
             return None
         return summary.path.read_text(encoding="utf-8")
 
+    def load_skill_body(self, name: str) -> Optional[str]:
+        """Load only the body (content after frontmatter) of a skill."""
+        full_text = self.load_skill_content(name)
+        if full_text is None:
+            return None
+        return self._extract_body(full_text)
+
     @staticmethod
     def _parse_skill_file(path: Path) -> Optional[SkillSummary]:
         text = path.read_text(encoding="utf-8")
@@ -111,7 +121,24 @@ class SkillCatalog:
         if not description:
             description = f"Skill loaded from {path.parent.name}"
 
-        return SkillSummary(name=name, description=description, path=path)
+        mode = str(metadata.get("mode") or "").strip()
+        require_symbol = bool(metadata.get("require_symbol", False))
+        raw_aliases = metadata.get("aliases")
+        if isinstance(raw_aliases, list):
+            aliases = tuple(str(a).strip() for a in raw_aliases if str(a).strip())
+        elif isinstance(raw_aliases, str):
+            aliases = tuple(a.strip() for a in raw_aliases.split(",") if a.strip())
+        else:
+            aliases = ()
+
+        return SkillSummary(
+            name=name,
+            description=description,
+            path=path,
+            mode=mode,
+            require_symbol=require_symbol,
+            aliases=aliases,
+        )
 
     # ------------------------------------------------------------------
     # CRUD operations
@@ -181,9 +208,27 @@ class SkillCatalog:
         return re.sub(r"-+", "-", slug)
 
     @staticmethod
-    def _render_skill_md(name: str, description: str, body: str) -> str:
+    def _render_skill_md(
+        name: str,
+        description: str,
+        body: str,
+        *,
+        mode: str = "",
+        require_symbol: bool = False,
+        aliases: tuple = (),
+    ) -> str:
+        frontmatter_data: Dict[str, object] = {
+            "name": name,
+            "description": description,
+        }
+        if mode:
+            frontmatter_data["mode"] = mode
+        if require_symbol:
+            frontmatter_data["require_symbol"] = require_symbol
+        if aliases:
+            frontmatter_data["aliases"] = list(aliases)
         frontmatter = yaml.safe_dump(
-            {"name": name, "description": description},
+            frontmatter_data,
             allow_unicode=True,
             sort_keys=False,
         ).strip()

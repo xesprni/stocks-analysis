@@ -42,6 +42,7 @@ class OpenAIToolRuntime:
         tool_executor: ToolExecutor,
         max_steps: int,
         max_tool_calls: int,
+        skill_content: Optional[str] = None,
     ) -> Tuple[RuntimeDraft, List[ToolCallTrace]]:
         llm = ChatOpenAI(
             model=model,
@@ -53,7 +54,7 @@ class OpenAIToolRuntime:
         llm_with_tools = llm.bind_tools(tool_specs, tool_choice="auto")
 
         messages: List[Any] = [
-            SystemMessage(content=get_system_prompt_with_tools(tool_specs)),
+            SystemMessage(content=get_system_prompt_with_tools(tool_specs, skill_content=skill_content)),
             HumanMessage(
                 content=json.dumps(
                     {

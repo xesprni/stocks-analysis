@@ -28,8 +28,8 @@ class ReportServiceAgentModesTest(unittest.TestCase):
         original_run = AgentService.run
         original_to_payload = AgentService.to_analysis_payload
 
-        async def fake_run(self, request, provider_cfg, model, api_key, access_token):
-            del self, provider_cfg, model, api_key, access_token
+        async def fake_run(self, request, provider_cfg, model, api_key, **kwargs):
+            del self, provider_cfg, model, api_key, kwargs
             markdown = (
                 "# Agent 分析报告\n\n"
                 f"- 模式: {request.mode}\n\n"

@@ -199,8 +199,8 @@ class ReportServiceTest(unittest.TestCase):
         original_run = AgentService.run
         original_to_payload = AgentService.to_analysis_payload
 
-        async def fake_run(self, request, provider_cfg, model, api_key, access_token):
-            del self, provider_cfg, model, api_key, access_token
+        async def fake_run(self, request, provider_cfg, model, api_key, **kwargs):
+            del self, provider_cfg, model, api_key, kwargs
             markdown = "# Agent 分析报告\\n\\n- 模式: market\\n"
             return AgentRunResult(
                 analysis_input={
@@ -420,8 +420,8 @@ class ReportServiceTest(unittest.TestCase):
         original_run = AgentService.run
         original_to_payload = AgentService.to_analysis_payload
 
-        async def fake_run(self, request, provider_cfg, model, api_key, access_token):
-            del self, provider_cfg, model, api_key, access_token
+        async def fake_run(self, request, provider_cfg, model, api_key, **kwargs):
+            del self, provider_cfg, model, api_key, kwargs
             markdown = f"# Agent 分析报告\n\n- 模式: {request.mode}\n"
             return AgentRunResult(
                 analysis_input={
@@ -547,8 +547,8 @@ class ReportServiceTest(unittest.TestCase):
             selected_model = model or self.config.analysis.default_model
             return provider_cfg, selected_model, None, None
 
-        async def fake_run(self, request, provider_cfg, model, api_key, access_token):
-            del self, provider_cfg, model, api_key, access_token
+        async def fake_run(self, request, provider_cfg, model, api_key, **kwargs):
+            del self, provider_cfg, model, api_key, kwargs
             markdown = f"# Agent 分析报告\n\n- 模式: {request.mode}\n"
             return AgentRunResult(
                 analysis_input={"tool_results": {}},

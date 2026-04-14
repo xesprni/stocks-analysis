@@ -64,6 +64,7 @@ def build_tools_section(tool_specs: Sequence[Dict[str, Any]]) -> str:
 def build_system_prompt(
     tool_specs: Optional[Sequence[Dict[str, Any]]] = None,
     include_output_format: bool = True,
+    skill_content: Optional[str] = None,
 ) -> str:
     """Build the complete system prompt with dynamic tools section."""
     parts = [_BASE_SYSTEM_PROMPT]
@@ -71,11 +72,14 @@ def build_system_prompt(
         parts.append(build_tools_section(tool_specs))
     if include_output_format:
         parts.append(_OUTPUT_FORMAT_SECTION)
+    if skill_content and skill_content.strip():
+        parts.append(f"\n## Skill Instructions\n\n{skill_content.strip()}")
     return "\n".join(parts)
 
 
 def get_system_prompt_with_tools(
     tool_specs: Sequence[Dict[str, Any]],
+    skill_content: Optional[str] = None,
 ) -> str:
     """Return the system prompt with dynamically generated tools section."""
-    return build_system_prompt(tool_specs=tool_specs)
+    return build_system_prompt(tool_specs=tool_specs, skill_content=skill_content)

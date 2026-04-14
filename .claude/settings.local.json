@@ -9,7 +9,10 @@
       "Bash(python3 -c \"import ast; ast.parse\\(open\\(''/Users/miracle/workspace/project/github/stocks-anaylsis/market_reporter/api/skills.py''\\).read\\(\\)\\); print\\(''skills.py: syntax OK''\\)\")",
       "Bash(python3 -c \"import ast; ast.parse\\(open\\(''/Users/miracle/workspace/project/github/stocks-anaylsis/market_reporter/api/__init__.py''\\).read\\(\\)\\); print\\(''__init__.py: syntax OK''\\)\")",
       "Bash(python3:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(git stash:*)",
+      "Bash(git checkout:*)",
+      "Bash(uv run:*)"
     ]
   }
 }

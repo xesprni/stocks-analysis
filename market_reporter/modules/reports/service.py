@@ -12,14 +12,12 @@ from zoneinfo import ZoneInfo
 
 from market_reporter.config import AppConfig
 from market_reporter.infra.http.client import HttpClient
+from market_reporter.modules.analysis.agent.skill_catalog import SkillCatalog
 from market_reporter.modules.analysis.agent.service import AgentService
 from market_reporter.modules.analysis.service import AnalysisService
 from market_reporter.modules.reports.skills import (
-    MarketReportSkill,
     ReportSkillContext,
     ReportSkillRegistry,
-    StockReportSkill,
-    WatchlistReportSkill,
 )
 from market_reporter.schemas import (
     ReportRunDetail,
@@ -48,13 +46,8 @@ class ReportService:
         self._tasks: Dict[str, ReportRunTaskView] = {}
         self._task_user_ids: Dict[str, Optional[int]] = {}
         self._task_handles: Dict[str, asyncio.Task[None]] = {}
-        self.skill_registry = ReportSkillRegistry(
-            skills=[
-                MarketReportSkill(),
-                StockReportSkill(),
-                WatchlistReportSkill(),
-            ]
-        )
+        catalog = SkillCatalog.from_default_path()
+        self.skill_registry = ReportSkillRegistry(catalog=catalog)
 
     async def start_report_async(
         self,

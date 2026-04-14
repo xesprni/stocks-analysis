@@ -65,12 +65,14 @@ class AgentService:
         provider_cfg: AnalysisProviderConfig,
         model: str,
         api_key: Optional[str],
+        skill_content: Optional[str] = None,
     ) -> AgentRunResult:
         return await self.orchestrator.run(
             request=request,
             provider_cfg=provider_cfg,
             model=model,
             api_key=api_key,
+            skill_content=skill_content,
         )
 
     def to_analysis_payload(

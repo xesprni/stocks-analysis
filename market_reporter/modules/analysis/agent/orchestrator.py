@@ -42,6 +42,7 @@ class AgentOrchestrator:
         provider_cfg: AnalysisProviderConfig,
         model: str,
         api_key: Optional[str],
+        skill_content: Optional[str] = None,
     ) -> AgentRunResult:
         question = self._resolve_question(request)
         context = self._build_context(request)
@@ -66,6 +67,7 @@ class AgentOrchestrator:
             tool_executor=executor,
             max_steps=self.config.agent.max_steps,
             max_tool_calls=self.config.agent.max_tool_calls,
+            skill_content=skill_content,
         )
         traces.extend(runtime_traces)
 
