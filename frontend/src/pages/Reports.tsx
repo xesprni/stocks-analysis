@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import type { ReportDetail, ReportSummary, ReportTask } from "@/api/client";
-import { api } from "@/api/client";
+import { api, getReportTaskWebSocketUrl, reportTaskSchema } from "@/api/client";
 import { MarkdownViewer } from "@/components/MarkdownViewer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -118,6 +119,37 @@ function StepCard({ step, index, isLatest }: { step: Record<string, unknown>; in
     );
   }
 
+  if (tool === "__agent_finished__") {
+    const reason = String(args?.reason || "unknown");
+    const reasonText: Record<string, string> = {
+      model_final_response: "模型已返回最终结论",
+      tool_budget_exhausted: "工具调用达到上限",
+      step_budget_exhausted: "LLM 轮次达到上限",
+      wall_timeout: "执行达到时间上限",
+    };
+    return (
+      <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 px-4 py-3 dark:border-emerald-800 dark:bg-emerald-950/30">
+        <div className="flex items-center gap-2">
+          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-600 text-[10px] font-bold text-white">
+            {index + 1}
+          </span>
+          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+          <span className="text-sm font-medium text-emerald-700 dark:text-emerald-300">
+            {reasonText[reason] ?? "Agent 已结束"}
+          </span>
+          <span className="text-xs text-muted-foreground">
+            工具调用 {String(args?.tool_calls ?? 0)} 次
+          </span>
+        </div>
+        {preview?.summary ? (
+          <div className="mt-2 text-xs text-muted-foreground">
+            {String(preview.summary)}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
   return (
     <div className="rounded-lg border border-blue-200 bg-blue-50/50 px-4 py-3 dark:border-blue-800 dark:bg-blue-950/30">
       <div className="flex items-center justify-between gap-2">
@@ -171,12 +203,24 @@ export function ReportsPage({
   onSelectSavedReport,
   onDeleteSavedReport,
 }: Props) {
+  const queryClient = useQueryClient();
   const [tickNow, setTickNow] = useState<number>(() => Date.now());
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [savedReportSelected, setSavedReportSelected] = useState(false);
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
 
   const hasActiveTasks = tasks.some((t) => t.status === "PENDING" || t.status === "RUNNING");
+  const activeTasks = useMemo(
+    () => tasks.filter((t) => t.status === "PENDING" || t.status === "RUNNING"),
+    [tasks]
+  );
+  const completedTasks = useMemo(
+    () => tasks.filter((t) => t.status === "SUCCEEDED" || t.status === "FAILED"),
+    [tasks]
+  );
+  const selectedTask = tasks.find((t) => t.task_id === selectedTaskId);
+  const selectedTaskStatus = selectedTask?.status;
 
   useEffect(() => {
     if (!hasActiveTasks) return;
@@ -184,10 +228,55 @@ export function ReportsPage({
     return () => window.clearInterval(timer);
   }, [hasActiveTasks]);
 
-  const selectedTask = tasks.find((t) => t.task_id === selectedTaskId);
+  useEffect(() => {
+    if (savedReportSelected) {
+      return;
+    }
+    if (selectedTaskId && tasks.some((task) => task.task_id === selectedTaskId)) {
+      return;
+    }
+    const nextTask = activeTasks[0] ?? tasks[0] ?? null;
+    setSelectedTaskId(nextTask?.task_id ?? null);
+  }, [activeTasks, savedReportSelected, selectedTaskId, tasks]);
 
-  const activeTasks = tasks.filter((t) => t.status === "PENDING" || t.status === "RUNNING");
-  const completedTasks = tasks.filter((t) => t.status === "SUCCEEDED" || t.status === "FAILED");
+  useEffect(() => {
+    if (!selectedTaskId || !selectedTaskStatus) {
+      return;
+    }
+    if (selectedTaskStatus !== "PENDING" && selectedTaskStatus !== "RUNNING") {
+      return;
+    }
+
+    const socket = new WebSocket(getReportTaskWebSocketUrl(selectedTaskId));
+    socket.onmessage = (event) => {
+      try {
+        const payload = reportTaskSchema.parse(JSON.parse(event.data));
+        queryClient.setQueryData<ReportTask[]>(["report-tasks"], (current = []) => {
+          let found = false;
+          const next = current.map((task) => {
+            if (task.task_id !== payload.task_id) {
+              return task;
+            }
+            found = true;
+            return payload;
+          });
+          return found ? next : [payload, ...next];
+        });
+        if (payload.status === "SUCCEEDED" || payload.status === "FAILED") {
+          void queryClient.invalidateQueries({ queryKey: ["report-tasks"] });
+        }
+      } catch {
+        // Ignore malformed transient frames; polling remains as a fallback.
+      }
+    };
+    socket.onerror = () => {
+      void queryClient.invalidateQueries({ queryKey: ["report-tasks"] });
+    };
+
+    return () => {
+      socket.close();
+    };
+  }, [queryClient, selectedTaskId, selectedTaskStatus]);
 
   const handleSave = async (taskId: string) => {
     setSaving(true);
@@ -264,7 +353,10 @@ export function ReportsPage({
                   ? "border-blue-400 bg-blue-50 dark:border-blue-700 dark:bg-blue-950/30"
                   : "border-blue-200 bg-blue-50/50 dark:border-blue-800 dark:bg-blue-950/20"
               }`}
-              onClick={() => setSelectedTaskId(task.task_id)}
+              onClick={() => {
+                setSavedReportSelected(false);
+                setSelectedTaskId(task.task_id);
+              }}
             >
               <div className="flex items-center gap-3">
                 {statusBadge(task.status)}
@@ -299,7 +391,10 @@ export function ReportsPage({
                   ? "border-red-200 bg-red-50/50 dark:border-red-800 dark:bg-red-950/20"
                   : "border-border"
               }`}
-              onClick={() => setSelectedTaskId(task.task_id)}
+              onClick={() => {
+                setSavedReportSelected(false);
+                setSelectedTaskId(task.task_id);
+              }}
             >
               <div className="flex items-center gap-3">
                 {statusBadge(task.status)}
@@ -449,12 +544,16 @@ export function ReportsPage({
                 </TableHeader>
                 <TableBody>
                   {reports.map((item) => (
-                    <TableRow
-                      key={item.run_id}
-                      className={`cursor-pointer hover:bg-emerald-50/30 dark:hover:bg-emerald-950/10 ${
-                        item.run_id === selectedRunId ? "bg-emerald-50/60 dark:bg-emerald-950/20" : ""
-                      }`}
-                      onClick={() => onSelectSavedReport(item.run_id)}
+                      <TableRow
+                        key={item.run_id}
+                        className={`cursor-pointer hover:bg-emerald-50/30 dark:hover:bg-emerald-950/10 ${
+                          item.run_id === selectedRunId ? "bg-emerald-50/60 dark:bg-emerald-950/20" : ""
+                        }`}
+                      onClick={() => {
+                        setSavedReportSelected(true);
+                        setSelectedTaskId(null);
+                        onSelectSavedReport(item.run_id);
+                      }}
                     >
                       <TableCell className="font-mono text-xs">{item.run_id}</TableCell>
                       <TableCell>{item.mode || "market"}</TableCell>

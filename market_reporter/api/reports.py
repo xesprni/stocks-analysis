@@ -4,21 +4,63 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    WebSocket,
+    WebSocketDisconnect,
+    status,
+)
 from fastapi.responses import PlainTextResponse
 
-from market_reporter.api.auth import CurrentUser, require_user
+from market_reporter.api.auth import CurrentUser, decode_token, require_user
 from market_reporter.api.deps import get_effective_user_id, get_report_service
+from market_reporter.infra.db.repos import UserRepo
+from market_reporter.infra.db.session import session_scope
 from market_reporter.modules.reports.service import ReportService
 from market_reporter.schemas import (
     ReportRunDetail,
     ReportRunSummary,
     ReportRunTaskView,
+    ReportTaskStatus,
     RunRequest,
     RunResult,
 )
 
 router = APIRouter(prefix="/api", tags=["reports"])
+ws_router = APIRouter(prefix="/api", tags=["reports"])
+
+
+async def _resolve_websocket_user_id(websocket: WebSocket) -> Optional[int]:
+    settings = websocket.app.state.settings
+    if not settings.auth_enabled:
+        return None
+
+    token = websocket.query_params.get("token", "")
+    if not token:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return None
+
+    try:
+        payload = decode_token(token, settings)
+    except HTTPException:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return None
+
+    if payload.get("type") != "access":
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return None
+
+    user_id = int(payload.get("sub", 0) or 0)
+    db_url = websocket.app.state.config_store.load().database.url
+    with session_scope(db_url) as session:
+        user_repo = UserRepo(session)
+        user = user_repo.get(user_id)
+        if user is None or not user.is_active:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return None
+        return user.id
 
 
 @router.post("/reports/run", response_model=RunResult)
@@ -71,6 +113,42 @@ async def get_report_task(
         )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@ws_router.websocket("/reports/tasks/{task_id}/ws")
+async def report_task_websocket(
+    task_id: str,
+    websocket: WebSocket,
+) -> None:
+    user_id = await _resolve_websocket_user_id(websocket)
+    if websocket.app.state.settings.auth_enabled and user_id is None:
+        return
+
+    report_service: ReportService = websocket.app.state.report_service
+    try:
+        queue = await report_service.subscribe_report_task(
+            task_id=task_id,
+            user_id=user_id,
+        )
+    except FileNotFoundError:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
+    await websocket.accept()
+    try:
+        while True:
+            task = await queue.get()
+            await websocket.send_json(task.model_dump(mode="json"))
+            if task.status in {ReportTaskStatus.SUCCEEDED, ReportTaskStatus.FAILED}:
+                break
+    except WebSocketDisconnect:
+        pass
+    finally:
+        await report_service.unsubscribe_report_task(task_id, queue)
+        try:
+            await websocket.close()
+        except RuntimeError:
+            pass
 
 
 @router.get("/reports", response_model=List[ReportRunSummary])

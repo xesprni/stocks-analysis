@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
-import { api, type AppConfig } from "@/api/client";
+import { api, type AppConfig, type ReportTask } from "@/api/client";
 import { useNotifier } from "@/components/ui/notifier";
 import { toErrorMessage } from "@/hooks/useAppQueries";
 
@@ -41,37 +41,22 @@ export function useAppMutations(
         ...reportPayload,
       });
 
-      const deadline = Date.now() + 15 * 60 * 1000;
-      while (Date.now() < deadline) {
-        const snapshot = await api.getReportTask(task.task_id);
-        if (snapshot.status === "SUCCEEDED") {
-          if (snapshot.result) {
-            return snapshot.result;
-          }
-          throw new Error("报告任务已完成，但结果为空。");
-        }
-        if (snapshot.status === "FAILED") {
-          throw new Error(snapshot.error_message || "报告任务失败。");
-        }
-        await new Promise<void>((resolve) => window.setTimeout(resolve, 2000));
-      }
-      throw new Error("报告任务执行超时，请稍后在 Reports 页面检查结果。");
+      return task;
     },
     onMutate: () => {
       notifier.info("报告任务已提交", "后台正在生成，请稍候。");
       void queryClient.invalidateQueries({ queryKey: ["report-tasks"] });
     },
-    onSuccess: async (result) => {
-      await queryClient.invalidateQueries({ queryKey: ["reports"] });
+    onSuccess: async (task) => {
+      queryClient.setQueryData<ReportTask[]>(["report-tasks"], (current = []) => {
+        const withoutTask = current.filter((item) => item.task_id !== task.task_id);
+        return [task, ...withoutTask];
+      });
       await queryClient.invalidateQueries({ queryKey: ["report-tasks"] });
-      setSelectedRunId(result.summary.run_id);
-      setWarningMessage(result.warnings[0] || "");
+      setSelectedRunId("");
+      setWarningMessage("");
       setErrorMessage("");
-      if (result.warnings[0]) {
-        notifier.warning("报告已生成（存在告警）", result.warnings[0]);
-      } else {
-        notifier.success("报告已生成");
-      }
+      notifier.success("报告任务已开始", `任务 ${task.task_id.slice(0, 12)}...`);
     },
     onError: (error) => {
       setWarningMessage("");

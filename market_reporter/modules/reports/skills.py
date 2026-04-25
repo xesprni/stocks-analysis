@@ -71,6 +71,7 @@ class CatalogReportSkill:
             selected_model=context.selected_model,
             api_key=context.api_key,
             skill_content=self._skill_content,
+            on_step=context.on_step,
         )
         return await _run_single_agent_report(
             context=context,

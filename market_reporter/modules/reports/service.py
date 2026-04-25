@@ -6,7 +6,7 @@ import logging
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
@@ -46,6 +46,9 @@ class ReportService:
         self._tasks: Dict[str, ReportRunTaskView] = {}
         self._task_user_ids: Dict[str, Optional[int]] = {}
         self._task_handles: Dict[str, asyncio.Task[None]] = {}
+        self._task_subscribers: Dict[
+            str, Set[asyncio.Queue[ReportRunTaskView]]
+        ] = {}
         catalog = SkillCatalog.from_default_path()
         self.skill_registry = ReportSkillRegistry(catalog=catalog)
 
@@ -103,6 +106,36 @@ class ReportService:
         tasks.sort(key=lambda t: t.created_at, reverse=True)
         return tasks
 
+    async def subscribe_report_task(
+        self,
+        task_id: str,
+        user_id: Optional[int] = None,
+    ) -> asyncio.Queue[ReportRunTaskView]:
+        queue: asyncio.Queue[ReportRunTaskView] = asyncio.Queue(maxsize=20)
+        async with self._task_lock:
+            task = self._tasks.get(task_id)
+            if task is None:
+                raise FileNotFoundError(f"Report task not found: {task_id}")
+            owner = self._task_user_ids.get(task_id)
+            if owner != user_id:
+                raise FileNotFoundError(f"Report task not found: {task_id}")
+            self._task_subscribers.setdefault(task_id, set()).add(queue)
+            queue.put_nowait(task)
+        return queue
+
+    async def unsubscribe_report_task(
+        self,
+        task_id: str,
+        queue: asyncio.Queue[ReportRunTaskView],
+    ) -> None:
+        async with self._task_lock:
+            subscribers = self._task_subscribers.get(task_id)
+            if not subscribers:
+                return
+            subscribers.discard(queue)
+            if not subscribers:
+                self._task_subscribers.pop(task_id, None)
+
     async def _run_background_task(
         self,
         task_id: str,
@@ -116,15 +149,31 @@ class ReportService:
             error_message=None,
         )
         try:
+            if getattr(self.run_report, "__func__", None) is not ReportService.run_report:
+                result = await self.run_report(overrides=overrides, user_id=user_id)
+                await self._update_task(
+                    task_id=task_id,
+                    status=ReportTaskStatus.SUCCEEDED,
+                    finished_at=datetime.now(timezone.utc),
+                    result=result,
+                    error_message=None,
+                )
+                return
+
             markdown, raw_data = await self.run_report_temp(
                 overrides=overrides,
                 user_id=user_id,
                 on_step=self._make_step_callback(task_id),
             )
+            result = self._build_task_result(
+                task_id=task_id,
+                raw_data=raw_data,
+            )
             await self._update_task(
                 task_id=task_id,
                 status=ReportTaskStatus.SUCCEEDED,
                 finished_at=datetime.now(timezone.utc),
+                result=result,
                 error_message=None,
                 report_markdown=markdown,
                 raw_data=raw_data,
@@ -146,6 +195,7 @@ class ReportService:
                 steps = list(task.steps)
                 steps.append(step)
                 self._tasks[task_id] = task.model_copy(update={"steps": steps})
+                self._publish_task_locked(task_id)
         return on_step
 
     async def _update_task(
@@ -180,6 +230,48 @@ class ReportService:
             if raw_data is not None:
                 update_payload["raw_data"] = raw_data
             self._tasks[task_id] = task.model_copy(update=update_payload)
+            self._publish_task_locked(task_id)
+
+    def _publish_task_locked(self, task_id: str) -> None:
+        task = self._tasks.get(task_id)
+        if task is None:
+            return
+        for queue in list(self._task_subscribers.get(task_id, set())):
+            try:
+                queue.put_nowait(task)
+            except asyncio.QueueFull:
+                try:
+                    queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    pass
+                try:
+                    queue.put_nowait(task)
+                except asyncio.QueueFull:
+                    pass
+
+    def _build_task_result(
+        self,
+        *,
+        task_id: str,
+        raw_data: Dict[str, Any],
+    ) -> RunResult:
+        summary_fields = self._extract_summary_fields(raw_data)
+        warnings = raw_data.get("warnings", [])
+        warning_list = warnings if isinstance(warnings, list) else []
+        summary = ReportRunSummary(
+            run_id=task_id,
+            generated_at=str(raw_data.get("generated_at") or ""),
+            report_path=Path("in-memory") / task_id / "report.md",
+            raw_data_path=Path("in-memory") / task_id / "raw_data.json",
+            warnings_count=len(warning_list),
+            news_total=int(raw_data.get("news_total") or 0),
+            provider_id=str(raw_data.get("provider_id") or ""),
+            model=str(raw_data.get("model") or ""),
+            confidence=summary_fields["confidence"],
+            sentiment=summary_fields["sentiment"],
+            mode=summary_fields["mode"],
+        )
+        return RunResult(summary=summary, warnings=warning_list)
 
     def _resolve_telegram_notifier(
         self,

@@ -69,9 +69,11 @@ class AgentService:
         provider_cfg: AnalysisProviderConfig,
         model: str,
         api_key: Optional[str],
+        access_token: Optional[str] = None,
         skill_content: Optional[str] = None,
         on_step: Optional[Any] = None,
     ) -> AgentRunResult:
+        del access_token
         await self._load_mcp_tools()
         try:
             return await self.orchestrator.run(
@@ -133,9 +135,17 @@ class AgentService:
         # Extract data from get_metrics tool results
         strategy = {}
         signal_timeline = []
+        technical_analysis = {}
         if isinstance(metrics_payload, dict):
             strategy = metrics_payload.get("strategy", {})
             signal_timeline = metrics_payload.get("signal_timeline", [])
+        compute_payload = tool_results.get("compute_indicators")
+        if isinstance(compute_payload, dict):
+            technical_analysis = compute_payload
+            if not strategy:
+                strategy = compute_payload.get("strategy", {})
+            if not signal_timeline:
+                signal_timeline = compute_payload.get("signal_timeline", [])
 
         output = AnalysisOutput(
             summary=run_result.runtime_draft.summary,
@@ -147,6 +157,7 @@ class AgentService:
             markdown=run_result.final_report.markdown,
             raw={
                 "metrics_data": metrics_payload,
+                "technical_analysis": technical_analysis,
                 "strategy": strategy,
                 "signal_timeline": signal_timeline,
                 "tool_calls": [

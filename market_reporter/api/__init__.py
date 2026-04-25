@@ -113,6 +113,7 @@ def create_app() -> FastAPI:
     app.include_router(news_sources.router, dependencies=protected_deps)
     app.include_router(news_feed.router, dependencies=protected_deps)
     app.include_router(reports.router, dependencies=protected_deps)
+    app.include_router(reports.ws_router)
     app.include_router(watchlist.router, dependencies=protected_deps)
     app.include_router(stocks.router, dependencies=protected_deps)
     app.include_router(providers.router, dependencies=protected_deps)

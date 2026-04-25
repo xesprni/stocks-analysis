@@ -39,10 +39,18 @@ class AnalysisService:
         self,
         config: AppConfig,
         user_id: Optional[int] = None,
+        registry: Optional[Any] = None,
+        news_service: Optional[Any] = None,
+        fund_flow_service: Optional[Any] = None,
+        market_data_service: Optional[Any] = None,
         keychain_store: Optional[KeychainStore] = None,
     ) -> None:
         self.config = config
         self.user_id = user_id
+        self.registry = registry
+        self.news_service = news_service
+        self.fund_flow_service = fund_flow_service
+        self.market_data_service = market_data_service
         self.keychain_store = keychain_store or KeychainStore(
             database_url=config.database.url
         )
@@ -56,6 +64,8 @@ class AnalysisService:
         with session_scope(self.config.database.url) as session:
             secret_repo = AnalysisProviderSecretRepo(session)
             for provider in self.config.analysis.providers:
+                auth_mode = self._provider_auth_mode(provider)
+                secret_required = self._provider_secret_required(provider)
                 has_secret = (
                     secret_repo.get(
                         provider.provider_id,
@@ -64,7 +74,12 @@ class AnalysisService:
                     is not None
                 )
                 has_base_url = bool((provider.base_url or "").strip())
-                ready = provider.enabled and bool(provider.models) and has_secret and has_base_url
+                ready, status, status_message, connected = self._provider_status(
+                    provider=provider,
+                    has_secret=has_secret,
+                    has_base_url=has_base_url,
+                    secret_required=secret_required,
+                )
                 providers.append(
                     AnalysisProviderView(
                         provider_id=provider.provider_id,
@@ -74,14 +89,14 @@ class AnalysisService:
                         timeout=provider.timeout,
                         enabled=provider.enabled,
                         has_secret=has_secret,
-                        secret_required=True,
+                        secret_required=secret_required,
                         ready=ready,
-                        status="ready" if ready else "not-ready",
-                        status_message="Provider is ready." if ready else "API key or configuration missing.",
+                        status=status,
+                        status_message=status_message,
                         is_default=provider.provider_id
                         == self.config.analysis.default_provider,
-                        auth_mode="api_key",
-                        connected=has_secret,
+                        auth_mode=auth_mode,
+                        connected=connected,
                         credential_expires_at=None,
                     )
                 )
@@ -154,11 +169,11 @@ class AnalysisService:
 
         try:
             api_key = self._resolve_api_key(provider_cfg=provider_cfg)
-            if not api_key:
+            if self._provider_secret_required(provider_cfg) and not api_key:
                 raise ValueError("Provider API key is not configured.")
 
             client = AsyncOpenAI(
-                api_key=api_key,
+                api_key=api_key or "not-required",
                 base_url=provider_cfg.base_url,
                 timeout=max(3, min(provider_cfg.timeout, 20)),
             )
@@ -202,6 +217,29 @@ class AnalysisService:
             source="config",
         )
 
+    async def get_provider_auth_status(self, provider_id: str):
+        from market_reporter.modules.analysis.schemas import ProviderAuthStatusView
+
+        provider = self._find_provider(provider_id)
+        auth_mode = self._provider_auth_mode(provider)
+        has_secret = self._has_secret(provider.provider_id)
+        has_base_url = bool((provider.base_url or "").strip())
+        secret_required = self._provider_secret_required(provider)
+        ready, status, message, connected = self._provider_status(
+            provider=provider,
+            has_secret=has_secret,
+            has_base_url=has_base_url,
+            secret_required=secret_required,
+        )
+        return ProviderAuthStatusView(
+            provider_id=provider.provider_id,
+            auth_mode=auth_mode,
+            connected=connected or ready,
+            status=status,
+            message=message,
+            expires_at=None,
+        )
+
     # ------------------------------------------------------------------
     # Stock analysis (core)
     # ------------------------------------------------------------------
@@ -212,15 +250,19 @@ class AnalysisService:
         model: Optional[str] = None,
     ) -> AnalysisProviderConfig:
         provider = self._find_provider(provider_id)
+        auth_mode = self._provider_auth_mode(provider)
+        secret_required = self._provider_secret_required(provider)
         has_secret = self._has_secret(provider.provider_id)
         has_base_url = bool((provider.base_url or "").strip())
         if not provider.enabled:
             raise ValueError("Provider is disabled in config.")
         if not provider.models:
             raise ValueError("No available models configured for this provider.")
+        if auth_mode == "chatgpt_oauth":
+            raise ValueError("Provider login is required.")
         if not has_base_url:
             raise ValueError("Provider base_url is not configured.")
-        if not has_secret:
+        if secret_required and not has_secret:
             raise ValueError("Provider API key is not configured.")
         if model and provider.models and model not in provider.models:
             raise ValueError(f"Model not found in provider models: {model}")
@@ -271,6 +313,7 @@ class AnalysisService:
             provider_cfg=provider_cfg,
             model=selected_model,
             api_key=api_key,
+            access_token=access_token,
         )
         payload, output = agent_service.to_analysis_payload(
             request=agent_request,
@@ -405,6 +448,36 @@ class AnalysisService:
             secret_repo = AnalysisProviderSecretRepo(session)
             return secret_repo.get(provider_id, user_id=self.user_id) is not None
 
+    @staticmethod
+    def _provider_auth_mode(provider: AnalysisProviderConfig) -> str:
+        return str(provider.auth_mode or "api_key").strip() or "api_key"
+
+    @classmethod
+    def _provider_secret_required(cls, provider: AnalysisProviderConfig) -> bool:
+        return cls._provider_auth_mode(provider) == "api_key"
+
+    @classmethod
+    def _provider_status(
+        cls,
+        *,
+        provider: AnalysisProviderConfig,
+        has_secret: bool,
+        has_base_url: bool,
+        secret_required: bool,
+    ) -> Tuple[bool, str, str, bool]:
+        auth_mode = cls._provider_auth_mode(provider)
+        if not provider.enabled:
+            return False, "disabled", "Provider is disabled.", False
+        if not provider.models:
+            return False, "missing-model", "No available models configured.", False
+        if auth_mode == "chatgpt_oauth":
+            return False, "login-required", "Provider login is required.", False
+        if not has_base_url:
+            return False, "missing-base-url", "Provider base_url is not configured.", False
+        if secret_required and not has_secret:
+            return False, "missing-secret", "Provider API key is not configured.", False
+        return True, "ready", "Provider is ready.", (has_secret or not secret_required)
+
     def _find_provider(self, provider_id: str) -> AnalysisProviderConfig:
         for provider in self.config.analysis.providers:
             if provider.provider_id == provider_id:
@@ -440,7 +513,11 @@ class AnalysisService:
         selected_model = model or self.config.analysis.default_model
         if not selected_model and provider_cfg.models:
             selected_model = provider_cfg.models[0]
-        if selected_model not in provider_cfg.models and provider_cfg.models:
+        if (
+            selected_model not in provider_cfg.models
+            and provider_cfg.models
+            and self._provider_auth_mode(provider_cfg) != "chatgpt_oauth"
+        ):
             selected_model = provider_cfg.models[0]
         return provider_cfg, selected_model
 

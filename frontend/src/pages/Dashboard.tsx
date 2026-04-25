@@ -1,6 +1,6 @@
 import { memo, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Activity, BarChart3, Gauge, Globe2, Loader2, RefreshCw, TrendingDown, TrendingUp } from "lucide-react";
+import { Activity, BarChart3, Gauge, Globe2, ListChecks, Loader2, RefreshCw, TrendingDown, TrendingUp } from "lucide-react";
 
 import { api } from "@/api/client";
 import type {
@@ -12,6 +12,7 @@ import { WatchlistIntradayCards } from "@/components/dashboard/WatchlistIntraday
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useNotifier } from "@/components/ui/notifier";
 import { Rocket } from "lucide-react";
 
@@ -403,98 +404,115 @@ export function DashboardPage({ onRunMarketReport, onAnalyzeStock }: DashboardPr
         </Card>
       </div>
 
-      {indicesErrorText ? (
-        <Card className="border-destructive/40 bg-destructive/10">
-          <CardContent className="py-3 text-sm text-destructive">指数指标加载失败：{indicesErrorText}</CardContent>
-        </Card>
-      ) : null}
+      <Tabs defaultValue="market" className="space-y-4">
+        <TabsList className="grid w-full max-w-md grid-cols-2 rounded-xl border bg-card p-1">
+          <TabsTrigger value="market" className="gap-2">
+            <Globe2 className="h-4 w-4" />
+            市场监控
+          </TabsTrigger>
+          <TabsTrigger value="stocks" className="gap-2">
+            <ListChecks className="h-4 w-4" />
+            个股监控
+          </TabsTrigger>
+        </TabsList>
 
-      {indicesQuery.isFetching && !indices.length ? (
-        <Card>
-          <CardContent className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            指标卡片异步加载中...
-          </CardContent>
-        </Card>
-      ) : null}
+        <TabsContent value="market" className="mt-0 space-y-4">
+          {indicesErrorText ? (
+            <Card className="border-destructive/40 bg-destructive/10">
+              <CardContent className="py-3 text-sm text-destructive">指数指标加载失败：{indicesErrorText}</CardContent>
+            </Card>
+          ) : null}
 
-      {MARKET_META.map((meta) => {
-        const items = indicesByMarket[meta.key];
-        if (!items?.length) return null;
-        const MarketIcon = meta.icon;
-        return (
-          <Card key={meta.key} className={meta.sectionClass}>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <MarketIcon className="h-4 w-4" />
-                  {meta.label}
-                  <Badge variant="outline" className="ml-1 text-[10px]">
-                    {meta.labelEn}
-                  </Badge>
-                </CardTitle>
-                {onRunMarketReport && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => onRunMarketReport(meta.key)}
-                  >
-                    <Rocket className="mr-1 h-3.5 w-3.5" />
-                    市场分析
-                  </Button>
-                )}
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                {items.map((item) => (
-                  <IndexCard key={`${item.symbol}-${item.market}`} item={item} />
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        );
-      })}
+          {indicesQuery.isFetching && !indices.length ? (
+            <Card>
+              <CardContent className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                指标卡片异步加载中...
+              </CardContent>
+            </Card>
+          ) : null}
 
-      {Object.entries(indicesByMarket)
-        .filter(([key]) => !MARKET_META.some((m) => m.key === key))
-        .map(([key, items]) => (
-          <Card key={key} className="border-slate-200/60 bg-gradient-to-br from-white to-slate-50/40 dark:from-slate-900 dark:to-slate-950/20">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Gauge className="h-4 w-4" />
-                {key} 市场
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                {items.map((item) => (
-                  <IndexCard key={`${item.symbol}-${item.market}`} item={item} />
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+          {MARKET_META.map((meta) => {
+            const items = indicesByMarket[meta.key];
+            if (!items?.length) return null;
+            const MarketIcon = meta.icon;
+            return (
+              <Card key={meta.key} className={meta.sectionClass}>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <MarketIcon className="h-4 w-4" />
+                      {meta.label}
+                      <Badge variant="outline" className="ml-1 text-[10px]">
+                        {meta.labelEn}
+                      </Badge>
+                    </CardTitle>
+                    {onRunMarketReport && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => onRunMarketReport(meta.key)}
+                      >
+                        <Rocket className="mr-1 h-3.5 w-3.5" />
+                        市场分析
+                      </Button>
+                    )}
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                    {items.map((item) => (
+                      <IndexCard key={`${item.symbol}-${item.market}`} item={item} />
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
 
-      {!indices.length && !indicesQuery.isFetching && !indicesErrorText ? (
-        <Card>
-          <CardContent className="py-8 text-center text-sm text-muted-foreground">
-            暂无指数配置，请前往 Config 页面配置 `dashboard.indices`。
-          </CardContent>
-        </Card>
-      ) : null}
+          {Object.entries(indicesByMarket)
+            .filter(([key]) => !MARKET_META.some((m) => m.key === key))
+            .map(([key, items]) => (
+              <Card key={key} className="border-slate-200/60 bg-gradient-to-br from-white to-slate-50/40 dark:from-slate-900 dark:to-slate-950/20">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <Gauge className="h-4 w-4" />
+                    {key} 市场
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                    {items.map((item) => (
+                      <IndexCard key={`${item.symbol}-${item.market}`} item={item} />
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
 
-      <WatchlistIntradayCards
-        rows={watchlistRows}
-        pagination={pagination}
-        page={page}
-        pageSize={pageSize}
-        setPage={setPage}
-        setPageSize={setPageSize}
-        isFetching={watchlistQuery.isFetching}
-        errorText={watchlistErrorText}
-        onAnalyze={onAnalyzeStock}
-      />
+          {!indices.length && !indicesQuery.isFetching && !indicesErrorText ? (
+            <Card>
+              <CardContent className="py-8 text-center text-sm text-muted-foreground">
+                暂无指数配置，请前往 Config 页面配置 `dashboard.indices`。
+              </CardContent>
+            </Card>
+          ) : null}
+        </TabsContent>
+
+        <TabsContent value="stocks" className="mt-0">
+          <WatchlistIntradayCards
+            rows={watchlistRows}
+            pagination={pagination}
+            page={page}
+            pageSize={pageSize}
+            setPage={setPage}
+            setPageSize={setPageSize}
+            isFetching={watchlistQuery.isFetching}
+            errorText={watchlistErrorText}
+            onAnalyze={onAnalyzeStock}
+          />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

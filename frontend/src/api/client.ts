@@ -80,6 +80,19 @@ export function isAuthenticated(): boolean {
 
 const apiBase = import.meta.env.VITE_API_BASE_URL ?? "/api";
 
+export function getReportTaskWebSocketUrl(taskId: string): string {
+  const url = new URL(
+    `${apiBase}/reports/tasks/${encodeURIComponent(taskId)}/ws`,
+    window.location.origin
+  );
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  const token = getStoredToken();
+  if (token) {
+    url.searchParams.set("token", token);
+  }
+  return url.toString();
+}
+
 async function request<S extends z.ZodTypeAny>(path: string, schema: S, init?: RequestInit): Promise<z.output<S>> {
   const token = getStoredToken();
   const headers: HeadersInit = {
