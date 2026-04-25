@@ -116,13 +116,18 @@ class ReportService:
             error_message=None,
         )
         try:
-            result = await self.run_report(overrides=overrides, user_id=user_id)
+            markdown, raw_data = await self.run_report_temp(
+                overrides=overrides,
+                user_id=user_id,
+                on_step=self._make_step_callback(task_id),
+            )
             await self._update_task(
                 task_id=task_id,
                 status=ReportTaskStatus.SUCCEEDED,
                 finished_at=datetime.now(timezone.utc),
-                result=result,
                 error_message=None,
+                report_markdown=markdown,
+                raw_data=raw_data,
             )
         except Exception as exc:
             await self._update_task(
@@ -132,6 +137,17 @@ class ReportService:
                 error_message=str(exc),
             )
 
+    def _make_step_callback(self, task_id: str):
+        async def on_step(step: dict) -> None:
+            async with self._task_lock:
+                task = self._tasks.get(task_id)
+                if task is None:
+                    return
+                steps = list(task.steps)
+                steps.append(step)
+                self._tasks[task_id] = task.model_copy(update={"steps": steps})
+        return on_step
+
     async def _update_task(
         self,
         task_id: str,
@@ -140,12 +156,13 @@ class ReportService:
         finished_at: Optional[datetime] = None,
         result: Optional[RunResult] = None,
         error_message: Optional[str] = None,
+        report_markdown: Optional[str] = None,
+        raw_data: Optional[Dict[str, Any]] = None,
     ) -> None:
         async with self._task_lock:
             task = self._tasks.get(task_id)
             if task is None:
                 return
-            # Copy-update keeps Pydantic model immutable semantics explicit.
             update_payload = {
                 "status": status,
                 "error_message": error_message
@@ -158,6 +175,10 @@ class ReportService:
                 update_payload["finished_at"] = finished_at
             if result is not None:
                 update_payload["result"] = result
+            if report_markdown is not None:
+                update_payload["report_markdown"] = report_markdown
+            if raw_data is not None:
+                update_payload["raw_data"] = raw_data
             self._tasks[task_id] = task.model_copy(update=update_payload)
 
     def _resolve_telegram_notifier(
@@ -205,6 +226,153 @@ class ReportService:
             )
         except Exception as exc:
             logger.warning("telegram failure notify failed: %s", exc)
+
+    async def run_report_temp(
+        self,
+        overrides: Optional[RunRequest] = None,
+        user_id: Optional[int] = None,
+        on_step: Optional[Any] = None,
+    ) -> tuple[str, Dict[str, Any]]:
+        """Execute agent analysis without persisting to filesystem.
+
+        Returns (markdown, raw_data) for in-memory storage.
+        """
+        requested_mode = (
+            (overrides.mode if overrides else "market") or "market"
+        ).lower()
+        requested_skill_id = overrides.skill_id if overrides else None
+
+        try:
+            config = self._build_runtime_config(overrides=overrides, user_id=user_id)
+            generated_at = self._now_iso8601(config.timezone)
+
+            warnings: List[str] = []
+            resolved_skill = self.skill_registry.resolve(
+                skill_id=requested_skill_id,
+                mode=requested_mode,
+            )
+            provider_id = ""
+            model = ""
+            analysis_payload: Dict[str, object] = {}
+            markdown = ""
+            async with HttpClient(
+                timeout_seconds=config.request_timeout_seconds,
+                user_agent=config.user_agent,
+            ) as client:
+                analysis_service = AnalysisService(
+                    config=config,
+                    user_id=user_id,
+                )
+                requested_provider = overrides.provider_id if overrides else None
+                requested_model = overrides.model if overrides else None
+                provider_cfg, selected_model, api_key, _ = (
+                    analysis_service.resolve_credentials(
+                        provider_id=requested_provider,
+                        model=requested_model,
+                    )
+                )
+                provider_id = provider_cfg.provider_id
+                model = selected_model
+
+                agent_service = AgentService(config=config, user_id=user_id)
+                skill_result = await resolved_skill.run(
+                    ReportSkillContext(
+                        config=config,
+                        overrides=overrides,
+                        generated_at=generated_at,
+                        agent_service=agent_service,
+                        provider_cfg=provider_cfg,
+                        selected_model=selected_model,
+                        api_key=api_key,
+                        on_step=on_step,
+                    )
+                )
+                markdown = skill_result.markdown
+                analysis_payload = skill_result.analysis_payload
+                warnings.extend(skill_result.warnings)
+
+            raw_data = {
+                "generated_at": generated_at,
+                "mode": skill_result.mode,
+                "skill_id": skill_result.skill_id,
+                "provider_id": provider_id,
+                "model": model,
+                "analysis": analysis_payload,
+                "warnings": warnings,
+            }
+            return markdown, raw_data
+        except Exception as exc:
+            await self._notify_report_failed(
+                error=str(exc),
+                mode=requested_mode,
+                skill_id=requested_skill_id,
+                user_id=user_id,
+            )
+            raise
+
+    async def save_report(
+        self,
+        task_id: str,
+        user_id: Optional[int] = None,
+    ) -> ReportRunSummary:
+        """Persist an in-memory task result to filesystem."""
+        async with self._task_lock:
+            task = self._tasks.get(task_id)
+            if task is None:
+                raise FileNotFoundError(f"Report task not found: {task_id}")
+            owner = self._task_user_ids.get(task_id)
+            if owner != user_id:
+                raise FileNotFoundError(f"Report task not found: {task_id}")
+            if task.status != ReportTaskStatus.SUCCEEDED:
+                raise ValueError(f"Task {task_id} has not succeeded (status={task.status.value})")
+            if not task.report_markdown:
+                raise ValueError(f"Task {task_id} has no report content")
+
+            markdown = task.report_markdown
+            raw_data = task.raw_data or {}
+
+        config = self._load_config(user_id=user_id)
+        config.ensure_output_root()
+        config.ensure_data_root()
+
+        run_output_root = self._resolve_output_root(config=config, user_id=user_id)
+        run_dir = self._build_run_dir(output_root=run_output_root)
+        report_path = run_dir / "report.md"
+        raw_path = run_dir / "raw_data.json"
+        meta_path = run_dir / "meta.json"
+
+        report_path.write_text(markdown, encoding="utf-8")
+        raw_path.write_text(
+            json.dumps(raw_data, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+        summary_fields = self._extract_summary_fields(raw_data)
+        summary = ReportRunSummary(
+            run_id=run_dir.name,
+            generated_at=raw_data.get("generated_at", ""),
+            report_path=report_path.resolve(),
+            raw_data_path=raw_path.resolve(),
+            warnings_count=len(raw_data.get("warnings", [])),
+            news_total=raw_data.get("news_total", 0),
+            provider_id=raw_data.get("provider_id", ""),
+            model=raw_data.get("model", ""),
+            confidence=summary_fields["confidence"],
+            sentiment=summary_fields["sentiment"],
+            mode=summary_fields["mode"],
+        )
+        meta_path.write_text(
+            json.dumps(
+                {"summary": summary.model_dump(mode="json"), "warnings": raw_data.get("warnings", [])},
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+        result = RunResult(summary=summary, warnings=raw_data.get("warnings", []))
+        await self._notify_report_succeeded(result=result, user_id=user_id)
+        return summary
 
     async def run_report(
         self,

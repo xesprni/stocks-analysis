@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import asyncio
+import logging
+import time
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Dict, List, Tuple
 
@@ -19,10 +21,13 @@ from market_reporter.modules.analysis.prompt_builder import get_system_prompt_wi
 
 ToolExecutor = Callable[[str, Dict[str, Any]], Awaitable[Dict[str, Any]]]
 
+logger = logging.getLogger(__name__)
+
 
 class OpenAIToolRuntime:
     MAX_RETRIES_PER_TOOL_SIGNATURE = 2
     MAX_MODEL_CALL_RETRIES = 2
+    DEFAULT_WALL_TIMEOUT_SECONDS = 300  # 5 minutes hard cap
 
     def __init__(
         self,
@@ -43,6 +48,8 @@ class OpenAIToolRuntime:
         max_steps: int,
         max_tool_calls: int,
         skill_content: Optional[str] = None,
+        on_step: Optional[Any] = None,
+        wall_timeout_seconds: float = DEFAULT_WALL_TIMEOUT_SECONDS,
     ) -> Tuple[RuntimeDraft, List[ToolCallTrace]]:
         llm = ChatOpenAI(
             model=model,
@@ -76,12 +83,42 @@ class OpenAIToolRuntime:
         content_text = ""
         structured: Dict[str, Any] | None = None
         tool_attempts: Dict[str, int] = {}
+        wall_deadline = time.monotonic() + wall_timeout_seconds
 
-        for _ in range(max_steps):
+        for step_idx in range(max_steps):
+            # Wall-clock timeout check
+            elapsed_total = time.monotonic() - (wall_deadline - wall_timeout_seconds)
+            if time.monotonic() >= wall_deadline:
+                logger.warning(
+                    "Agent wall timeout (%.0fs) exceeded after step %d (%d tool calls)",
+                    wall_timeout_seconds, step_idx, used_calls,
+                )
+                if not structured and traces:
+                    structured = self._wall_timeout_payload(
+                        elapsed_seconds=elapsed_total,
+                        step=step_idx,
+                        tool_calls=used_calls,
+                    )
+                break
+
+            # Notify: model thinking
+            if on_step is not None:
+                try:
+                    await on_step({
+                        "tool": "__model_thinking__",
+                        "arguments": {"step": step_idx + 1, "max_steps": max_steps},
+                        "result_preview": {},
+                        "status": "thinking",
+                    })
+                except Exception:
+                    pass
+
+            t_model_start = time.monotonic()
             response = await self._invoke_model_with_retry(
                 llm_with_tools=llm_with_tools,
                 messages=messages,
             )
+            model_ms = int((time.monotonic() - t_model_start) * 1000)
             tool_calls = list(getattr(response, "tool_calls", []) or [])
 
             if tool_calls:
@@ -103,6 +140,7 @@ class OpenAIToolRuntime:
 
                     attempt_key = self._tool_attempt_key(name=name, arguments=arguments)
                     seen = tool_attempts.get(attempt_key, 0)
+                    tool_ms: int | None = None
                     if seen >= self.MAX_RETRIES_PER_TOOL_SIGNATURE:
                         result = self._tool_retry_limit_result(
                             name=name,
@@ -111,19 +149,26 @@ class OpenAIToolRuntime:
                         )
                     else:
                         tool_attempts[attempt_key] = seen + 1
+                        t_tool_start = time.monotonic()
                         try:
                             result = await tool_executor(name, arguments)
                         except Exception as exc:
                             result = self._tool_error_result(name=name, exc=exc)
+                        tool_ms = int((time.monotonic() - t_tool_start) * 1000)
                     result = self._normalize_tool_result(name=name, result=result)
                     used_calls += 1
-                    traces.append(
-                        ToolCallTrace(
-                            tool=name,
-                            arguments=arguments,
-                            result_preview=self._preview_result(result),
-                        )
+                    trace = ToolCallTrace(
+                        tool=name,
+                        arguments=arguments,
+                        result_preview=self._preview_result(result),
+                        duration_ms=tool_ms,
                     )
+                    traces.append(trace)
+                    if on_step is not None:
+                        try:
+                            await on_step(trace.model_dump())
+                        except Exception:
+                            pass
                     call_id = str(call.get("id") or f"tool_call_{used_calls}")
                     messages.append(
                         ToolMessage(
@@ -278,6 +323,30 @@ class OpenAIToolRuntime:
             "retrieved_at": timestamp,
             "warnings": ["tool_result_invalid"],
             "raw": result,
+        }
+
+    @staticmethod
+    def _wall_timeout_payload(
+        *,
+        elapsed_seconds: float,
+        step: int,
+        tool_calls: int,
+    ) -> Dict[str, Any]:
+        summary = (
+            f"Agent 执行超时（{elapsed_seconds:.0f}s），已完成 {step} 轮、{tool_calls} 次工具调用。"
+            "以下报告基于已收集证据自动整理。"
+        )
+        return {
+            "summary": summary,
+            "sentiment": "neutral",
+            "key_levels": [],
+            "risks": ["Agent 执行超时，分析可能不完整。"],
+            "action_items": ["检查 LLM provider 响应速度，或降低 max_steps。"],
+            "confidence": 0.3,
+            "conclusions": [summary],
+            "scenario_assumptions": {},
+            "markdown": summary,
+            "wall_timeout": True,
         }
 
     @staticmethod

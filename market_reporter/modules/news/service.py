@@ -88,6 +88,7 @@ class NewsService:
                 link=item.link,
                 published=item.published,
                 fetched_at=fetched_at,
+                content=item.content,
             )
             for item in data
         ]

@@ -96,6 +96,23 @@ async def get_report(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+@router.post("/reports/tasks/{task_id}/save", response_model=ReportRunSummary)
+async def save_report(
+    task_id: str,
+    report_service: ReportService = Depends(get_report_service),
+    user: CurrentUser = Depends(require_user),
+) -> ReportRunSummary:
+    try:
+        return await report_service.save_report(
+            task_id=task_id,
+            user_id=get_effective_user_id(user),
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.delete("/reports/{run_id}")
 async def delete_report(
     run_id: str,

@@ -110,6 +110,10 @@ def _ensure_sqlite_columns(engine) -> None:
             connection.exec_driver_sql(
                 "ALTER TABLE watchlist_items ADD COLUMN user_id INTEGER REFERENCES users(id)"
             )
+        if "sort_order" not in columns:
+            connection.exec_driver_sql(
+                "ALTER TABLE watchlist_items ADD COLUMN sort_order INTEGER DEFAULT 0"
+            )
 
         try:
             lb_columns = {

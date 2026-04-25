@@ -44,8 +44,6 @@ export function useAppQueries(
     queryFn: api.listReportTasks,
     enabled,
     refetchInterval: (query) => {
-      // Only poll when reports or report-runner tab is active
-      if (activeTab !== "reports" && activeTab !== "report-runner") return false;
       const data = query.state.data;
       if (data?.some((t) => t.status === "PENDING" || t.status === "RUNNING")) {
         return 2000;

@@ -5,6 +5,7 @@ import type { DashboardWatchlistMetric, Pagination } from "@/api/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Search } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { buildWatchlistCards, type WatchlistCardViewModel } from "@/lib/watchlistSignal";
 
@@ -17,6 +18,7 @@ type Props = {
   setPageSize: Dispatch<SetStateAction<number>>;
   isFetching: boolean;
   errorText?: string;
+  onAnalyze?: (symbol: string, market: string) => void;
 };
 
 function toneClassBySignal(level: WatchlistCardViewModel["signalLevel"]): string {
@@ -77,6 +79,7 @@ export const WatchlistIntradayCards = memo(function WatchlistIntradayCards({
   setPageSize,
   isFetching,
   errorText,
+  onAnalyze,
 }: Props) {
   const cards = buildWatchlistCards(rows);
   const pageLabel = pagination.total_pages > 0 ? `${pagination.page} / ${pagination.total_pages}` : "0 / 0";
@@ -131,6 +134,17 @@ export const WatchlistIntradayCards = memo(function WatchlistIntradayCards({
               <div className="watchlist-recommend-row">
                 <span className={toneClassByRecommendation(card.recommendationTag)}>{card.recommendationTag}</span>
                 <div className="watchlist-reason">{card.unavailable ? "行情暂不可用，建议等待后续刷新。" : card.recommendationReason}</div>
+                {onAnalyze && !card.unavailable && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="ml-auto shrink-0"
+                    onClick={() => onAnalyze(card.symbol, card.market)}
+                  >
+                    <Search className="mr-1 h-3 w-3" />
+                    分析
+                  </Button>
+                )}
               </div>
             </CardContent>
           </Card>

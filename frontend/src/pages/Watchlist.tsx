@@ -1,7 +1,8 @@
-import { useState } from "react";
-import { Eye, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
+import { useCallback, useRef, useState } from "react";
+import { Eye, GripVertical, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
 
 import type { StockSearchResult, WatchlistItem } from "@/api/client";
+import { api } from "@/api/client";
 import { SymbolSearchDialog } from "@/components/SymbolSearchDialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -25,15 +26,60 @@ type Props = {
     keywords?: string[];
   }) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
+  onReorder?: () => void;
 };
 
-export function WatchlistPage({ items, markets, refreshing, onRefresh, onSearch, onAdd, onDelete }: Props) {
+export function WatchlistPage({ items, markets, refreshing, onRefresh, onSearch, onAdd, onDelete, onReorder }: Props) {
   const [symbol, setSymbol] = useState("AAPL");
   const [market, setMarket] = useState("US");
   const [alias, setAlias] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [keywordsText, setKeywordsText] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
+  const [localOrder, setLocalOrder] = useState<number[] | null>(null);
+  const [saving, setSaving] = useState(false);
+  const dragId = useRef<number | null>(null);
+
+  const displayItems = localOrder
+    ? localOrder
+        .map((id) => items.find((item) => item.id === id))
+        .filter(Boolean) as typeof items
+    : items;
+
+  const handleDragStart = useCallback((id: number) => {
+    dragId.current = id;
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent, targetId: number) => {
+    e.preventDefault();
+    if (dragId.current === null || dragId.current === targetId) return;
+
+    setLocalOrder((prev) => {
+      const sourceId = dragId.current!;
+      const order = prev ?? items.map((item) => item.id);
+      const sourceIdx = order.indexOf(sourceId);
+      const targetIdx = order.indexOf(targetId);
+      if (sourceIdx === -1 || targetIdx === -1) return order;
+      const next = [...order];
+      next.splice(sourceIdx, 1);
+      next.splice(targetIdx, 0, sourceId);
+      return next;
+    });
+  }, [items]);
+
+  const handleDragEnd = useCallback(async () => {
+    if (localOrder && onReorder) {
+      setSaving(true);
+      try {
+        await api.reorderWatchlist(localOrder);
+        onReorder();
+        setLocalOrder(null);
+      } finally {
+        setSaving(false);
+      }
+    }
+    dragId.current = null;
+  }, [localOrder, onReorder]);
 
   return (
     <div className="space-y-6">
@@ -49,7 +95,7 @@ export function WatchlistPage({ items, markets, refreshing, onRefresh, onSearch,
               Watchlist 监控列表
             </h2>
             <p className="mt-2 text-sm text-muted-foreground">
-              管理您的股票监控列表，添加或删除跟踪标的。当前共 {items.length} 个标的。
+              管理您的股票监控列表，拖拽行可手动排序。当前共 {items.length} 个标的。
             </p>
           </div>
           {onRefresh && (
@@ -161,7 +207,7 @@ export function WatchlistPage({ items, markets, refreshing, onRefresh, onSearch,
           </CardContent>
         </Card>
 
-        {/* Watchlist table */}
+        {/* Watchlist table with drag-and-drop */}
         <Card className="border-fuchsia-200/60 bg-gradient-to-br from-white to-fuchsia-50/40 dark:from-slate-900 dark:to-fuchsia-950/20 lg:col-span-3">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -170,6 +216,11 @@ export function WatchlistPage({ items, markets, refreshing, onRefresh, onSearch,
               <Badge variant="outline" className="ml-1 text-xs">
                 {items.length} 项
               </Badge>
+              {saving && (
+                <Badge variant="secondary" className="ml-1 text-xs">
+                  保存排序中...
+                </Badge>
+              )}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -177,7 +228,7 @@ export function WatchlistPage({ items, markets, refreshing, onRefresh, onSearch,
               <Table>
                 <TableHeader>
                   <TableRow className="bg-fuchsia-50/50 dark:bg-fuchsia-950/20">
-                    <TableHead>ID</TableHead>
+                    <TableHead className="w-10" />
                     <TableHead>Symbol</TableHead>
                     <TableHead>Market</TableHead>
                     <TableHead>Alias</TableHead>
@@ -187,9 +238,18 @@ export function WatchlistPage({ items, markets, refreshing, onRefresh, onSearch,
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {items.map((item) => (
-                    <TableRow key={item.id} className="hover:bg-fuchsia-50/30 dark:hover:bg-fuchsia-950/10">
-                      <TableCell className="font-mono text-xs">{item.id}</TableCell>
+                  {displayItems.map((item) => (
+                    <TableRow
+                      key={item.id}
+                      className="cursor-grab hover:bg-fuchsia-50/30 dark:hover:bg-fuchsia-950/10 active:cursor-grabbing"
+                      draggable
+                      onDragStart={() => handleDragStart(item.id)}
+                      onDragOver={(e) => handleDragOver(e, item.id)}
+                      onDragEnd={() => void handleDragEnd()}
+                    >
+                      <TableCell className="w-10">
+                        <GripVertical className="h-4 w-4 text-muted-foreground" />
+                      </TableCell>
                       <TableCell className="font-medium">{item.symbol}</TableCell>
                       <TableCell>
                         <Badge variant="outline">{item.market}</Badge>

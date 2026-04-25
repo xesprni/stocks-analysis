@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException
 
 from market_reporter.api.auth import CurrentUser, require_user
 from market_reporter.api.deps import get_effective_user_id, get_user_config
@@ -80,3 +80,14 @@ async def delete_watchlist_item(
             status_code=404, detail=f"Watchlist item not found: {item_id}"
         )
     return {"deleted": True}
+
+
+@router.put("/watchlist/reorder")
+async def reorder_watchlist(
+    ordered_ids: List[int] = Body(..., embed=True),
+    config: AppConfig = Depends(get_user_config),
+    user: CurrentUser = Depends(require_user),
+) -> dict:
+    service = WatchlistService(config, user_id=get_effective_user_id(user))
+    service.reorder_items(ordered_ids=ordered_ids)
+    return {"ok": True}

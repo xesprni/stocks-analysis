@@ -18,3 +18,4 @@ output/*
 .opencode/
 *.egg-info/
 CLAUDE.md
+.claude/

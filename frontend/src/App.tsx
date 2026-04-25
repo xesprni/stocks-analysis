@@ -9,7 +9,6 @@ import {
   LogOut,
   Moon,
   Newspaper,
-  Rocket,
   Settings2,
   Sun,
   Users,
@@ -29,7 +28,6 @@ import { LoginPage } from "@/pages/Login";
 
 // Lazy-loaded page components for code splitting & reduced initial bundle
 const DashboardPage = lazy(() => import("@/pages/Dashboard").then((m) => ({ default: m.DashboardPage })));
-const ReportRunnerPage = lazy(() => import("@/pages/ReportRunner").then((m) => ({ default: m.ReportRunnerPage })));
 const ConfigPage = lazy(() => import("@/pages/Config").then((m) => ({ default: m.ConfigPage })));
 const NewsFeedPage = lazy(() => import("@/pages/NewsFeed").then((m) => ({ default: m.NewsFeedPage })));
 const WatchlistPage = lazy(() => import("@/pages/Watchlist").then((m) => ({ default: m.WatchlistPage })));
@@ -299,7 +297,6 @@ export default function App() {
 
   const navItems = [
     { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-    { key: "report-runner", label: "Run Reports", icon: Rocket },
     { key: "config", label: "Config", icon: Settings2 },
     { key: "news-feed", label: "News Feed", icon: Newspaper },
     { key: "watchlist", label: "Watchlist", icon: ListChecks },
@@ -381,13 +378,16 @@ export default function App() {
 
         <TabsContent value="dashboard" className="mt-0">
           <Suspense fallback={<TabFallback />}>
-            <DashboardPage />
-          </Suspense>
-        </TabsContent>
-
-        <TabsContent value="report-runner" className="mt-0">
-          <Suspense fallback={<TabFallback />}>
-            <ReportRunnerPage onRunReport={(payload) => runReportMutation.mutate(payload)} running={runReportMutation.isPending} />
+            <DashboardPage
+              onRunMarketReport={(market) => {
+                runReportMutation.mutate({ mode: "market", market });
+                setActiveTab("reports");
+              }}
+              onAnalyzeStock={(symbol, market) => {
+                runReportMutation.mutate({ mode: "stock", symbol, market });
+                setActiveTab("reports");
+              }}
+            />
           </Suspense>
         </TabsContent>
 
@@ -646,6 +646,7 @@ export default function App() {
                 notifier.error("删除 Watchlist 失败", message);
               }
             }}
+            onReorder={() => void queryClient.invalidateQueries({ queryKey: ["watchlist"] })}
           />
           </Suspense>
         </TabsContent>
@@ -671,8 +672,8 @@ export default function App() {
                 void reportsQuery.refetch();
                 void reportTasksQuery.refetch();
               }}
-              onSelect={(runId) => setSelectedRunId(runId)}
-              onDelete={async (runId) => {
+              onSelectSavedReport={(runId) => setSelectedRunId(runId)}
+              onDeleteSavedReport={async (runId) => {
                 try {
                   if (!window.confirm(`确认删除报告 ${runId} ?`)) {
                     return;

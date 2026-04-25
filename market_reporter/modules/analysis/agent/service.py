@@ -70,6 +70,7 @@ class AgentService:
         model: str,
         api_key: Optional[str],
         skill_content: Optional[str] = None,
+        on_step: Optional[Any] = None,
     ) -> AgentRunResult:
         await self._load_mcp_tools()
         try:
@@ -79,6 +80,7 @@ class AgentService:
                 model=model,
                 api_key=api_key,
                 skill_content=skill_content,
+                on_step=on_step,
             )
         finally:
             await self.mcp_manager.close_all()

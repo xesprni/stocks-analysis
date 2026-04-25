@@ -65,6 +65,9 @@ class ReportRunTaskView(BaseModel):
     finished_at: Optional[datetime] = None
     error_message: Optional[str] = None
     result: Optional[RunResult] = None
+    steps: List[Dict[str, Any]] = []
+    report_markdown: Optional[str] = None
+    raw_data: Optional[Dict[str, Any]] = None
 
 
 class ConfigUpdateRequest(BaseModel):

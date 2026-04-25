@@ -13,6 +13,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useNotifier } from "@/components/ui/notifier";
+import { Rocket } from "lucide-react";
+
+type DashboardProps = {
+  onRunMarketReport?: (market: string) => void;
+  onAnalyzeStock?: (symbol: string, market: string) => void;
+};
 
 function pctText(value: number | null | undefined): string {
   if (value == null) return "--";
@@ -197,7 +203,7 @@ const IndexCard = memo(function IndexCard({ item }: { item: DashboardIndexMetric
   );
 });
 
-export function DashboardPage() {
+export function DashboardPage({ onRunMarketReport, onAnalyzeStock }: DashboardProps) {
   const queryClient = useQueryClient();
   const notifier = useNotifier();
   const [page, setPage] = useState(1);
@@ -419,13 +425,25 @@ export function DashboardPage() {
         return (
           <Card key={meta.key} className={meta.sectionClass}>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <MarketIcon className="h-4 w-4" />
-                {meta.label}
-                <Badge variant="outline" className="ml-1 text-[10px]">
-                  {meta.labelEn}
-                </Badge>
-              </CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <MarketIcon className="h-4 w-4" />
+                  {meta.label}
+                  <Badge variant="outline" className="ml-1 text-[10px]">
+                    {meta.labelEn}
+                  </Badge>
+                </CardTitle>
+                {onRunMarketReport && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => onRunMarketReport(meta.key)}
+                  >
+                    <Rocket className="mr-1 h-3.5 w-3.5" />
+                    市场分析
+                  </Button>
+                )}
+              </div>
             </CardHeader>
             <CardContent>
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -475,6 +493,7 @@ export function DashboardPage() {
         setPageSize={setPageSize}
         isFetching={watchlistQuery.isFetching}
         errorText={watchlistErrorText}
+        onAnalyze={onAnalyzeStock}
       />
     </div>
   );

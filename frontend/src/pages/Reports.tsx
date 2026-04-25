@@ -1,14 +1,26 @@
 import { useEffect, useState } from "react";
 import type { ReportDetail, ReportSummary, ReportTask } from "@/api/client";
+import { api } from "@/api/client";
 import { MarkdownViewer } from "@/components/MarkdownViewer";
-import { ReportDetailCharts } from "@/components/reports/ReportDetailCharts";
-import { ReportHistoryCharts } from "@/components/reports/ReportHistoryCharts";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { AlertCircle, CheckCircle2, Clock, FileText, Loader2, RefreshCw, Trash2, XCircle } from "lucide-react";
+import {
+  AlertCircle,
+  CheckCircle2,
+  ChevronRight,
+  Clock,
+  Copy,
+  FileText,
+  Loader2,
+  RefreshCw,
+  Save,
+  Trash2,
+  Wrench,
+  XCircle,
+} from "lucide-react";
 
 type Props = {
   reports: ReportSummary[];
@@ -17,8 +29,8 @@ type Props = {
   detail: ReportDetail | null;
   refreshing?: boolean;
   onRefresh?: () => void;
-  onSelect: (runId: string) => void;
-  onDelete: (runId: string) => Promise<void>;
+  onSelectSavedReport: (runId: string) => void;
+  onDeleteSavedReport: (runId: string) => Promise<void>;
 };
 
 function statusBadge(status: ReportTask["status"]) {
@@ -41,7 +53,7 @@ function statusBadge(status: ReportTask["status"]) {
       return (
         <Badge className="gap-1 bg-green-600 text-white hover:bg-green-700">
           <CheckCircle2 className="h-3 w-3" />
-          Succeeded
+          Done
         </Badge>
       );
     case "FAILED":
@@ -75,24 +87,123 @@ function formatTime(iso: string): string {
   }
 }
 
-export function ReportsPage({ reports, tasks, selectedRunId, detail, refreshing, onRefresh, onSelect, onDelete }: Props) {
+function StepCard({ step, index, isLatest }: { step: Record<string, unknown>; index: number; isLatest?: boolean }) {
+  const tool = String(step.tool || "unknown");
+  const status = String(step.status || "");
+  const args = step.arguments as Record<string, unknown> | undefined;
+  const preview = step.result_preview as Record<string, unknown> | undefined;
+  const duration = step.duration_ms as number | undefined;
+
+  // Model thinking step
+  if (tool === "__model_thinking__") {
+    const stepNum = args?.step as number | undefined;
+    const maxSteps = args?.max_steps as number | undefined;
+    return (
+      <div className="rounded-lg border border-violet-200 bg-violet-50/50 px-4 py-3 dark:border-violet-800 dark:bg-violet-950/30">
+        <div className="flex items-center gap-2">
+          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-violet-600 text-[10px] font-bold text-white">
+            {stepNum ?? index + 1}
+          </span>
+          <Loader2 className="h-3.5 w-3.5 animate-spin text-violet-600" />
+          <span className="text-sm font-medium text-violet-700 dark:text-violet-300">
+            模型正在思考...
+          </span>
+          {maxSteps != null && (
+            <span className="text-xs text-muted-foreground">
+              轮次 {stepNum}/{maxSteps}
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-lg border border-blue-200 bg-blue-50/50 px-4 py-3 dark:border-blue-800 dark:bg-blue-950/30">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white">
+            {index + 1}
+          </span>
+          <Wrench className="h-3.5 w-3.5 text-blue-600" />
+          <span className="font-mono text-sm font-medium">{tool}</span>
+          {duration != null && (
+            <span className="text-xs text-muted-foreground">{duration}ms</span>
+          )}
+          {status === "error" && (
+            <span className="text-xs text-destructive">failed</span>
+          )}
+        </div>
+      </div>
+      {args && Object.keys(args).length > 0 && (
+        <pre className="mt-2 overflow-x-auto rounded bg-muted/50 px-2 py-1 text-xs text-muted-foreground">
+          {JSON.stringify(args, null, 2)}
+        </pre>
+      )}
+      {preview && Object.keys(preview).length > 0 && (
+        <div className="mt-2 text-xs text-muted-foreground">
+          {preview.error ? (
+            <span className="text-destructive">Error: {String(preview.error)}</span>
+          ) : (
+            <span>
+              {preview.quote
+                ? `quote: ${String((preview.quote as Record<string, unknown>).price ?? "")}`
+                : ""}
+              {(preview.bars_count ?? preview.items_count ?? preview.points_count) != null
+                ? ` | ${String(preview.bars_count ?? preview.items_count ?? preview.points_count)} 条数据`
+                : ""}
+              {preview.source ? ` | ${String(preview.source)}` : ""}
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function ReportsPage({
+  reports,
+  tasks,
+  selectedRunId,
+  detail,
+  refreshing,
+  onRefresh,
+  onSelectSavedReport,
+  onDeleteSavedReport,
+}: Props) {
   const [tickNow, setTickNow] = useState<number>(() => Date.now());
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [copied, setCopied] = useState(false);
+
   const hasActiveTasks = tasks.some((t) => t.status === "PENDING" || t.status === "RUNNING");
 
   useEffect(() => {
-    if (!hasActiveTasks) {
-      return;
-    }
-    const timer = window.setInterval(() => {
-      setTickNow(Date.now());
-    }, 1000);
-    return () => {
-      window.clearInterval(timer);
-    };
+    if (!hasActiveTasks) return;
+    const timer = window.setInterval(() => setTickNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
   }, [hasActiveTasks]);
 
+  const selectedTask = tasks.find((t) => t.task_id === selectedTaskId);
+
   const activeTasks = tasks.filter((t) => t.status === "PENDING" || t.status === "RUNNING");
-  const recentTasks = tasks.filter((t) => t.status === "SUCCEEDED" || t.status === "FAILED").slice(0, 10);
+  const completedTasks = tasks.filter((t) => t.status === "SUCCEEDED" || t.status === "FAILED");
+
+  const handleSave = async (taskId: string) => {
+    setSaving(true);
+    try {
+      await api.saveReport(taskId);
+      onRefresh?.();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCopy = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   return (
     <div className="space-y-6">
@@ -108,174 +219,281 @@ export function ReportsPage({ reports, tasks, selectedRunId, detail, refreshing,
               Reports 报告中心
             </h2>
             <p className="mt-2 text-sm text-muted-foreground">
-              查看已生成的分析报告与任务执行状态。当前 {reports.length} 份报告{activeTasks.length > 0 ? `，${activeTasks.length} 个任务执行中` : ""}。
+              {activeTasks.length > 0
+                ? `${activeTasks.length} 个任务执行中`
+                : reports.length > 0
+                  ? `${reports.length} 份已保存报告`
+                  : "从 Dashboard 触发市场或个股分析"}
             </p>
           </div>
           {onRefresh && (
             <Button variant="outline" onClick={onRefresh} disabled={refreshing}>
               <RefreshCw className={`mr-2 h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
-              刷新数据
+              刷新
             </Button>
           )}
         </div>
       </section>
 
-      {/* Task Status Panel */}
-      {tasks.length > 0 && (
-        <Card className="border-teal-200/60 bg-gradient-to-br from-white to-teal-50/40 dark:from-slate-900 dark:to-teal-950/20">
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Loader2 className={`h-4 w-4 ${activeTasks.length > 0 ? "animate-spin text-blue-500" : "text-muted-foreground"}`} />
-              Report Tasks
-              {activeTasks.length > 0 && (
-                <Badge variant="secondary" className="ml-1">
-                  {activeTasks.length} active
-                </Badge>
-              )}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {/* Active tasks */}
-            {activeTasks.map((task) => (
-              <div
-                key={task.task_id}
-                className="flex items-center justify-between rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 dark:border-blue-800 dark:bg-blue-950/40"
-              >
-                <div className="flex items-center gap-3">
-                  {statusBadge(task.status)}
-                  <span className="font-mono text-xs text-muted-foreground">{task.task_id.slice(0, 12)}...</span>
-                </div>
-                <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                  <span>Started: {task.started_at ? formatTime(task.started_at) : formatTime(task.created_at)}</span>
-                  <Badge variant="outline" className="font-mono">
-                    {elapsed(task.started_at ?? task.created_at, undefined, tickNow)}
+      {/* Task list — always visible */}
+      <Card className="border-teal-200/60 bg-gradient-to-br from-white to-teal-50/40 dark:from-slate-900 dark:to-teal-950/20">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Loader2 className={`h-4 w-4 ${activeTasks.length > 0 ? "animate-spin text-blue-500" : "text-muted-foreground"}`} />
+            任务列表
+            {activeTasks.length > 0 && (
+              <Badge variant="secondary" className="ml-1">
+                {activeTasks.length} active
+              </Badge>
+            )}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {tasks.length === 0 && (
+            <div className="py-4 text-center text-sm text-muted-foreground">
+              暂无任务。前往 Dashboard 触发市场或个股分析。
+            </div>
+          )}
+
+          {/* Active tasks */}
+          {activeTasks.map((task) => (
+            <div
+              key={task.task_id}
+              className={`flex cursor-pointer items-center justify-between rounded-lg border px-4 py-3 transition-colors hover:bg-blue-50/50 dark:hover:bg-blue-950/20 ${
+                selectedTaskId === task.task_id
+                  ? "border-blue-400 bg-blue-50 dark:border-blue-700 dark:bg-blue-950/30"
+                  : "border-blue-200 bg-blue-50/50 dark:border-blue-800 dark:bg-blue-950/20"
+              }`}
+              onClick={() => setSelectedTaskId(task.task_id)}
+            >
+              <div className="flex items-center gap-3">
+                {statusBadge(task.status)}
+                <span className="text-sm text-muted-foreground">
+                  {task.raw_data?.mode ?? "market"} {(task.raw_data?.market ?? task.raw_data?.symbol ?? "") as string}
+                </span>
+                {task.steps.length > 0 && (
+                  <Badge variant="outline" className="text-xs">
+                    {task.steps.length} 步骤
                   </Badge>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                {task.started_at && (
+                  <Badge variant="outline" className="font-mono text-xs">
+                    {elapsed(task.started_at, undefined, tickNow)}
+                  </Badge>
+                )}
+                <ChevronRight className="h-4 w-4 text-muted-foreground" />
+              </div>
+            </div>
+          ))}
+
+          {/* Completed tasks */}
+          {completedTasks.map((task) => (
+            <div
+              key={task.task_id}
+              className={`flex cursor-pointer items-center justify-between rounded-lg border px-4 py-2 transition-colors hover:bg-muted/50 ${
+                selectedTaskId === task.task_id ? "border-emerald-300 bg-emerald-50/50 dark:border-emerald-700 dark:bg-emerald-950/20" : ""
+              } ${
+                task.status === "FAILED"
+                  ? "border-red-200 bg-red-50/50 dark:border-red-800 dark:bg-red-950/20"
+                  : "border-border"
+              }`}
+              onClick={() => setSelectedTaskId(task.task_id)}
+            >
+              <div className="flex items-center gap-3">
+                {statusBadge(task.status)}
+                <span className="text-sm text-muted-foreground">
+                  {task.raw_data?.mode ?? "market"} {(task.raw_data?.market ?? task.raw_data?.symbol ?? "") as string}
+                </span>
+                {task.status === "FAILED" && task.error_message && (
+                  <span className="flex items-center gap-1 text-xs text-destructive">
+                    <AlertCircle className="h-3 w-3" />
+                    {task.error_message.length > 60 ? `${task.error_message.slice(0, 60)}...` : task.error_message}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                {task.finished_at && <span>{formatTime(task.finished_at)}</span>}
+                {task.started_at && task.finished_at && (
+                  <Badge variant="outline" className="font-mono text-xs">
+                    {elapsed(task.started_at, task.finished_at)}
+                  </Badge>
+                )}
+              </div>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+
+      {/* Agent interaction panel — shown when a task is selected */}
+      {selectedTask && (
+        <Card className="border-blue-200/60 bg-gradient-to-br from-white to-blue-50/40 dark:from-slate-900 dark:to-blue-950/20">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  {selectedTask.status === "RUNNING" && <Loader2 className="h-4 w-4 animate-spin text-blue-500" />}
+                  Agent 交互详情
+                </CardTitle>
+                <CardDescription>
+                  任务 {selectedTask.task_id.slice(0, 12)}...
+                  {selectedTask.status === "RUNNING" && " · 执行中"}
+                  {selectedTask.started_at && ` · ${elapsed(selectedTask.started_at, selectedTask.finished_at, tickNow)}`}
+                </CardDescription>
+              </div>
+              {selectedTask.status === "SUCCEEDED" && selectedTask.report_markdown && (
+                <div className="flex gap-2">
+                  <Button size="sm" variant="outline" onClick={() => handleCopy(selectedTask.report_markdown!)}>
+                    <Copy className="mr-1 h-3.5 w-3.5" />
+                    {copied ? "已复制" : "复制"}
+                  </Button>
+                  <Button size="sm" disabled={saving} onClick={() => handleSave(selectedTask.task_id)}>
+                    <Save className="mr-1 h-3.5 w-3.5" />
+                    {saving ? "保存中..." : "保存报告"}
+                  </Button>
+                </div>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Agent steps — show latest thinking + all tool calls */}
+            {selectedTask.steps.length > 0 && (() => {
+              // Show only the last thinking step + all non-thinking steps
+              const displaySteps: Array<{ step: Record<string, unknown>; originalIndex: number }> = [];
+              let lastThinkingIdx = -1;
+              selectedTask.steps.forEach((step, i) => {
+                if (String(step.tool) === "__model_thinking__") {
+                  lastThinkingIdx = i;
+                }
+              });
+              selectedTask.steps.forEach((step, i) => {
+                const isThinking = String(step.tool) === "__model_thinking__";
+                if (!isThinking || i === lastThinkingIdx) {
+                  displaySteps.push({ step, originalIndex: i });
+                }
+              });
+              return (
+                <div className="space-y-2">
+                  {displaySteps.map(({ step, originalIndex }, i) => (
+                    <StepCard
+                      key={originalIndex}
+                      step={step}
+                      index={originalIndex}
+                      isLatest={i === displaySteps.length - 1 && selectedTask.status === "RUNNING"}
+                    />
+                  ))}
+                </div>
+              );
+            })()}
+
+            {/* Running but no steps yet — agent starting */}
+            {selectedTask.status === "RUNNING" && selectedTask.steps.length === 0 && (
+              <div className="rounded-lg border border-violet-200 bg-violet-50/50 px-4 py-3 dark:border-violet-800 dark:bg-violet-950/30">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin text-violet-600" />
+                  Agent 正在初始化，连接分析模型中...
                 </div>
               </div>
-            ))}
+            )}
 
-            {/* Recent completed/failed tasks */}
-            {recentTasks.length > 0 && activeTasks.length > 0 && <Separator />}
-            {recentTasks.map((task) => (
-              <div
-                key={task.task_id}
-                className={`flex items-center justify-between rounded-lg border px-4 py-2 ${
-                  task.status === "FAILED"
-                    ? "border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950/30"
-                    : "border-border bg-muted/30"
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  {statusBadge(task.status)}
-                  <span className="font-mono text-xs text-muted-foreground">{task.task_id.slice(0, 12)}...</span>
-                  {task.status === "FAILED" && task.error_message && (
-                    <span className="flex items-center gap-1 text-xs text-destructive">
-                      <AlertCircle className="h-3 w-3" />
-                      {task.error_message.length > 80 ? `${task.error_message.slice(0, 80)}...` : task.error_message}
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                  {task.finished_at && <span>{formatTime(task.finished_at)}</span>}
-                  {task.started_at && task.finished_at && (
-                    <Badge variant="outline" className="font-mono">
-                      {elapsed(task.started_at, task.finished_at)}
-                    </Badge>
-                  )}
-                </div>
+            {/* Pending */}
+            {selectedTask.status === "PENDING" && (
+              <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+                <Clock className="h-4 w-4" />
+                任务排队中，等待执行...
               </div>
-            ))}
+            )}
 
-            {tasks.length === 0 && (
-              <div className="py-4 text-center text-sm text-muted-foreground">No report tasks yet.</div>
+            {/* Error */}
+            {selectedTask.status === "FAILED" && selectedTask.error_message && (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300">
+                {selectedTask.error_message}
+              </div>
+            )}
+
+            {/* Report markdown preview */}
+            {selectedTask.report_markdown && (
+              <>
+                <Separator />
+                <MarkdownViewer markdown={selectedTask.report_markdown} />
+              </>
             )}
           </CardContent>
         </Card>
       )}
 
-      {/* Report List + Detail */}
-      <div className="grid gap-6 lg:grid-cols-5">
-        <div className="space-y-6 lg:col-span-2">
-          <ReportHistoryCharts reports={reports} />
-          <Card className="border-emerald-200/60 bg-gradient-to-br from-white to-emerald-50/40 dark:from-slate-900 dark:to-emerald-950/20">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <FileText className="h-4 w-4 text-emerald-600" />
-                Report List
-                <Badge variant="outline" className="ml-1 text-xs">
-                  {reports.length} 份
-                </Badge>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {reports.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-emerald-200 p-8 text-center text-sm text-muted-foreground dark:border-emerald-800">
-                  No reports generated yet. Use the Run Reports page to generate a report.
-                </div>
-              ) : (
-                <div className="overflow-x-auto rounded-lg border border-emerald-200/40 dark:border-emerald-800/30">
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="bg-emerald-50/50 dark:bg-emerald-950/20">
-                        <TableHead>Run ID</TableHead>
-                        <TableHead>Provider</TableHead>
-                        <TableHead>Model</TableHead>
-                        <TableHead>Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {reports.map((item) => (
-                        <TableRow
-                          key={item.run_id}
-                          className="cursor-pointer hover:bg-emerald-50/30 dark:hover:bg-emerald-950/10"
-                          data-state={item.run_id === selectedRunId ? "selected" : undefined}
-                          onClick={() => onSelect(item.run_id)}
-                        >
-                          <TableCell className="font-mono text-xs">{item.run_id}</TableCell>
-                          <TableCell>{item.provider_id || "-"}</TableCell>
-                          <TableCell>{item.model || "-"}</TableCell>
-                          <TableCell>
-                            <Button
-                              size="sm"
-                              variant="destructive"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                void onDelete(item.run_id);
-                              }}
-                            >
-                              <Trash2 className="mr-1 h-3.5 w-3.5" />
-                              Delete
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
-        <Card className="border-cyan-200/60 bg-gradient-to-br from-white to-cyan-50/40 dark:from-slate-900 dark:to-cyan-950/20 lg:col-span-3">
+      {/* Saved reports list */}
+      {reports.length > 0 && (
+        <Card className="border-emerald-200/60 bg-gradient-to-br from-white to-emerald-50/40 dark:from-slate-900 dark:to-emerald-950/20">
           <CardHeader>
-            <CardTitle>Report Content</CardTitle>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <FileText className="h-4 w-4 text-emerald-600" />
+              已保存报告
+              <Badge variant="outline" className="ml-1 text-xs">
+                {reports.length} 份
+              </Badge>
+            </CardTitle>
           </CardHeader>
           <CardContent>
-            {!detail ? (
-              <div className="rounded-xl border border-dashed border-cyan-200 p-8 text-center text-sm text-muted-foreground dark:border-cyan-800">
-                Select a report to view its content.
-              </div>
-            ) : (
-              <div className="space-y-6">
-                <ReportDetailCharts detail={detail} />
-                <Separator />
-                <MarkdownViewer markdown={detail.report_markdown} />
-              </div>
-            )}
+            <div className="overflow-x-auto rounded-lg border border-emerald-200/40 dark:border-emerald-800/30">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-emerald-50/50 dark:bg-emerald-950/20">
+                    <TableHead>Run ID</TableHead>
+                    <TableHead>Mode</TableHead>
+                    <TableHead>Provider</TableHead>
+                    <TableHead>Model</TableHead>
+                    <TableHead>操作</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {reports.map((item) => (
+                    <TableRow
+                      key={item.run_id}
+                      className={`cursor-pointer hover:bg-emerald-50/30 dark:hover:bg-emerald-950/10 ${
+                        item.run_id === selectedRunId ? "bg-emerald-50/60 dark:bg-emerald-950/20" : ""
+                      }`}
+                      onClick={() => onSelectSavedReport(item.run_id)}
+                    >
+                      <TableCell className="font-mono text-xs">{item.run_id}</TableCell>
+                      <TableCell>{item.mode || "market"}</TableCell>
+                      <TableCell>{item.provider_id || "-"}</TableCell>
+                      <TableCell>{item.model || "-"}</TableCell>
+                      <TableCell>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void onDeleteSavedReport(item.run_id);
+                          }}
+                        >
+                          <Trash2 className="mr-1 h-3.5 w-3.5" />
+                          删除
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           </CardContent>
         </Card>
-      </div>
+      )}
+
+      {/* Saved report detail */}
+      {selectedRunId && detail && !selectedTaskId && (
+        <Card className="border-cyan-200/60 bg-gradient-to-br from-white to-cyan-50/40 dark:from-slate-900 dark:to-cyan-950/20">
+          <CardHeader>
+            <CardTitle>报告内容</CardTitle>
+            <CardDescription>{selectedRunId}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <MarkdownViewer markdown={detail.report_markdown} />
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

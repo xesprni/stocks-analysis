@@ -54,6 +54,7 @@ class WatchlistItemTable(SQLModel, table=True):
     display_name: Optional[str] = None
     keywords_json: Optional[str] = None
     enabled: bool = Field(default=True, index=True)
+    sort_order: int = Field(default=0, index=True)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 

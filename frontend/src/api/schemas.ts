@@ -201,6 +201,7 @@ export const newsFeedItemSchema = z.object({
   link: z.string(),
   published: z.string(),
   fetched_at: z.string(),
+  content: z.string().default(""),
 });
 
 export const newsFeedResponseSchema = z.object({
@@ -393,6 +394,9 @@ export const reportTaskSchema = z.object({
     })
     .nullable()
     .optional(),
+  steps: z.array(z.record(z.any())).default([]),
+  report_markdown: z.string().nullable().optional(),
+  raw_data: z.record(z.any()).nullable().optional(),
 });
 
 export const stockAnalysisRunSchema = z.object({

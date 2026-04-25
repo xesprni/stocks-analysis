@@ -101,6 +101,11 @@ class WatchlistService:
             repo = WatchlistRepo(session)
             return repo.delete(item_id=item_id, user_id=self.user_id)
 
+    def reorder_items(self, ordered_ids: List[int]) -> None:
+        with session_scope(self.config.database.url) as session:
+            repo = WatchlistRepo(session)
+            repo.reorder(ordered_ids=ordered_ids, user_id=self.user_id)
+
     def _to_schema(self, item) -> WatchlistItem:
         return WatchlistItem(
             id=item.id,

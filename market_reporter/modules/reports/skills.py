@@ -23,6 +23,7 @@ class ReportSkillContext:
     selected_model: str
     api_key: Optional[str]
     skill_content: str = ""
+    on_step: Optional[Any] = None
 
 
 @dataclass
@@ -206,6 +207,7 @@ class WatchlistReportSkill:
                 model=context.selected_model,
                 api_key=context.api_key,
                 skill_content=self._skill_content,
+                on_step=context.on_step,
             )
             _, output = context.agent_service.to_analysis_payload(
                 request=request,
@@ -436,6 +438,7 @@ async def _run_single_agent_report(
         model=context.selected_model,
         api_key=context.api_key,
         skill_content=context.skill_content,
+        on_step=context.on_step,
     )
     _, analysis_output = context.agent_service.to_analysis_payload(
         request=agent_request,

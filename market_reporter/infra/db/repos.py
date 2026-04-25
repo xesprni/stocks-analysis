@@ -178,7 +178,7 @@ class WatchlistRepo:
         self.session = session
 
     def list_all(self, user_id: Optional[int] = None) -> List[WatchlistItemTable]:
-        stmt = select(WatchlistItemTable).order_by(WatchlistItemTable.id.desc())
+        stmt = select(WatchlistItemTable).order_by(WatchlistItemTable.sort_order.asc(), WatchlistItemTable.id.asc())
         if user_id is None:
             stmt = stmt.where(WatchlistItemTable.user_id.is_(None))
         else:
@@ -189,7 +189,7 @@ class WatchlistRepo:
         stmt = (
             select(WatchlistItemTable)
             .where(WatchlistItemTable.enabled.is_(True))
-            .order_by(WatchlistItemTable.id.desc())
+            .order_by(WatchlistItemTable.sort_order.asc(), WatchlistItemTable.id.asc())
         )
         if user_id is None:
             stmt = stmt.where(WatchlistItemTable.user_id.is_(None))
@@ -273,6 +273,13 @@ class WatchlistRepo:
         self.session.delete(item)
         self.session.flush()
         return True
+
+    def reorder(self, ordered_ids: List[int], user_id: Optional[int] = None) -> None:
+        for position, item_id in enumerate(ordered_ids):
+            item = self.get(item_id=item_id, user_id=user_id)
+            if item is not None:
+                item.sort_order = position
+        self.session.flush()
 
 
 class MarketDataRepo:

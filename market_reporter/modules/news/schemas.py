@@ -48,6 +48,7 @@ class NewsFeedItem(BaseModel):
     link: str = ""
     published: str = ""
     fetched_at: datetime
+    content: str = ""
 
 
 class NewsFeedResponse(BaseModel):

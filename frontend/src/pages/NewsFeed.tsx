@@ -1,11 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
-import { Newspaper, RefreshCw } from "lucide-react";
+import { ExternalLink, Newspaper, RefreshCw, X } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 
-import { api } from "@/api/client";
+import { api, type NewsFeedItem } from "@/api/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useNotifier } from "@/components/ui/notifier";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
@@ -16,9 +22,84 @@ function toErrorMessage(error: unknown): string {
   return String(error ?? "Unknown error");
 }
 
+function stripHtml(html: string): string {
+  return html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n\n")
+    .replace(/<\/div>/gi, "\n")
+    .replace(/<\/li>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function NewsContentDialog({
+  item,
+  open,
+  onOpenChange,
+}: {
+  item: NewsFeedItem | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  if (!item) return null;
+
+  const plainContent = item.content ? stripHtml(item.content) : "";
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="text-left text-base leading-snug">
+            {item.title}
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <Badge variant="outline">{item.source_name}</Badge>
+            <Badge variant="outline">{item.category}</Badge>
+            {item.published && (
+              <span>{new Date(item.published).toLocaleString()}</span>
+            )}
+          </div>
+
+          {plainContent ? (
+            <div className="whitespace-pre-wrap rounded-lg border bg-muted/30 px-4 py-3 text-sm leading-relaxed">
+              {plainContent}
+            </div>
+          ) : (
+            <div className="rounded-lg border border-amber-200 bg-amber-50/50 px-4 py-3 text-sm text-muted-foreground dark:border-amber-800 dark:bg-amber-950/30">
+              RSS 源未提供正文内容。
+            </div>
+          )}
+
+          {item.link && (
+            <div className="flex justify-end">
+              <a href={item.link} target="_blank" rel="noreferrer">
+                <Button variant="outline" size="sm">
+                  <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
+                  打开原文
+                </Button>
+              </a>
+            </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function NewsFeedPage() {
   const notifier = useNotifier();
   const [selectedSourceId, setSelectedSourceId] = useState("ALL");
+  const [selectedItem, setSelectedItem] = useState<NewsFeedItem | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
   const [errorCache, setErrorCache] = useState<Record<string, string>>({});
 
   const optionsQuery = useQuery({
@@ -35,26 +116,18 @@ export function NewsFeedPage() {
 
   useEffect(() => {
     const error = optionsQuery.error;
-    if (!error) {
-      return;
-    }
+    if (!error) return;
     const message = toErrorMessage(error);
-    if (errorCache["options"] === message) {
-      return;
-    }
+    if (errorCache["options"] === message) return;
     setErrorCache((prev) => ({ ...prev, options: message }));
     notifier.error("加载新闻来源失败", message, { dedupeKey: "news-feed-options" });
   }, [errorCache, notifier, optionsQuery.error]);
 
   useEffect(() => {
     const error = feedQuery.error;
-    if (!error) {
-      return;
-    }
+    if (!error) return;
     const message = toErrorMessage(error);
-    if (errorCache["feed"] === message) {
-      return;
-    }
+    if (errorCache["feed"] === message) return;
     setErrorCache((prev) => ({ ...prev, feed: message }));
     notifier.error("加载新闻聚合失败", message, { dedupeKey: "news-feed-list" });
   }, [errorCache, feedQuery.error, notifier]);
@@ -66,6 +139,11 @@ export function NewsFeedPage() {
 
   const warnings = feedQuery.data?.warnings ?? [];
   const items = feedQuery.data?.items ?? [];
+
+  const handleRowClick = (item: NewsFeedItem) => {
+    setSelectedItem(item);
+    setDialogOpen(true);
+  };
 
   return (
     <div className="space-y-6">
@@ -81,7 +159,7 @@ export function NewsFeedPage() {
               新闻聚合
             </h2>
             <p className="mt-2 text-sm text-muted-foreground">
-              实时汇聚多来源财经新闻，当前 {items.length} 条资讯。
+              实时汇聚多来源财经新闻，当前 {items.length} 条资讯。点击标题查看内容。
             </p>
           </div>
           <Button variant="outline" onClick={() => void feedQuery.refetch()} disabled={feedQuery.isFetching}>
@@ -151,7 +229,11 @@ export function NewsFeedPage() {
               </TableHeader>
               <TableBody>
                 {items.map((item) => (
-                  <TableRow key={`${item.source_id}:${item.title}:${item.link}`} className="hover:bg-orange-50/30 dark:hover:bg-orange-950/10">
+                  <TableRow
+                    key={`${item.source_id}:${item.title}:${item.link}`}
+                    className="cursor-pointer hover:bg-orange-50/30 dark:hover:bg-orange-950/10"
+                    onClick={() => handleRowClick(item)}
+                  >
                     <TableCell className="whitespace-nowrap text-xs">
                       {item.published ? new Date(item.published).toLocaleString() : "--"}
                     </TableCell>
@@ -165,13 +247,9 @@ export function NewsFeedPage() {
                       <Badge variant="outline">{item.category || "-"}</Badge>
                     </TableCell>
                     <TableCell>
-                      {item.link ? (
-                        <a className="text-sm underline-offset-4 hover:text-amber-700 hover:underline dark:hover:text-amber-300" href={item.link} target="_blank" rel="noreferrer">
-                          {item.title}
-                        </a>
-                      ) : (
-                        <span>{item.title}</span>
-                      )}
+                      <span className="text-sm hover:text-amber-700 dark:hover:text-amber-300">
+                        {item.title}
+                      </span>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -187,6 +265,13 @@ export function NewsFeedPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Content preview dialog */}
+      <NewsContentDialog
+        item={selectedItem}
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+      />
     </div>
   );
 }

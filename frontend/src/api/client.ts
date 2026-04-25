@@ -298,6 +298,10 @@ export const api = {
   getReportTask: (taskId: string) =>
     request(`/reports/tasks/${encodeURIComponent(taskId)}`, reportTaskSchema),
   listReportTasks: () => request("/reports/tasks", z.array(reportTaskSchema)),
+  saveReport: (taskId: string) =>
+    request(`/reports/tasks/${encodeURIComponent(taskId)}/save`, reportSummarySchema, {
+      method: "POST",
+    }),
 
   // ---- watchlist ----
   listWatchlist: () => request("/watchlist", z.array(watchlistItemSchema)),
@@ -314,6 +318,12 @@ export const api = {
       body: JSON.stringify(payload),
     }),
   deleteWatchlistItem: (id: number) => requestVoid(`/watchlist/${id}`, { method: "DELETE" }),
+  reorderWatchlist: (orderedIds: number[]) =>
+    request(`/watchlist/reorder`, z.object({ ok: z.boolean() }), {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ordered_ids: orderedIds }),
+    }),
 
   // ---- stocks ----
   getQuote: (symbol: string, market: string) =>
