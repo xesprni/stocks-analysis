@@ -329,8 +329,8 @@ class YahooFinanceMarketDataProvider:
     ) -> List[KLineBar]:
         import yfinance as yf
 
-        interval_map = {"1m": "1m", "5m": "5m", "1d": "1d"}
-        period_map = {"1m": "5d", "5m": "1mo", "1d": "1y"}
+        interval_map = {"1m": "1m", "5m": "5m", "1d": "1d", "1w": "1wk"}
+        period_map = {"1m": "5d", "5m": "1mo", "1d": "1y", "1w": "5y"}
         # Fetch a broader period and trim locally, improving compatibility across symbols.
         yf_interval = interval_map.get(interval, "1d")
         yf_period = period_map.get(interval, "1mo")

@@ -7,16 +7,18 @@ import {
   ListChecks,
   Loader2,
   LogOut,
+  Maximize2,
+  Minimize2,
   Moon,
   Newspaper,
   Settings2,
   Sun,
+  UserRound,
   Users,
   Wrench,
 } from "lucide-react";
 
 import { api, type UserView, type AppConfig, isAuthenticated, clearTokens } from "@/api/client";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useNotifier } from "@/components/ui/notifier";
@@ -24,6 +26,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toErrorMessage, useAppQueries } from "@/hooks/useAppQueries";
 import { useAppMutations } from "@/hooks/useAppMutations";
 import { useProviderActions } from "@/hooks/useProviderActions";
+import { cn } from "@/lib/utils";
 import { LoginPage } from "@/pages/Login";
 
 // Lazy-loaded page components for code splitting & reduced initial bundle
@@ -126,6 +129,12 @@ export default function App() {
   const [savingConfigSection, setSavingConfigSection] = useState<ConfigSaveSection | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
   const [warningMessage, setWarningMessage] = useState("");
+  const [compactMode, setCompactMode] = useState(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("compactMode") === "true";
+    }
+    return false;
+  });
   const [dark, setDark] = useState(() => {
     if (typeof window !== "undefined") {
       const stored = localStorage.getItem("theme");
@@ -140,6 +149,11 @@ export default function App() {
     document.documentElement.classList.toggle("dark", dark);
     localStorage.setItem("theme", dark ? "dark" : "light");
   }, [dark]);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("compact-ui", compactMode);
+    localStorage.setItem("compactMode", compactMode ? "true" : "false");
+  }, [compactMode]);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -319,26 +333,56 @@ export default function App() {
   }
 
   return (
-    <main className="mx-auto w-full max-w-[1920px] px-4 py-6 sm:px-6 lg:px-8 xl:px-10">
-      <section className="mb-6 rounded-2xl border border-border/80 bg-card p-4 shadow-[0_20px_60px_rgba(0,0,0,0.08)] sm:p-6 dark:shadow-[0_20px_60px_rgba(0,0,0,0.25)]">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-semibold tracking-tight text-foreground">Market Reporter Pro Console</h1>
-            <p className="mt-2 text-sm text-muted-foreground">模块化多实现、watchlist、实时曲线与 K 线洞察。</p>
-          </div>
-          <div className="flex items-center gap-3">
+    <main
+      className={cn(
+        "min-h-screen w-full px-3 py-4 sm:px-4 lg:px-5 2xl:px-6",
+        compactMode && "px-2 py-2 sm:px-3 lg:px-4",
+      )}
+    >
+      <section
+        className={cn(
+          "mb-4 rounded-xl border border-border/80 bg-card/95 px-3 py-2.5 shadow-[0_14px_40px_rgba(0,0,0,0.07)] backdrop-blur sm:px-4 sm:py-3 dark:bg-card/90 dark:shadow-[0_14px_40px_rgba(0,0,0,0.22)]",
+          compactMode && "mb-3 px-2.5 py-2 sm:px-3",
+        )}
+      >
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 items-center gap-2">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border/80 bg-secondary/80 text-foreground shadow-sm">
+              <LayoutDashboard className="h-4 w-4" aria-hidden="true" />
+            </div>
             {currentUser && (
-              <div className="flex items-center gap-2 text-sm">
-                <span className="text-muted-foreground">{currentUser.username}</span>
-                {currentUser.is_admin && <Badge variant="secondary">Admin</Badge>}
+              <div className="min-w-0 truncate rounded-lg border border-border/80 bg-background/70 px-3 py-1.5 text-sm font-medium text-foreground shadow-sm">
+                <span className="inline-flex min-w-0 items-center gap-2">
+                  <UserRound className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                  <span className="truncate">
+                    {currentUser.username}
+                    {currentUser.is_admin ? " · Admin" : ""}
+                  </span>
+                </span>
               </div>
             )}
-            <Badge variant="secondary">FastAPI</Badge>
-            <Badge>shadcn/ui</Badge>
-            <Button variant="ghost" size="sm" onClick={handleLogout} aria-label="Logout">
+          </div>
+          <div className="flex items-center justify-end gap-1.5">
+            <Button
+              variant={compactMode ? "default" : "ghost"}
+              size="sm"
+              className="h-9 w-9 p-0"
+              onClick={() => setCompactMode((prev) => !prev)}
+              aria-label="Toggle compact mode"
+              title={compactMode ? "退出紧凑模式" : "紧凑模式"}
+            >
+              {compactMode ? <Maximize2 className="h-4 w-4" /> : <Minimize2 className="h-4 w-4" />}
+            </Button>
+            <Button variant="ghost" size="sm" className="h-9 w-9 p-0" onClick={handleLogout} aria-label="Logout">
               <LogOut className="h-4 w-4" />
             </Button>
-            <Button variant="ghost" size="sm" onClick={() => setDark((prev) => !prev)} aria-label="Toggle dark mode">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-9 w-9 p-0"
+              onClick={() => setDark((prev) => !prev)}
+              aria-label="Toggle dark mode"
+            >
               {dark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             </Button>
           </div>
@@ -346,12 +390,12 @@ export default function App() {
       </section>
 
       {errorMessage ? (
-        <Card className="mb-6 border-destructive/40 bg-destructive/10">
+        <Card className={cn("mb-4 border-destructive/40 bg-destructive/10", compactMode && "mb-3")}>
           <CardContent className="py-4 text-sm text-destructive">{errorMessage}</CardContent>
         </Card>
       ) : null}
       {warningMessage ? (
-        <Card className="mb-6 border-amber-300/70 bg-amber-50 dark:border-amber-700/70 dark:bg-amber-950/50">
+        <Card className={cn("mb-4 border-amber-300/70 bg-amber-50 dark:border-amber-700/70 dark:bg-amber-950/50", compactMode && "mb-3")}>
           <CardContent className="py-4 text-sm text-amber-800 dark:text-amber-200">{warningMessage}</CardContent>
         </Card>
       ) : null}
@@ -361,22 +405,34 @@ export default function App() {
         value={activeTab}
         onValueChange={setActiveTab}
         orientation="vertical"
-        className="grid items-start gap-4 lg:grid-cols-[200px_minmax(0,1fr)] xl:grid-cols-[220px_minmax(0,1fr)]"
+        className={cn(
+          "grid min-w-0 items-start gap-3 lg:grid-cols-[180px_minmax(0,1fr)] xl:grid-cols-[200px_minmax(0,1fr)]",
+          compactMode && "gap-2 lg:grid-cols-[58px_minmax(0,1fr)]",
+        )}
       >
-        <TabsList className="h-auto w-full flex-col items-stretch rounded-2xl border border-border/80 bg-card p-2 lg:sticky lg:top-6">
+        <TabsList
+          className={cn(
+            "h-auto w-full max-w-full flex-row items-center justify-start gap-1 overflow-x-auto rounded-xl border border-border/80 bg-card p-1.5 lg:sticky lg:top-4 lg:flex-col lg:items-stretch lg:overflow-visible",
+            compactMode && "p-1 lg:w-[58px]",
+          )}
+        >
           {navItems.map((item) => (
             <TabsTrigger
               key={item.key}
               value={item.key}
-              className="relative w-full justify-start gap-3 px-4 py-2 text-sm data-[state=active]:bg-accent data-[state=active]:shadow-sm before:absolute before:left-1 before:top-2 before:bottom-2 before:w-1 before:rounded-full before:bg-foreground before:opacity-0 before:transition-opacity data-[state=active]:before:opacity-100"
+              aria-label={item.label}
+              className={cn(
+                "relative min-w-10 shrink-0 justify-center gap-2 px-3 py-2 text-xs data-[state=active]:bg-accent data-[state=active]:shadow-sm before:absolute before:bottom-2 before:left-1 before:top-2 before:hidden before:w-1 before:rounded-full before:bg-foreground before:opacity-0 before:transition-opacity sm:text-sm lg:w-full lg:justify-start lg:before:block data-[state=active]:before:opacity-100",
+                compactMode && "px-2 lg:justify-center lg:px-2",
+              )}
             >
-              <item.icon className="h-4 w-4" />
-              {item.label}
+              <item.icon className="h-4 w-4 shrink-0" />
+              <span className={cn("truncate", compactMode && "hidden sm:inline lg:sr-only")}>{item.label}</span>
             </TabsTrigger>
           ))}
         </TabsList>
 
-        <TabsContent value="dashboard" className="mt-0">
+        <TabsContent value="dashboard" className="mt-0 min-w-0">
           <Suspense fallback={<TabFallback />}>
             <DashboardPage
               onRunMarketReport={(market) => {
@@ -391,7 +447,7 @@ export default function App() {
           </Suspense>
         </TabsContent>
 
-        <TabsContent value="config" className="mt-0">
+        <TabsContent value="config" className="mt-0 min-w-0">
           <Suspense fallback={<TabFallback />}>
             <ConfigPage
             config={configDraft}
@@ -608,13 +664,13 @@ export default function App() {
           </Suspense>
         </TabsContent>
 
-        <TabsContent value="news-feed" className="mt-0">
+        <TabsContent value="news-feed" className="mt-0 min-w-0">
           <Suspense fallback={<TabFallback />}>
             <NewsFeedPage />
           </Suspense>
         </TabsContent>
 
-        <TabsContent value="watchlist" className="mt-0">
+        <TabsContent value="watchlist" className="mt-0 min-w-0">
           <Suspense fallback={<TabFallback />}>
             <WatchlistPage
             items={watchlistQuery.data ?? []}
@@ -651,7 +707,7 @@ export default function App() {
           </Suspense>
         </TabsContent>
 
-        <TabsContent value="terminal" className="mt-0">
+        <TabsContent value="terminal" className="mt-0 min-w-0">
           <Suspense fallback={<TabFallback />}>
             <StockTerminalPage
               intervals={options.intervals}
@@ -660,7 +716,7 @@ export default function App() {
           </Suspense>
         </TabsContent>
 
-        <TabsContent value="reports" className="mt-0">
+        <TabsContent value="reports" className="mt-0 min-w-0">
           <Suspense fallback={<TabFallback />}>
             <ReportsPage
               reports={sortedReports}
@@ -698,14 +754,14 @@ export default function App() {
           </Suspense>
         </TabsContent>
 
-        <TabsContent value="skills" className="mt-0">
+        <TabsContent value="skills" className="mt-0 min-w-0">
           <Suspense fallback={<TabFallback />}>
             <SkillsPage />
           </Suspense>
         </TabsContent>
 
         {currentUser?.is_admin && (
-          <TabsContent value="users" className="mt-0">
+          <TabsContent value="users" className="mt-0 min-w-0">
             <Suspense fallback={<TabFallback />}>
               <UsersPage currentUserIsAdmin={currentUser.is_admin} />
             </Suspense>

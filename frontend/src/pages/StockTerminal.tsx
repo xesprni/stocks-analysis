@@ -18,9 +18,16 @@ type Props = {
   watchlistItems: WatchlistItem[];
 };
 
+const preferredIntervals = ["1d", "1w", "1m"] as const;
+const intervalLabels: Record<string, string> = {
+  "1d": "1d",
+  "1w": "1周",
+  "1m": "1m",
+};
+
 export function StockTerminalPage({ intervals, watchlistItems }: Props) {
   const [selectedWatchlistId, setSelectedWatchlistId] = useState("");
-  const [interval, setInterval] = useState("1m");
+  const [interval, setInterval] = useState("1d");
   const [indicatorVisibility, setIndicatorVisibility] = useState<IndicatorVisibility>({
     sma5: true,
     sma10: true,
@@ -56,6 +63,9 @@ export function StockTerminalPage({ intervals, watchlistItems }: Props) {
         })),
     [watchlistItems]
   );
+  const intervalOptions = useMemo(() => {
+    return preferredIntervals.filter((entry) => intervals.length === 0 || intervals.includes(entry) || entry === "1w");
+  }, [intervals]);
 
   useEffect(() => {
     if (!watchlistOptions.length) {
@@ -67,6 +77,12 @@ export function StockTerminalPage({ intervals, watchlistItems }: Props) {
       setSelectedWatchlistId(watchlistOptions[0].id);
     }
   }, [watchlistOptions, selectedWatchlistId]);
+
+  useEffect(() => {
+    if (intervalOptions.length && !intervalOptions.includes(interval as typeof preferredIntervals[number])) {
+      setInterval(intervalOptions[0]);
+    }
+  }, [interval, intervalOptions]);
 
   const selectedWatchItem = useMemo(
     () => watchlistOptions.find((item) => item.id === selectedWatchlistId) ?? null,
@@ -110,14 +126,15 @@ export function StockTerminalPage({ intervals, watchlistItems }: Props) {
   }, [quoteQuery.data, canQueryMarketData]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-5">
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <CardTitle>Stock Terminal</CardTitle>
             <Button
               variant="outline"
               size="sm"
+              className="w-full sm:w-auto"
               onClick={() => {
                 void quoteQuery.refetch();
                 void klineQuery.refetch();
@@ -130,7 +147,7 @@ export function StockTerminalPage({ intervals, watchlistItems }: Props) {
             </Button>
           </div>
         </CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-4">
+        <CardContent className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <div className="space-y-2">
             <Label htmlFor="watchlist_symbol">Watchlist Symbol</Label>
             <Select value={selectedWatchlistId} onValueChange={(value: string) => setSelectedWatchlistId(value)}>
@@ -153,15 +170,15 @@ export function StockTerminalPage({ intervals, watchlistItems }: Props) {
             </div>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="interval">K线周期(1m/5m/1d)</Label>
+            <Label htmlFor="interval">K线周期</Label>
             <Select value={interval} onValueChange={(value: string) => setInterval(value)}>
               <SelectTrigger id="interval">
                 <SelectValue placeholder="周期" />
               </SelectTrigger>
               <SelectContent>
-                {intervals.map((entry) => (
+                {intervalOptions.map((entry) => (
                   <SelectItem key={entry} value={entry}>
-                    {entry}
+                    {intervalLabels[entry] ?? entry}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -182,8 +199,8 @@ export function StockTerminalPage({ intervals, watchlistItems }: Props) {
         </Card>
       ) : null}
 
-      <div className="grid gap-6 lg:grid-cols-5">
-        <Card className="lg:col-span-3">
+      <div className="grid gap-4 xl:grid-cols-5">
+        <Card className="xl:col-span-3">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <BarChart3 className="h-4 w-4" />
@@ -291,7 +308,7 @@ export function StockTerminalPage({ intervals, watchlistItems }: Props) {
           </CardContent>
         </Card>
 
-        <Card className="lg:col-span-2">
+        <Card className="xl:col-span-2">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Activity className="h-4 w-4" />

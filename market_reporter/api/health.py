@@ -26,7 +26,7 @@ async def ui_options(
     )
     return UIOptionsResponse(
         markets=["ALL", "CN", "HK", "US"],
-        intervals=["1m", "5m", "1d"],
+        intervals=["1d", "1w", "1m"],
         timezones=[
             "Asia/Shanghai",
             "UTC",

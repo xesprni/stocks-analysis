@@ -141,9 +141,10 @@ class AkshareMarketDataProvider:
                 )
             return rows
 
-        if market == "CN" and interval == "1d":
+        if market == "CN" and interval in {"1d", "1w"}:
+            period = "daily" if interval == "1d" else "weekly"
             with self._silence_console():
-                df = ak.stock_zh_a_hist(symbol=code, period="daily", adjust="")
+                df = ak.stock_zh_a_hist(symbol=code, period=period, adjust="")
             for _, row in df.tail(limit).iterrows():
                 rows.append(
                     KLineBar(

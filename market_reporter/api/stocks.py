@@ -73,7 +73,7 @@ async def stock_quotes_batch(
 async def stock_kline(
     symbol: str,
     market: str = Query(..., pattern="^(CN|HK|US)$"),
-    interval: str = Query("1m", pattern="^(1m|5m|1d)$"),
+    interval: str = Query("1d", pattern="^(1d|1w|1m)$"),
     limit: int = Query(300, ge=20, le=1000),
     config: AppConfig = Depends(get_user_config),
 ):

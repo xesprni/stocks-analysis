@@ -271,7 +271,7 @@ export function CandlestickChart({ data, indicators }: Props) {
       atrChartRef.current = null;
     }
 
-    const isDaily = data[0]?.interval === "1d";
+    const isDaily = data[0]?.interval === "1d" || data[0]?.interval === "1w";
     const lowerPaneCount =
       Number(visibility.rsi) +
       Number(visibility.macd) +

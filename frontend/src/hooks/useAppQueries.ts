@@ -6,7 +6,7 @@ import { useNotifier } from "@/components/ui/notifier";
 
 const emptyOptions: UIOptions = {
   markets: ["ALL", "CN", "HK", "US"],
-  intervals: ["1m", "5m", "1d"],
+  intervals: ["1d", "1w", "1m"],
   timezones: ["Asia/Shanghai", "UTC"],
   news_providers: ["rss"],
   fund_flow_providers: ["eastmoney", "fred"],
