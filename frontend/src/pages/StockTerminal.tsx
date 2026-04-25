@@ -126,7 +126,7 @@ export function StockTerminalPage({ intervals, watchlistItems }: Props) {
   }, [quoteQuery.data, canQueryMarketData]);
 
   return (
-    <div className="space-y-4 sm:space-y-5">
+    <div className="density-page stock-terminal-page space-y-4 sm:space-y-5">
       <Card>
         <CardHeader>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

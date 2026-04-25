@@ -146,9 +146,9 @@ export function NewsFeedPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="density-page news-feed-page space-y-6">
       {/* Hero header */}
-      <section className="relative overflow-hidden rounded-3xl border border-amber-300/50 bg-gradient-to-br from-amber-500/15 via-orange-500/10 to-rose-400/15 p-6">
+      <section className="density-hero relative overflow-hidden rounded-3xl border border-amber-300/50 bg-gradient-to-br from-amber-500/15 via-orange-500/10 to-rose-400/15 p-6">
         <div className="pointer-events-none absolute -left-12 -top-14 h-44 w-44 rounded-full bg-amber-400/20 blur-3xl" />
         <div className="pointer-events-none absolute right-0 top-10 h-32 w-32 rounded-full bg-orange-400/20 blur-2xl" />
         <div className="pointer-events-none absolute -bottom-12 right-10 h-44 w-44 rounded-full bg-rose-400/20 blur-3xl" />
@@ -217,7 +217,7 @@ export function NewsFeedPage() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="overflow-x-auto rounded-lg border border-orange-200/40 dark:border-orange-800/30">
+          <div className="news-table overflow-x-auto rounded-lg border border-orange-200/40 dark:border-orange-800/30">
             <Table>
               <TableHeader>
                 <TableRow className="bg-orange-50/50 dark:bg-orange-950/20">
@@ -231,7 +231,7 @@ export function NewsFeedPage() {
                 {items.map((item) => (
                   <TableRow
                     key={`${item.source_id}:${item.title}:${item.link}`}
-                    className="cursor-pointer hover:bg-orange-50/30 dark:hover:bg-orange-950/10"
+                    className="news-row cursor-pointer hover:bg-orange-50/30 dark:hover:bg-orange-950/10"
                     onClick={() => handleRowClick(item)}
                   >
                     <TableCell className="whitespace-nowrap text-xs">

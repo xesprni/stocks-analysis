@@ -159,7 +159,7 @@ const MARKET_META: MarketMeta[] = [
 const IndexCard = memo(function IndexCard({ item }: { item: DashboardIndexMetric }) {
   const tone = toneByPct(item.change_percent);
   return (
-    <Card className={`${tone.cardClass} transition-all duration-200 hover:scale-[1.02] hover:shadow-lg`}>
+    <Card className={`dashboard-index-card ${tone.cardClass} transition-all duration-200 hover:scale-[1.02] hover:shadow-lg`}>
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
           <CardTitle className="text-base">{item.alias || item.symbol}</CardTitle>
@@ -314,8 +314,8 @@ export function DashboardPage({ onRunMarketReport, onAnalyzeStock }: DashboardPr
   const refreshing = indicesQuery.isFetching || watchlistQuery.isFetching;
 
   return (
-    <div className="space-y-6">
-      <section className="relative overflow-hidden rounded-3xl border border-sky-300/50 bg-gradient-to-br from-sky-500/15 via-emerald-500/10 to-amber-400/15 p-6">
+    <div className="density-page dashboard-page space-y-6">
+      <section className="density-hero relative overflow-hidden rounded-3xl border border-sky-300/50 bg-gradient-to-br from-sky-500/15 via-emerald-500/10 to-amber-400/15 p-6">
         <div className="pointer-events-none absolute -left-12 -top-14 h-44 w-44 rounded-full bg-sky-400/20 blur-3xl" />
         <div className="pointer-events-none absolute right-0 top-10 h-32 w-32 rounded-full bg-emerald-400/20 blur-2xl" />
         <div className="pointer-events-none absolute -bottom-12 right-10 h-44 w-44 rounded-full bg-amber-400/20 blur-3xl" />
@@ -368,7 +368,7 @@ export function DashboardPage({ onRunMarketReport, onAnalyzeStock }: DashboardPr
         </div>
       </section>
 
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="dashboard-summary-grid grid gap-4 md:grid-cols-4">
         <Card className="border-sky-300/60 bg-gradient-to-br from-sky-100/80 to-cyan-100/60 dark:from-sky-950/40 dark:to-cyan-950/20">
           <CardHeader className="pb-2">
             <CardDescription>监控指数</CardDescription>
@@ -404,13 +404,13 @@ export function DashboardPage({ onRunMarketReport, onAnalyzeStock }: DashboardPr
         </Card>
       </div>
 
-      <Tabs defaultValue="market" className="space-y-4">
-        <TabsList className="grid w-full max-w-md grid-cols-2 rounded-xl border bg-card p-1">
-          <TabsTrigger value="market" className="gap-2">
+      <Tabs defaultValue="market" className="dashboard-monitor-tabs space-y-4">
+        <TabsList className="dashboard-market-tabs-list grid w-full max-w-md grid-cols-2 rounded-xl border bg-card p-1">
+          <TabsTrigger value="market" className="dashboard-market-tab gap-2">
             <Globe2 className="h-4 w-4" />
             市场监控
           </TabsTrigger>
-          <TabsTrigger value="stocks" className="gap-2">
+          <TabsTrigger value="stocks" className="dashboard-market-tab gap-2">
             <ListChecks className="h-4 w-4" />
             个股监控
           </TabsTrigger>
@@ -437,7 +437,7 @@ export function DashboardPage({ onRunMarketReport, onAnalyzeStock }: DashboardPr
             if (!items?.length) return null;
             const MarketIcon = meta.icon;
             return (
-              <Card key={meta.key} className={meta.sectionClass}>
+              <Card key={meta.key} className={`dashboard-monitor-section ${meta.sectionClass}`}>
                 <CardHeader>
                   <div className="flex items-center justify-between">
                     <CardTitle className="flex items-center gap-2 text-base">
@@ -460,7 +460,7 @@ export function DashboardPage({ onRunMarketReport, onAnalyzeStock }: DashboardPr
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                  <div className="dashboard-index-grid grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                     {items.map((item) => (
                       <IndexCard key={`${item.symbol}-${item.market}`} item={item} />
                     ))}
@@ -473,7 +473,7 @@ export function DashboardPage({ onRunMarketReport, onAnalyzeStock }: DashboardPr
           {Object.entries(indicesByMarket)
             .filter(([key]) => !MARKET_META.some((m) => m.key === key))
             .map(([key, items]) => (
-              <Card key={key} className="border-slate-200/60 bg-gradient-to-br from-white to-slate-50/40 dark:from-slate-900 dark:to-slate-950/20">
+              <Card key={key} className="dashboard-monitor-section border-slate-200/60 bg-gradient-to-br from-white to-slate-50/40 dark:from-slate-900 dark:to-slate-950/20">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2 text-base">
                     <Gauge className="h-4 w-4" />
@@ -481,7 +481,7 @@ export function DashboardPage({ onRunMarketReport, onAnalyzeStock }: DashboardPr
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                  <div className="dashboard-index-grid grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                     {items.map((item) => (
                       <IndexCard key={`${item.symbol}-${item.market}`} item={item} />
                     ))}

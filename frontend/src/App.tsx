@@ -335,7 +335,7 @@ export default function App() {
   return (
     <main
       className={cn(
-        "min-h-screen w-full px-3 py-4 sm:px-4 lg:px-5 2xl:px-6",
+        "density-root min-h-screen w-full px-3 py-4 sm:px-4 lg:px-5 2xl:px-6",
         compactMode && "px-2 py-2 sm:px-3 lg:px-4",
       )}
     >
@@ -406,14 +406,14 @@ export default function App() {
         onValueChange={setActiveTab}
         orientation="vertical"
         className={cn(
-          "grid min-w-0 items-start gap-3 lg:grid-cols-[180px_minmax(0,1fr)] xl:grid-cols-[200px_minmax(0,1fr)]",
-          compactMode && "gap-2 lg:grid-cols-[58px_minmax(0,1fr)]",
+          "app-shell-tabs grid min-w-0 items-start gap-3 lg:grid-cols-[180px_minmax(0,1fr)] xl:grid-cols-[200px_minmax(0,1fr)]",
+          compactMode && "app-shell-tabs-compact gap-0 lg:grid-cols-[44px_minmax(0,1fr)]",
         )}
       >
         <TabsList
           className={cn(
-            "h-auto w-full max-w-full flex-row items-center justify-start gap-1 overflow-x-auto rounded-xl border border-border/80 bg-card p-1.5 lg:sticky lg:top-4 lg:flex-col lg:items-stretch lg:overflow-visible",
-            compactMode && "p-1 lg:w-[58px]",
+            "app-nav-list h-auto w-full max-w-full flex-row items-center justify-start gap-1 overflow-x-auto rounded-xl border border-border/80 bg-card p-1.5 lg:sticky lg:top-4 lg:h-[calc(100vh-7rem)] lg:flex-col lg:items-stretch lg:overflow-visible",
+            compactMode && "app-nav-list-compact p-0.5 lg:top-2 lg:h-[calc(100vh-4.5rem)] lg:w-11",
           )}
         >
           {navItems.map((item) => (
