@@ -7,7 +7,7 @@ name = "market-reporter"
 version = "0.2.0"
 description = "Finance & policy news + A/HK/US fund-flow analytics with FastAPI admin console."
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = [
   "fastapi>=0.115.0",
   "uvicorn[standard]>=0.30.0",
@@ -34,6 +34,7 @@ dependencies = [
   "PyJWT>=2.8.0",
   "bcrypt>=4.0.0,<5.0.0",
   "longbridge>=0.2.77",
+  "mcp>=1.0.0",
 ]
 
 [project.scripts]

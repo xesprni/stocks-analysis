@@ -12,7 +12,26 @@
       "Bash(ls:*)",
       "Bash(git stash:*)",
       "Bash(git checkout:*)",
-      "Bash(uv run:*)"
+      "Bash(uv run:*)",
+      "Bash(pip config *)",
+      "Bash(uv pip *)",
+      "Bash(uv sync *)",
+      "Bash(npm run *)",
+      "Bash(pip3 install *)",
+      "mcp__zread__read_file",
+      "Bash(curl -sI https://pypi.org/simple/mcp/)",
+      "Bash(curl -sI https://pypi.org/simple/akshare/)",
+      "Bash(uv cache *)",
+      "Bash(networksetup -getwebproxy Wi-Fi)",
+      "Bash(networksetup -getsecurewebproxy Wi-Fi)",
+      "Bash(networksetup -getsocksfirewallproxy Wi-Fi)",
+      "Bash(https_proxy=http://127.0.0.1:7890 http_proxy=http://127.0.0.1:7890 all_proxy=http://127.0.0.1:7890 uv sync)",
+      "Bash(https_proxy=socks5://127.0.0.1:7890 http_proxy=socks5://127.0.0.1:7890 all_proxy=socks5://127.0.0.1:7890 uv sync)",
+      "Bash(https_proxy=http://127.0.0.1:7890 http_proxy=http://127.0.0.1:7890 python3 -c \"import urllib.request; urllib.request.urlopen\\('https://pypi.org/simple/mcp/'\\); print\\('OK'\\)\")",
+      "Bash(uv python *)",
+      "Bash(curl --version)",
+      "Bash(/opt/homebrew/bin/python3 -c \"import ssl; print\\(ssl.OPENSSL_VERSION\\)\")",
+      "Bash(/opt/homebrew/bin/python3 -c \"import urllib.request; urllib.request.urlopen\\('https://pypi.org/simple/mcp/'\\); print\\('OK'\\)\")"
     ]
   }
 }

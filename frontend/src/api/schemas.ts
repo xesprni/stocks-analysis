@@ -515,3 +515,42 @@ export type SkillView = z.infer<typeof skillViewSchema>;
 export type SkillDetailView = z.infer<typeof skillDetailViewSchema>;
 export type SkillCreateRequest = z.infer<typeof skillCreateRequestSchema>;
 export type SkillUpdateRequest = z.infer<typeof skillUpdateRequestSchema>;
+
+// ---------------------------------------------------------------------------
+// MCP Server Config schemas
+// ---------------------------------------------------------------------------
+
+export const mcpServerConfigSchema = z.object({
+  id: z.number(),
+  server_name: z.string(),
+  transport_type: z.string(),
+  config: z.record(z.any()),
+  enabled: z.boolean(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+
+export const mcpServerConfigCreateSchema = z.object({
+  server_name: z.string().min(1),
+  transport_type: z.enum(["stdio", "sse"]),
+  config: z.record(z.any()),
+});
+
+export const mcpServerConfigUpdateSchema = z.object({
+  server_name: z.string().min(1).optional(),
+  transport_type: z.enum(["stdio", "sse"]).optional(),
+  config: z.record(z.any()).optional(),
+  enabled: z.boolean().optional(),
+});
+
+export const mcpConnectionTestResultSchema = z.object({
+  success: z.boolean(),
+  server_name: z.string(),
+  tools: z.array(z.record(z.any())),
+  error: z.string().nullable().optional(),
+});
+
+export type McpServerConfig = z.infer<typeof mcpServerConfigSchema>;
+export type McpServerConfigCreate = z.infer<typeof mcpServerConfigCreateSchema>;
+export type McpServerConfigUpdate = z.infer<typeof mcpServerConfigUpdateSchema>;
+export type McpConnectionTestResult = z.infer<typeof mcpConnectionTestResultSchema>;

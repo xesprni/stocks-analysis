@@ -250,7 +250,7 @@ class AnalysisService:
         )
         normalized_symbol = normalize_symbol(symbol=symbol, market=market)
 
-        agent_service = AgentService(config=self.config)
+        agent_service = AgentService(config=self.config, user_id=self.user_id)
         agent_request = AgentRunRequest(
             mode="stock",
             skill_id=skill_id,

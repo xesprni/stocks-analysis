@@ -27,6 +27,7 @@ from market_reporter.api import (
     config,
     dashboard,
     health,
+    mcp,
     news_feed,
     news_sources,
     providers,
@@ -117,6 +118,7 @@ def create_app() -> FastAPI:
     app.include_router(providers.router, dependencies=protected_deps)
     app.include_router(analysis.router, dependencies=protected_deps)
     app.include_router(skills.router, dependencies=protected_deps)
+    app.include_router(mcp.router, dependencies=protected_deps)
 
     # ---------- lifecycle events ---------------------------------------------
     @app.on_event("startup")

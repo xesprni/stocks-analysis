@@ -35,6 +35,10 @@ import {
   updateUserRequestSchema,
   changePasswordRequestSchema,
   resetPasswordRequestSchema,
+  mcpServerConfigSchema,
+  mcpServerConfigCreateSchema,
+  mcpServerConfigUpdateSchema,
+  mcpConnectionTestResultSchema,
 } from "./schemas";
 
 // Re-export all types and schemas so existing `import { ... } from "@/api/client"`
@@ -419,6 +423,30 @@ export const api = {
     }),
   reloadSkills: () =>
     request("/skills/reload", z.object({ reloaded: z.boolean(), count: z.number() }), {
+      method: "POST",
+    }),
+
+  // ---- MCP Server configs ----
+  listMcpConfigs: () =>
+    request("/mcp-configs", z.array(mcpServerConfigSchema)),
+  createMcpConfig: (payload: { server_name: string; transport_type: "stdio" | "sse"; config: Record<string, unknown> }) =>
+    request("/mcp-configs", mcpServerConfigSchema, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
+  updateMcpConfig: (id: number, payload: Record<string, unknown>) =>
+    request(`/mcp-configs/${id}`, mcpServerConfigSchema, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
+  deleteMcpConfig: (id: number) =>
+    request(`/mcp-configs/${id}`, z.object({ deleted: z.boolean() }), {
+      method: "DELETE",
+    }),
+  testMcpConfig: (id: number) =>
+    request(`/mcp-configs/${id}/test`, mcpConnectionTestResultSchema, {
       method: "POST",
     }),
 };

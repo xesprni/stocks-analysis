@@ -23,6 +23,7 @@ from market_reporter.modules.analysis.agent.tools.builtin_news_tool import (
     BuiltinNewsTool,
     get_definition as get_news_definition,
 )
+from market_reporter.modules.analysis.agent.tools.mcp_tool import McpManager
 
 
 def _build_tool_registry(config: AppConfig) -> ToolRegistry:
@@ -51,9 +52,12 @@ class AgentService:
     def __init__(
         self,
         config: AppConfig,
+        user_id: Optional[int] = None,
     ) -> None:
         self.config = config
+        self.user_id = user_id
         self.tool_registry = _build_tool_registry(config)
+        self.mcp_manager = McpManager()
         self.orchestrator = AgentOrchestrator(
             config=config,
             tool_registry=self.tool_registry,
@@ -67,13 +71,36 @@ class AgentService:
         api_key: Optional[str],
         skill_content: Optional[str] = None,
     ) -> AgentRunResult:
-        return await self.orchestrator.run(
-            request=request,
-            provider_cfg=provider_cfg,
-            model=model,
-            api_key=api_key,
-            skill_content=skill_content,
-        )
+        await self._load_mcp_tools()
+        try:
+            return await self.orchestrator.run(
+                request=request,
+                provider_cfg=provider_cfg,
+                model=model,
+                api_key=api_key,
+                skill_content=skill_content,
+            )
+        finally:
+            await self.mcp_manager.close_all()
+
+    async def _load_mcp_tools(self) -> None:
+        try:
+            mcp_results = await self.mcp_manager.load_from_db(
+                database_url=self.config.database.url,
+                user_id=self.user_id,
+            )
+            for client, definitions in mcp_results:
+                for defn in definitions:
+                    tool_name = defn.name
+                    self.tool_registry.register(
+                        definition=defn,
+                        executor=lambda *args, _client=client, _name=tool_name, **kwargs: _client.call_tool(
+                            _mcp_tool_name=_name, **kwargs
+                        ),
+                    )
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).warning("Failed to load MCP tools: %s", exc)
 
     def to_analysis_payload(
         self,

@@ -253,7 +253,7 @@ class ReportService:
                 provider_id = provider_cfg.provider_id
                 model = selected_model
 
-                agent_service = AgentService(config=config)
+                agent_service = AgentService(config=config, user_id=user_id)
                 skill_result = await resolved_skill.run(
                     ReportSkillContext(
                         config=config,

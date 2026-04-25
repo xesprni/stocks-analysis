@@ -134,3 +134,38 @@ class StockAnalysisTaskView(BaseModel):
     finished_at: Optional[datetime] = None
     error_message: Optional[str] = None
     result: Optional[StockAnalysisRunView] = None
+
+
+# ---------------------------------------------------------------------------
+# MCP Server Config schemas
+# ---------------------------------------------------------------------------
+
+
+class McpServerConfigView(BaseModel):
+    id: int
+    server_name: str
+    transport_type: str
+    config: Dict[str, Any]
+    enabled: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class McpServerConfigCreate(BaseModel):
+    server_name: str = Field(min_length=1, max_length=100)
+    transport_type: str = Field(pattern="^(stdio|sse)$")
+    config: Dict[str, Any]
+
+
+class McpServerConfigUpdate(BaseModel):
+    server_name: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    transport_type: Optional[str] = Field(default=None, pattern="^(stdio|sse)$")
+    config: Optional[Dict[str, Any]] = None
+    enabled: Optional[bool] = None
+
+
+class McpConnectionTestResult(BaseModel):
+    success: bool
+    server_name: str
+    tools: List[Dict[str, Any]] = Field(default_factory=list)
+    error: Optional[str] = None

@@ -13,8 +13,6 @@ const emptyOptions: UIOptions = {
   market_data_providers: ["composite", "akshare", "yfinance"],
   analysis_providers: ["openai_compatible", "codex_app_server"],
   analysis_models_by_provider: {},
-  listener_threshold_presets: [1, 1.5, 2, 3],
-  listener_intervals: [5, 10, 15, 30],
 };
 
 function toErrorMessage(error: unknown): string {

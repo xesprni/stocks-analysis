@@ -206,6 +206,22 @@ class NewsSourceTable(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class McpServerConfigTable(SQLModel, table=True):
+    __tablename__ = "mcp_server_configs"
+    __table_args__ = (
+        UniqueConstraint("user_id", "server_name", name="uq_mcp_user_server"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: Optional[int] = Field(default=None, foreign_key="users.id", index=True)
+    server_name: str = Field(index=True)
+    transport_type: str
+    config_json: str
+    enabled: bool = Field(default=True, index=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 class UserConfigTable(SQLModel, table=True):
     __tablename__ = "user_configs"
     __table_args__ = (UniqueConstraint("user_id", name="uq_user_configs_user_id"),)

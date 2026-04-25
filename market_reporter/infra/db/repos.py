@@ -12,6 +12,7 @@ from market_reporter.infra.db.models import (
     AnalysisProviderSecretTable,
     ApiKeyTable,
     LongbridgeCredentialTable,
+    McpServerConfigTable,
     StockAnalysisRunTable,
     StockCurvePointTable,
     StockKLineBarTable,
@@ -764,6 +765,91 @@ class UserConfigRepo:
 
     def delete(self, user_id: int) -> bool:
         row = self.get(user_id)
+        if row is None:
+            return False
+        self.session.delete(row)
+        self.session.flush()
+        return True
+
+
+class McpServerConfigRepo:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def list_by_user(self, user_id: Optional[int] = None) -> List[McpServerConfigTable]:
+        stmt = select(McpServerConfigTable).order_by(McpServerConfigTable.id.desc())
+        if user_id is None:
+            stmt = stmt.where(McpServerConfigTable.user_id.is_(None))
+        else:
+            stmt = stmt.where(McpServerConfigTable.user_id == user_id)
+        return list(self.session.exec(stmt).all())
+
+    def list_enabled(self, user_id: Optional[int] = None) -> List[McpServerConfigTable]:
+        stmt = (
+            select(McpServerConfigTable)
+            .where(McpServerConfigTable.enabled.is_(True))
+            .order_by(McpServerConfigTable.id.desc())
+        )
+        if user_id is None:
+            stmt = stmt.where(McpServerConfigTable.user_id.is_(None))
+        else:
+            stmt = stmt.where(McpServerConfigTable.user_id == user_id)
+        return list(self.session.exec(stmt).all())
+
+    def get(
+        self, config_id: int, user_id: Optional[int] = None
+    ) -> Optional[McpServerConfigTable]:
+        stmt = select(McpServerConfigTable).where(McpServerConfigTable.id == config_id)
+        if user_id is None:
+            stmt = stmt.where(McpServerConfigTable.user_id.is_(None))
+        else:
+            stmt = stmt.where(McpServerConfigTable.user_id == user_id)
+        return self.session.exec(stmt).first()
+
+    def add(
+        self,
+        server_name: str,
+        transport_type: str,
+        config_json: str,
+        enabled: bool = True,
+        user_id: Optional[int] = None,
+    ) -> McpServerConfigTable:
+        row = McpServerConfigTable(
+            user_id=user_id,
+            server_name=server_name,
+            transport_type=transport_type,
+            config_json=config_json,
+            enabled=enabled,
+        )
+        self.session.add(row)
+        self.session.flush()
+        self.session.refresh(row)
+        return row
+
+    def update(
+        self,
+        row: McpServerConfigTable,
+        server_name: Optional[str] = None,
+        transport_type: Optional[str] = None,
+        config_json: Optional[str] = None,
+        enabled: Optional[bool] = None,
+    ) -> McpServerConfigTable:
+        if server_name is not None:
+            row.server_name = server_name
+        if transport_type is not None:
+            row.transport_type = transport_type
+        if config_json is not None:
+            row.config_json = config_json
+        if enabled is not None:
+            row.enabled = enabled
+        row.updated_at = datetime.utcnow()
+        self.session.add(row)
+        self.session.flush()
+        self.session.refresh(row)
+        return row
+
+    def delete(self, config_id: int, user_id: Optional[int] = None) -> bool:
+        row = self.get(config_id=config_id, user_id=user_id)
         if row is None:
             return False
         self.session.delete(row)

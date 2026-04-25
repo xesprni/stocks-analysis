@@ -1,16 +1,20 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, RefreshCw, Save, Settings2, Trash2 } from "lucide-react";
+import { Plus, RefreshCw, Save, Settings2, Trash2, Plug, Loader2 } from "lucide-react";
 
 import type {
   AnalysisProviderConfig,
   AnalysisProviderView,
   AppConfig,
+  McpServerConfig,
+  McpConnectionTestResult,
   NewsSource,
   ProviderAvailability,
   UIOptions,
 } from "@/api/client";
+import { api } from "@/api/client";
 import { ProvidersPage } from "@/pages/Providers";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -74,6 +78,304 @@ type SourceRow = {
 };
 
 type DashboardIndex = AppConfig["dashboard"]["indices"][number];
+
+// ---------------------------------------------------------------------------
+// MCP Server Config Section
+// ---------------------------------------------------------------------------
+
+function McpConfigSection() {
+  const [configs, setConfigs] = useState<McpServerConfig[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+
+  const [formName, setFormName] = useState("");
+  const [formTransport, setFormTransport] = useState<"stdio" | "sse">("stdio");
+  const [formCommand, setFormCommand] = useState("");
+  const [formArgs, setFormArgs] = useState("");
+  const [formEnv, setFormEnv] = useState("");
+  const [formUrl, setFormUrl] = useState("");
+  const [formHeaders, setFormHeaders] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const [testingId, setTestingId] = useState<number | null>(null);
+  const [testResult, setTestResult] = useState<McpConnectionTestResult | null>(null);
+
+  const loadConfigs = async () => {
+    try {
+      setLoading(true);
+      const data = await api.listMcpConfigs();
+      setConfigs(data);
+    } catch {
+      // ignore
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadConfigs();
+  }, []);
+
+  const resetForm = () => {
+    setFormName("");
+    setFormTransport("stdio");
+    setFormCommand("");
+    setFormArgs("");
+    setFormEnv("");
+    setFormUrl("");
+    setFormHeaders("");
+    setShowForm(false);
+    setEditingId(null);
+  };
+
+  const startEdit = (cfg: McpServerConfig) => {
+    setEditingId(cfg.id);
+    setFormName(cfg.server_name);
+    setFormTransport(cfg.transport_type as "stdio" | "sse");
+    setFormCommand((cfg.config as Record<string, unknown>).command as string ?? "");
+    setFormArgs(((cfg.config as Record<string, unknown>).args as string[])?.join(" ") ?? "");
+    setFormEnv(
+      cfg.config.env
+        ? Object.entries(cfg.config.env as Record<string, string>)
+            .map(([k, v]) => `${k}=${v}`)
+            .join("\n")
+        : ""
+    );
+    setFormUrl((cfg.config as Record<string, unknown>).url as string ?? "");
+    setFormHeaders(
+      cfg.config.headers
+        ? Object.entries(cfg.config.headers as Record<string, string>)
+            .map(([k, v]) => `${k}: ${v}`)
+            .join("\n")
+        : ""
+    );
+    setShowForm(true);
+  };
+
+  const buildConfig = (): Record<string, unknown> => {
+    if (formTransport === "stdio") {
+      const cfg: Record<string, unknown> = { command: formCommand };
+      if (formArgs.trim()) {
+        cfg.args = formArgs.trim().split(/\s+/);
+      }
+      if (formEnv.trim()) {
+        const env: Record<string, string> = {};
+        for (const line of formEnv.split("\n")) {
+          const idx = line.indexOf("=");
+          if (idx > 0) {
+            env[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
+          }
+        }
+        if (Object.keys(env).length > 0) cfg.env = env;
+      }
+      return cfg;
+    }
+    const cfg: Record<string, unknown> = { url: formUrl };
+    if (formHeaders.trim()) {
+      const headers: Record<string, string> = {};
+      for (const line of formHeaders.split("\n")) {
+        const idx = line.indexOf(":");
+        if (idx > 0) {
+          headers[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
+        }
+      }
+      if (Object.keys(headers).length > 0) cfg.headers = headers;
+    }
+    return cfg;
+  };
+
+  const handleSave = async () => {
+    try {
+      setSaving(true);
+      const payload = { server_name: formName, transport_type: formTransport, config: buildConfig() };
+      if (editingId) {
+        await api.updateMcpConfig(editingId, payload);
+      } else {
+        await api.createMcpConfig(payload);
+      }
+      resetForm();
+      await loadConfigs();
+    } catch (err) {
+      alert(`保存失败: ${err instanceof Error ? err.message : err}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (id: number) => {
+    if (!window.confirm("确认删除此 MCP Server 配置？")) return;
+    try {
+      await api.deleteMcpConfig(id);
+      await loadConfigs();
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleTest = async (id: number) => {
+    setTestingId(id);
+    setTestResult(null);
+    try {
+      const result = await api.testMcpConfig(id);
+      setTestResult(result);
+    } catch (err) {
+      setTestResult({ success: false, server_name: "", tools: [], error: String(err) });
+    } finally {
+      setTestingId(null);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Plug className="h-5 w-5" />
+          MCP Server 配置
+        </CardTitle>
+        <CardDescription>配置 MCP Server 连接，Agent 运行时自动发现并调用其工具</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {loading ? (
+          <div className="flex items-center justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+        ) : configs.length > 0 ? (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>名称</TableHead>
+                <TableHead>类型</TableHead>
+                <TableHead>配置</TableHead>
+                <TableHead>状态</TableHead>
+                <TableHead className="text-right">操作</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {configs.map((cfg) => (
+                <TableRow key={cfg.id}>
+                  <TableCell className="font-medium">{cfg.server_name}</TableCell>
+                  <TableCell><Badge variant="outline">{cfg.transport_type.toUpperCase()}</Badge></TableCell>
+                  <TableCell className="max-w-[200px] truncate text-xs text-muted-foreground">
+                    {cfg.transport_type === "stdio"
+                      ? `${(cfg.config as Record<string, unknown>).command ?? ""} ${(((cfg.config as Record<string, unknown>).args ?? []) as string[]).join(" ")}`
+                      : String((cfg.config as Record<string, unknown>).url ?? "")}
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={cfg.enabled ? "default" : "secondary"}>
+                      {cfg.enabled ? "启用" : "禁用"}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-right space-x-1">
+                    <Button size="sm" variant="ghost" onClick={() => startEdit(cfg)}>编辑</Button>
+                    <Button size="sm" variant="ghost" onClick={() => handleTest(cfg.id)} disabled={testingId === cfg.id}>
+                      {testingId === cfg.id ? <Loader2 className="h-3 w-3 animate-spin" /> : "测试"}
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={async () => {
+                      await api.updateMcpConfig(cfg.id, { enabled: !cfg.enabled });
+                      await loadConfigs();
+                    }}>{cfg.enabled ? "禁用" : "启用"}</Button>
+                    <Button size="sm" variant="ghost" className="text-destructive" onClick={() => handleDelete(cfg.id)}>
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        ) : (
+          <p className="text-sm text-muted-foreground py-2">暂无 MCP Server 配置</p>
+        )}
+
+        {testResult && (
+          <Card className={testResult.success ? "border-green-500/50" : "border-red-500/50"}>
+            <CardContent className="py-3 text-sm">
+              {testResult.success ? (
+                <>
+                  <p className="font-medium text-green-700 dark:text-green-400">连接成功 — 发现 {testResult.tools.length} 个工具</p>
+                  {testResult.tools.length > 0 && (
+                    <ul className="mt-1 space-y-0.5 text-xs text-muted-foreground">
+                      {testResult.tools.map((t, i) => (
+                        <li key={i}><span className="font-mono">{String(t.name)}</span>: {String(t.description ?? "")}</li>
+                      ))}
+                    </ul>
+                  )}
+                </>
+              ) : (
+                <p className="text-red-700 dark:text-red-400">连接失败: {testResult.error ?? "未知错误"}</p>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {showForm ? (
+          <Card className="border-dashed">
+            <CardContent className="py-4 space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>名称</Label>
+                  <Input value={formName} onChange={(e) => setFormName(e.target.value)} placeholder="my-mcp-server" />
+                </div>
+                <div>
+                  <Label>传输方式</Label>
+                  <Select value={formTransport} onValueChange={(v) => setFormTransport(v as "stdio" | "sse")}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="stdio">STDIO (子进程)</SelectItem>
+                      <SelectItem value="sse">SSE (HTTP)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {formTransport === "stdio" ? (
+                <>
+                  <div>
+                    <Label>命令</Label>
+                    <Input value={formCommand} onChange={(e) => setFormCommand(e.target.value)} placeholder="npx" />
+                  </div>
+                  <div>
+                    <Label>参数 (空格分隔)</Label>
+                    <Input value={formArgs} onChange={(e) => setFormArgs(e.target.value)} placeholder="-y @anthropic/mcp-server" />
+                  </div>
+                  <div>
+                    <Label>环境变量 (KEY=VALUE, 每行一个)</Label>
+                    <textarea className="flex min-h-[60px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={formEnv} onChange={(e) => setFormEnv(e.target.value)} placeholder={"API_KEY=xxx\nOTHER=yyy"} />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div>
+                    <Label>URL</Label>
+                    <Input value={formUrl} onChange={(e) => setFormUrl(e.target.value)} placeholder="http://localhost:3000/sse" />
+                  </div>
+                  <div>
+                    <Label>Headers (Key: Value, 每行一个)</Label>
+                    <textarea className="flex min-h-[60px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={formHeaders} onChange={(e) => setFormHeaders(e.target.value)} placeholder={"Authorization: Bearer xxx"} />
+                  </div>
+                </>
+              )}
+
+              <div className="flex gap-2">
+                <Button size="sm" onClick={handleSave} disabled={saving || !formName.trim()}>
+                  {saving ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Save className="mr-1 h-3 w-3" />}
+                  {editingId ? "更新" : "添加"}
+                </Button>
+                <Button size="sm" variant="ghost" onClick={resetForm}>取消</Button>
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          <Button size="sm" variant="outline" onClick={() => { resetForm(); setShowForm(true); }}>
+            <Plus className="mr-1 h-3 w-3" /> 添加 MCP Server
+          </Button>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Config Page
+// ---------------------------------------------------------------------------
 
 export function ConfigPage({
   config,
@@ -203,712 +505,761 @@ export function ConfigPage({
         </div>
       </section>
 
-      {/* Basic settings */}
-      <Card className="border-sky-200/60 bg-gradient-to-br from-white to-sky-50/40 dark:from-slate-900 dark:to-sky-950/20">
-        <CardHeader className="flex flex-row items-start justify-between gap-3">
-          <div>
-            <CardTitle className="text-base">基础配置</CardTitle>
-            <CardDescription>输出目录、时区、超时、数据库等全局参数。</CardDescription>
-          </div>
-          <Button onClick={onSaveBasic} disabled={savingSection !== null && savingSection !== "basic"}>
-            <Save className="mr-2 h-4 w-4" />
-            {savingSection === "basic" ? "保存中..." : "保存基础配置"}
-          </Button>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-3">
-            <div className="space-y-2">
-              <Label htmlFor="output_root">输出目录</Label>
-              <Input
-                id="output_root"
-                value={config.output_root}
-                onChange={(event) => setConfig({ ...config, output_root: event.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="timezone">时区</Label>
-              <Select value={config.timezone} onValueChange={(value: string) => setConfig({ ...config, timezone: value })}>
-                <SelectTrigger id="timezone">
-                  <SelectValue placeholder="时区" />
-                </SelectTrigger>
-                <SelectContent>
-                  {options.timezones.map((entry) => (
-                    <SelectItem key={entry} value={entry}>
-                      {entry}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="news_limit">新闻条数</Label>
-              <Input
-                id="news_limit"
-                type="number"
-                value={config.news_limit}
-                onChange={(event) => setConfig({ ...config, news_limit: Number(event.target.value) })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="flow_periods">资金流周期</Label>
-              <Input
-                id="flow_periods"
-                type="number"
-                value={config.flow_periods}
-                onChange={(event) => setConfig({ ...config, flow_periods: Number(event.target.value) })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="timeout">请求超时(秒)</Label>
-              <Input
-                id="timeout"
-                type="number"
-                value={config.request_timeout_seconds}
-                onChange={(event) =>
-                  setConfig({
-                    ...config,
-                    request_timeout_seconds: Number(event.target.value),
-                  })
-                }
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="database_url">数据库 URL</Label>
-              <Input
-                id="database_url"
-                value={config.database.url}
-                onChange={(event) =>
-                  setConfig({
-                    ...config,
-                    database: {
-                      ...config.database,
-                      url: event.target.value,
-                    },
-                  })
-                }
-              />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      <Tabs defaultValue="general" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="general">常规</TabsTrigger>
+          <TabsTrigger value="data">数据源</TabsTrigger>
+          <TabsTrigger value="integration">集成</TabsTrigger>
+          <TabsTrigger value="ai">AI 分析</TabsTrigger>
+        </TabsList>
 
-      {/* Provider defaults */}
-      <Card className="border-emerald-200/60 bg-gradient-to-br from-white to-emerald-50/40 dark:from-slate-900 dark:to-emerald-950/20">
-        <CardHeader className="flex flex-row items-start justify-between gap-3">
-          <div>
-            <CardTitle className="text-base">模块默认 Provider</CardTitle>
-            <CardDescription>新闻、行情、搜索、监听等模块的默认服务提供方。</CardDescription>
-          </div>
-          <Button onClick={onSaveModuleDefaults} disabled={savingSection !== null && savingSection !== "module_defaults"}>
-            <Save className="mr-2 h-4 w-4" />
-            {savingSection === "module_defaults" ? "保存中..." : "保存模块默认配置"}
-          </Button>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-4 md:grid-cols-3">
-            <div className="space-y-2">
-              <Label htmlFor="news_provider">新闻默认 Provider</Label>
-              <Select
-                value={config.modules.news.default_provider}
-                onValueChange={(value: string) =>
-                  setConfig({
-                    ...config,
-                    modules: {
-                      ...config.modules,
-                      news: {
-                        ...config.modules.news,
-                        default_provider: value,
-                      },
-                    },
-                  })
-                }
-              >
-                <SelectTrigger id="news_provider">
-                  <SelectValue placeholder="新闻 Provider" />
-                </SelectTrigger>
-                <SelectContent>
-                  {options.news_providers.map((entry) => (
-                    <SelectItem key={entry} value={entry}>
-                      {entry}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="default_provider">行情默认 Provider</Label>
-              <Select
-                value={config.modules.market_data.default_provider}
-                onValueChange={(value: string) =>
-                  setConfig({
-                    ...config,
-                    modules: {
-                      ...config.modules,
-                      market_data: {
-                        ...config.modules.market_data,
-                        default_provider: value,
-                      },
-                    },
-                  })
-                }
-              >
-                <SelectTrigger id="default_provider">
-                  <SelectValue placeholder="行情 Provider" />
-                </SelectTrigger>
-                <SelectContent>
-                  {options.market_data_providers.map((entry) => (
-                    <SelectItem key={entry} value={entry}>
-                      {entry}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="symbol_search_provider">搜索默认 Provider</Label>
-              <Select
-                value={config.symbol_search.default_provider}
-                onValueChange={(value: string) =>
-                  setConfig({
-                    ...config,
-                    symbol_search: {
-                      ...config.symbol_search,
-                      default_provider: value,
-                    },
-                    modules: {
-                      ...config.modules,
-                      symbol_search: {
-                        ...config.modules.symbol_search,
-                        default_provider: value,
-                      },
-                    },
-                  })
-                }
-              >
-                <SelectTrigger id="symbol_search_provider">
-                  <SelectValue placeholder="搜索 Provider" />
-                </SelectTrigger>
-                <SelectContent>
-                  {["longbridge"].map((entry) => (
-                    <SelectItem key={entry} value={entry}>
-                      {entry}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="symbol_search_max_results">搜索条数上限</Label>
-              <Input
-                id="symbol_search_max_results"
-                type="number"
-                min={5}
-                max={100}
-                value={config.symbol_search.max_results}
-                onChange={(event) =>
-                  setConfig({
-                    ...config,
-                    symbol_search: {
-                      ...config.symbol_search,
-                      max_results: Math.min(100, Math.max(5, Number(event.target.value || 20))),
-                    },
-                  })
-                }
-              />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+        {/* ==================== 常规 Tab ==================== */}
+        <TabsContent value="general" className="space-y-4">
+          {/* Basic settings */}
+          <Card className="border-sky-200/60 bg-gradient-to-br from-white to-sky-50/40 dark:from-slate-900 dark:to-sky-950/20">
+            <CardHeader className="flex flex-row items-start justify-between gap-3">
+              <div>
+                <CardTitle className="text-base">基础配置</CardTitle>
+                <CardDescription>输出目录、时区、超时、数据库等全局参数。</CardDescription>
+              </div>
+              <Button onClick={onSaveBasic} disabled={savingSection !== null && savingSection !== "basic"}>
+                <Save className="mr-2 h-4 w-4" />
+                {savingSection === "basic" ? "保存中..." : "保存基础配置"}
+              </Button>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-3">
+                <div className="space-y-2">
+                  <Label htmlFor="output_root">输出目录</Label>
+                  <Input
+                    id="output_root"
+                    value={config.output_root}
+                    onChange={(event) => setConfig({ ...config, output_root: event.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="timezone">时区</Label>
+                  <Select value={config.timezone} onValueChange={(value: string) => setConfig({ ...config, timezone: value })}>
+                    <SelectTrigger id="timezone">
+                      <SelectValue placeholder="时区" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {options.timezones.map((entry) => (
+                        <SelectItem key={entry} value={entry}>
+                          {entry}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="news_limit">新闻条数</Label>
+                  <Input
+                    id="news_limit"
+                    type="number"
+                    value={config.news_limit}
+                    onChange={(event) => setConfig({ ...config, news_limit: Number(event.target.value) })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="flow_periods">资金流周期</Label>
+                  <Input
+                    id="flow_periods"
+                    type="number"
+                    value={config.flow_periods}
+                    onChange={(event) => setConfig({ ...config, flow_periods: Number(event.target.value) })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="timeout">请求超时(秒)</Label>
+                  <Input
+                    id="timeout"
+                    type="number"
+                    value={config.request_timeout_seconds}
+                    onChange={(event) =>
+                      setConfig({
+                        ...config,
+                        request_timeout_seconds: Number(event.target.value),
+                      })
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="database_url">数据库 URL</Label>
+                  <Input
+                    id="database_url"
+                    value={config.database.url}
+                    onChange={(event) =>
+                      setConfig({
+                        ...config,
+                        database: {
+                          ...config.database,
+                          url: event.target.value,
+                        },
+                      })
+                    }
+                  />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
 
-      {/* Longbridge OpenAPI */}
-      <Card className="border-indigo-200/60 bg-gradient-to-br from-white to-indigo-50/40 dark:from-slate-900 dark:to-indigo-950/20">
-        <CardHeader className="flex flex-row items-start justify-between gap-3">
-          <div>
-            <CardTitle className="text-base">
-              Longbridge OpenAPI
-              {config.longbridge.enabled ? (
-                <Badge className="ml-2 bg-emerald-100 text-emerald-700" variant="secondary">已启用</Badge>
-              ) : (
-                <Badge className="ml-2" variant="secondary">未启用</Badge>
-              )}
-            </CardTitle>
-            <CardDescription>
-              配置 Longbridge 行情数据源凭证。保存后自动启用，用于行情、K 线、分时、基本面等数据获取。
-            </CardDescription>
-          </div>
-          <div className="flex gap-2">
-            <Button
-              variant="destructive"
-              size="sm"
-              disabled={!config.longbridge.enabled}
-              onClick={async () => {
-                setLbSaving(true);
-                try {
-                  await onDeleteLongbridgeToken();
-                } finally {
-                  setLbSaving(false);
-                }
-              }}
-            >
-              <Trash2 className="mr-1 h-3.5 w-3.5" />
-              清除凭证
-            </Button>
-            <Button
-              disabled={lbSaving || !lbAppKey.trim() || !lbAppSecret.trim() || !lbAccessToken.trim()}
-              onClick={async () => {
-                setLbSaving(true);
-                try {
-                  await onSaveLongbridgeToken({
-                    app_key: lbAppKey.trim(),
-                    app_secret: lbAppSecret.trim(),
-                    access_token: lbAccessToken.trim(),
-                  });
-                } finally {
-                  setLbSaving(false);
-                }
-              }}
-            >
-              <Save className="mr-2 h-4 w-4" />
-              {lbSaving ? "保存中..." : "保存凭证"}
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-3">
-            <div className="space-y-2">
-              <Label htmlFor="lb_app_key">App Key</Label>
-              <Input
-                id="lb_app_key"
-                value={lbAppKey}
-                placeholder="Longbridge App Key"
-                onChange={(e) => setLbAppKey(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="lb_app_secret">App Secret</Label>
-              <Input
-                id="lb_app_secret"
-                type="password"
-                value={lbAppSecret}
-                placeholder={config.longbridge.app_secret === "***" ? "已配置（留空不修改）" : "Longbridge App Secret"}
-                onChange={(e) => setLbAppSecret(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="lb_access_token">Access Token</Label>
-              <Input
-                id="lb_access_token"
-                type="password"
-                value={lbAccessToken}
-                placeholder={config.longbridge.access_token === "***" ? "已配置（留空不修改）" : "Longbridge Access Token"}
-                onChange={(e) => setLbAccessToken(e.target.value)}
-              />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+          {/* Provider defaults */}
+          <Card className="border-emerald-200/60 bg-gradient-to-br from-white to-emerald-50/40 dark:from-slate-900 dark:to-emerald-950/20">
+            <CardHeader className="flex flex-row items-start justify-between gap-3">
+              <div>
+                <CardTitle className="text-base">模块默认 Provider</CardTitle>
+                <CardDescription>新闻、行情、搜索、监听等模块的默认服务提供方。</CardDescription>
+              </div>
+              <Button onClick={onSaveModuleDefaults} disabled={savingSection !== null && savingSection !== "module_defaults"}>
+                <Save className="mr-2 h-4 w-4" />
+                {savingSection === "module_defaults" ? "保存中..." : "保存模块默认配置"}
+              </Button>
+            </CardHeader>
+            <CardContent>
+              <div className="grid gap-4 md:grid-cols-3">
+                <div className="space-y-2">
+                  <Label htmlFor="news_provider">新闻默认 Provider</Label>
+                  <Select
+                    value={config.modules.news.default_provider}
+                    onValueChange={(value: string) =>
+                      setConfig({
+                        ...config,
+                        modules: {
+                          ...config.modules,
+                          news: {
+                            ...config.modules.news,
+                            default_provider: value,
+                          },
+                        },
+                      })
+                    }
+                  >
+                    <SelectTrigger id="news_provider">
+                      <SelectValue placeholder="新闻 Provider" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {options.news_providers.map((entry) => (
+                        <SelectItem key={entry} value={entry}>
+                          {entry}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="default_provider">行情默认 Provider</Label>
+                  <Select
+                    value={config.modules.market_data.default_provider}
+                    onValueChange={(value: string) =>
+                      setConfig({
+                        ...config,
+                        modules: {
+                          ...config.modules,
+                          market_data: {
+                            ...config.modules.market_data,
+                            default_provider: value,
+                          },
+                        },
+                      })
+                    }
+                  >
+                    <SelectTrigger id="default_provider">
+                      <SelectValue placeholder="行情 Provider" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {options.market_data_providers.map((entry) => (
+                        <SelectItem key={entry} value={entry}>
+                          {entry}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="symbol_search_provider">搜索默认 Provider</Label>
+                  <Select
+                    value={config.symbol_search.default_provider}
+                    onValueChange={(value: string) =>
+                      setConfig({
+                        ...config,
+                        symbol_search: {
+                          ...config.symbol_search,
+                          default_provider: value,
+                        },
+                        modules: {
+                          ...config.modules,
+                          symbol_search: {
+                            ...config.modules.symbol_search,
+                            default_provider: value,
+                          },
+                        },
+                      })
+                    }
+                  >
+                    <SelectTrigger id="symbol_search_provider">
+                      <SelectValue placeholder="搜索 Provider" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {["longbridge"].map((entry) => (
+                        <SelectItem key={entry} value={entry}>
+                          {entry}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="symbol_search_max_results">搜索条数上限</Label>
+                  <Input
+                    id="symbol_search_max_results"
+                    type="number"
+                    min={5}
+                    max={100}
+                    value={config.symbol_search.max_results}
+                    onChange={(event) =>
+                      setConfig({
+                        ...config,
+                        symbol_search: {
+                          ...config.symbol_search,
+                          max_results: Math.min(100, Math.max(5, Number(event.target.value || 20))),
+                        },
+                      })
+                    }
+                  />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
 
-      {/* Telegram */}
-      <Card className="border-emerald-200/60 bg-gradient-to-br from-white to-emerald-50/40 dark:from-slate-900 dark:to-emerald-950/20">
-        <CardHeader className="flex flex-row items-start justify-between gap-3">
-          <div>
-            <CardTitle className="text-base">
-              Telegram 报告推送
-              {config.telegram.enabled ? (
-                <Badge className="ml-2 bg-emerald-100 text-emerald-700" variant="secondary">已启用</Badge>
-              ) : (
-                <Badge className="ml-2" variant="secondary">未启用</Badge>
-              )}
-            </CardTitle>
-            <CardDescription>
-              报告任务完成后发送 Telegram 通知。配置存储在数据库中（加密保存）。
-            </CardDescription>
-          </div>
-          <div className="flex gap-2">
-            <Button
-              variant="destructive"
-              size="sm"
-              disabled={tgSaving || (!hasTelegramTokenConfigured && !tgChatId.trim())}
-              onClick={async () => {
-                setTgSaving(true);
-                try {
-                  await onDeleteTelegramConfig();
-                  setTgEnabled(false);
-                  setTgChatId("");
-                  setTgBotToken("");
-                  setTgTimeoutSeconds(10);
-                } finally {
-                  setTgSaving(false);
-                }
-              }}
-            >
-              <Trash2 className="mr-1 h-3.5 w-3.5" />
-              清空配置
-            </Button>
-            <Button
-              disabled={tgSaving || !tgChatId.trim() || (!tgBotToken.trim() && !hasTelegramTokenConfigured)}
-              onClick={async () => {
-                setTgSaving(true);
-                try {
-                  await onSaveTelegramConfig({
-                    enabled: tgEnabled,
-                    chat_id: tgChatId.trim(),
-                    bot_token: tgBotToken.trim() || "***",
-                    timeout_seconds: Math.min(60, Math.max(3, Number(tgTimeoutSeconds || 10))),
-                  });
-                } finally {
-                  setTgSaving(false);
-                }
-              }}
-            >
-              <Save className="mr-2 h-4 w-4" />
-              {tgSaving ? "保存中..." : "保存 Telegram 配置"}
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-4">
-            <div className="space-y-2">
-              <Label htmlFor="tg_enabled">启用推送</Label>
-              <Select value={tgEnabled ? "true" : "false"} onValueChange={(value) => setTgEnabled(value === "true")}>
-                <SelectTrigger id="tg_enabled">
-                  <SelectValue placeholder="启用状态" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="true">enabled</SelectItem>
-                  <SelectItem value="false">disabled</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="tg_chat_id">Chat ID</Label>
-              <Input
-                id="tg_chat_id"
-                value={tgChatId}
-                placeholder="例如：-100123456789"
-                onChange={(event) => setTgChatId(event.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="tg_bot_token">Bot Token</Label>
-              <Input
-                id="tg_bot_token"
-                type="password"
-                value={tgBotToken}
-                placeholder={hasTelegramTokenConfigured ? "已配置（留空保持不变）" : "123456:ABC-DEF..."}
-                onChange={(event) => setTgBotToken(event.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="tg_timeout">请求超时(秒)</Label>
-              <Input
-                id="tg_timeout"
-                type="number"
-                min={3}
-                max={60}
-                value={tgTimeoutSeconds}
-                onChange={(event) => setTgTimeoutSeconds(Math.min(60, Math.max(3, Number(event.target.value || 10))))}
-              />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+          {/* Dashboard index settings */}
+          <Card className="border-amber-200/60 bg-gradient-to-br from-white to-amber-50/40 dark:from-slate-900 dark:to-amber-950/20">
+            <CardHeader className="flex flex-row items-start justify-between gap-3">
+              <div>
+                <CardTitle className="text-base">Dashboard 指数配置</CardTitle>
+                <CardDescription>配置监控页面的指数列表与自动刷新间隔（开关在 Dashboard 页面）。</CardDescription>
+              </div>
+              <Button onClick={onSaveDashboard} disabled={savingSection !== null && savingSection !== "dashboard"}>
+                <Save className="mr-2 h-4 w-4" />
+                {savingSection === "dashboard" ? "保存中..." : "保存 Dashboard 配置"}
+              </Button>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="dashboard_auto_refresh_seconds">自动刷新间隔(秒)</Label>
+                  <Input
+                    id="dashboard_auto_refresh_seconds"
+                    type="number"
+                    min={3}
+                    max={300}
+                    value={config.dashboard.auto_refresh_seconds}
+                    onChange={(event) =>
+                      updateDashboard({
+                        auto_refresh_seconds: Math.min(
+                          300,
+                          Math.max(3, Number(event.target.value || 15))
+                        ),
+                      })
+                    }
+                  />
+                </div>
+              </div>
 
-      {/* Dashboard index settings */}
-      <Card className="border-amber-200/60 bg-gradient-to-br from-white to-amber-50/40 dark:from-slate-900 dark:to-amber-950/20">
-        <CardHeader className="flex flex-row items-start justify-between gap-3">
-          <div>
-            <CardTitle className="text-base">Dashboard 指数配置</CardTitle>
-            <CardDescription>配置监控页面的指数列表与自动刷新间隔（开关在 Dashboard 页面）。</CardDescription>
-          </div>
-          <Button onClick={onSaveDashboard} disabled={savingSection !== null && savingSection !== "dashboard"}>
-            <Save className="mr-2 h-4 w-4" />
-            {savingSection === "dashboard" ? "保存中..." : "保存 Dashboard 配置"}
-          </Button>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-3 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="dashboard_auto_refresh_seconds">自动刷新间隔(秒)</Label>
-              <Input
-                id="dashboard_auto_refresh_seconds"
-                type="number"
-                min={3}
-                max={300}
-                value={config.dashboard.auto_refresh_seconds}
-                onChange={(event) =>
-                  updateDashboard({
-                    auto_refresh_seconds: Math.min(
-                      300,
-                      Math.max(3, Number(event.target.value || 15))
-                    ),
-                  })
-                }
-              />
-            </div>
-          </div>
+              <div className="overflow-x-auto rounded-xl border border-border/60">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-muted/30">
+                      <TableHead>Alias</TableHead>
+                      <TableHead>Symbol</TableHead>
+                      <TableHead>Market</TableHead>
+                      <TableHead>启用</TableHead>
+                      <TableHead>操作</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {dashboardIndices.map((item, index) => (
+                      <TableRow key={`${item.symbol}-${item.market}-${index}`}>
+                        <TableCell>
+                          <Input
+                            value={item.alias ?? ""}
+                            placeholder="指数名称"
+                            onChange={(event) =>
+                              updateIndexRow(index, { alias: event.target.value })
+                            }
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Input
+                            value={item.symbol}
+                            placeholder="如 ^GSPC"
+                            onChange={(event) =>
+                              updateIndexRow(index, {
+                                symbol: event.target.value.trim().toUpperCase(),
+                              })
+                            }
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Select
+                            value={item.market}
+                            onValueChange={(value: string) =>
+                              updateIndexRow(index, {
+                                market: value as "CN" | "HK" | "US",
+                              })
+                            }
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Market" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="CN">CN</SelectItem>
+                              <SelectItem value="HK">HK</SelectItem>
+                              <SelectItem value="US">US</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+                        <TableCell>
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={item.enabled !== false}
+                            aria-label={`${item.enabled !== false ? "禁用" : "启用"} ${item.alias || item.symbol}`}
+                            onClick={() =>
+                              updateIndexRow(index, { enabled: !(item.enabled !== false) })
+                            }
+                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                              item.enabled !== false ? "bg-emerald-500" : "bg-slate-400"
+                            }`}
+                          >
+                            <span
+                              className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
+                                item.enabled !== false ? "translate-x-5" : "translate-x-0.5"
+                              }`}
+                            />
+                          </button>
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => removeIndexRow(index)}
+                          >
+                            <Trash2 className="mr-1 h-3.5 w-3.5" />
+                            删除
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+              <div>
+                <Button size="sm" variant="outline" onClick={addIndexRow}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  新增指数
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-          <div className="overflow-x-auto rounded-xl border border-border/60">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-muted/30">
-                  <TableHead>Alias</TableHead>
-                  <TableHead>Symbol</TableHead>
-                  <TableHead>Market</TableHead>
-                  <TableHead>启用</TableHead>
-                  <TableHead>操作</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {dashboardIndices.map((item, index) => (
-                  <TableRow key={`${item.symbol}-${item.market}-${index}`}>
-                    <TableCell>
-                      <Input
-                        value={item.alias ?? ""}
-                        placeholder="指数名称"
-                        onChange={(event) =>
-                          updateIndexRow(index, { alias: event.target.value })
-                        }
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Input
-                        value={item.symbol}
-                        placeholder="如 ^GSPC"
-                        onChange={(event) =>
-                          updateIndexRow(index, {
-                            symbol: event.target.value.trim().toUpperCase(),
+        {/* ==================== 数据源 Tab ==================== */}
+        <TabsContent value="data" className="space-y-4">
+          {/* News sources */}
+          <Card className="border-rose-200/60 bg-gradient-to-br from-white to-rose-50/40 dark:from-slate-900 dark:to-rose-950/20">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-base">新闻来源配置</CardTitle>
+                  <CardDescription>每条来源可单独编辑、启用/禁用、删除；新增后立即生效。</CardDescription>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={sourceRows.every((r) => r.enabled)}
+                  onClick={() => {
+                    void Promise.all(
+                      sourceRows
+                        .filter((r) => !r.enabled)
+                        .map((r) =>
+                          onUpdateNewsSource(r.source_id, {
+                            name: r.name,
+                            category: r.category,
+                            url: r.url,
+                            enabled: true,
                           })
-                        }
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Select
-                        value={item.market}
-                        onValueChange={(value: string) =>
-                          updateIndexRow(index, {
-                            market: value as "CN" | "HK" | "US",
-                          })
-                        }
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Market" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="CN">CN</SelectItem>
-                          <SelectItem value="HK">HK</SelectItem>
-                          <SelectItem value="US">US</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </TableCell>
-                    <TableCell>
-                      <button
-                        type="button"
-                        role="switch"
-                        aria-checked={item.enabled !== false}
-                        aria-label={`${item.enabled !== false ? "禁用" : "启用"} ${item.alias || item.symbol}`}
-                        onClick={() =>
-                          updateIndexRow(index, { enabled: !(item.enabled !== false) })
-                        }
-                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                          item.enabled !== false ? "bg-emerald-500" : "bg-slate-400"
-                        }`}
-                      >
-                        <span
-                          className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
-                            item.enabled !== false ? "translate-x-5" : "translate-x-0.5"
-                          }`}
-                        />
-                      </button>
-                    </TableCell>
-                    <TableCell>
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        onClick={() => removeIndexRow(index)}
-                      >
-                        <Trash2 className="mr-1 h-3.5 w-3.5" />
-                        删除
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-          <div>
-            <Button size="sm" variant="outline" onClick={addIndexRow}>
-              <Plus className="mr-2 h-4 w-4" />
-              新增指数
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+                        )
+                    ).then(() => setSourceRows((prev) => prev.map((r) => ({ ...r, enabled: true }))));
+                  }}
+                >
+                  一键全部启用
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="overflow-x-auto rounded-xl border border-border/60">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-muted/30">
+                      <TableHead>Source ID</TableHead>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Category</TableHead>
+                      <TableHead>URL</TableHead>
+                      <TableHead>Enabled</TableHead>
+                      <TableHead>操作</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {sourceRows.map((row) => (
+                      <TableRow key={row.source_id}>
+                        <TableCell className="font-mono text-xs">{row.source_id}</TableCell>
+                        <TableCell>
+                          <Input
+                            value={row.name}
+                            onChange={(event) =>
+                              setSourceRows((prev) =>
+                                prev.map((item) =>
+                                  item.source_id === row.source_id ? { ...item, name: event.target.value } : item
+                                )
+                              )
+                            }
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Input
+                            value={row.category}
+                            onChange={(event) =>
+                              setSourceRows((prev) =>
+                                prev.map((item) =>
+                                  item.source_id === row.source_id ? { ...item, category: event.target.value } : item
+                                )
+                              )
+                            }
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Input
+                            value={row.url}
+                            onChange={(event) =>
+                              setSourceRows((prev) =>
+                                prev.map((item) =>
+                                  item.source_id === row.source_id ? { ...item, url: event.target.value } : item
+                                )
+                              )
+                            }
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Select
+                            value={row.enabled ? "true" : "false"}
+                            onValueChange={(value: string) =>
+                              setSourceRows((prev) =>
+                                prev.map((item) =>
+                                  item.source_id === row.source_id ? { ...item, enabled: value === "true" } : item
+                                )
+                              )
+                            }
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="启用状态" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="true">enabled</SelectItem>
+                              <SelectItem value="false">disabled</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+                        <TableCell className="space-x-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() =>
+                              void onUpdateNewsSource(row.source_id, {
+                                name: row.name,
+                                category: row.category,
+                                url: row.url,
+                                enabled: row.enabled,
+                              })
+                            }
+                          >
+                            <Save className="mr-1 h-3.5 w-3.5" />
+                            保存
+                          </Button>
+                          <Button size="sm" variant="destructive" onClick={() => void onDeleteNewsSource(row.source_id)}>
+                            <Trash2 className="mr-1 h-3.5 w-3.5" />
+                            删除
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
 
-      {/* News sources */}
-      <Card className="border-rose-200/60 bg-gradient-to-br from-white to-rose-50/40 dark:from-slate-900 dark:to-rose-950/20">
-        <CardHeader>
-          <CardTitle className="text-base">新闻来源配置</CardTitle>
-          <CardDescription>每条来源可单独编辑、启用/禁用、删除；新增后立即生效。</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="overflow-x-auto rounded-xl border border-border/60">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-muted/30">
-                  <TableHead>Source ID</TableHead>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Category</TableHead>
-                  <TableHead>URL</TableHead>
-                  <TableHead>Enabled</TableHead>
-                  <TableHead>操作</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {sourceRows.map((row) => (
-                  <TableRow key={row.source_id}>
-                    <TableCell className="font-mono text-xs">{row.source_id}</TableCell>
-                    <TableCell>
-                      <Input
-                        value={row.name}
-                        onChange={(event) =>
-                          setSourceRows((prev) =>
-                            prev.map((item) =>
-                              item.source_id === row.source_id ? { ...item, name: event.target.value } : item
-                            )
-                          )
-                        }
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Input
-                        value={row.category}
-                        onChange={(event) =>
-                          setSourceRows((prev) =>
-                            prev.map((item) =>
-                              item.source_id === row.source_id ? { ...item, category: event.target.value } : item
-                            )
-                          )
-                        }
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Input
-                        value={row.url}
-                        onChange={(event) =>
-                          setSourceRows((prev) =>
-                            prev.map((item) =>
-                              item.source_id === row.source_id ? { ...item, url: event.target.value } : item
-                            )
-                          )
-                        }
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Select
-                        value={row.enabled ? "true" : "false"}
-                        onValueChange={(value: string) =>
-                          setSourceRows((prev) =>
-                            prev.map((item) =>
-                              item.source_id === row.source_id ? { ...item, enabled: value === "true" } : item
-                            )
-                          )
-                        }
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="启用状态" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="true">enabled</SelectItem>
-                          <SelectItem value="false">disabled</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </TableCell>
-                    <TableCell className="space-x-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() =>
-                          void onUpdateNewsSource(row.source_id, {
-                            name: row.name,
-                            category: row.category,
-                            url: row.url,
-                            enabled: row.enabled,
-                          })
-                        }
-                      >
-                        <Save className="mr-1 h-3.5 w-3.5" />
-                        保存
-                      </Button>
-                      <Button size="sm" variant="destructive" onClick={() => void onDeleteNewsSource(row.source_id)}>
-                        <Trash2 className="mr-1 h-3.5 w-3.5" />
-                        删除
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+              <div className="grid gap-3 rounded-xl border border-border/80 bg-muted/20 p-4 md:grid-cols-[1fr_160px_2fr_120px_auto]">
+                <Input placeholder="来源名称" value={newSourceName} onChange={(event) => setNewSourceName(event.target.value)} />
+                <Input
+                  placeholder="分类（finance/policy）"
+                  value={newSourceCategory}
+                  onChange={(event) => setNewSourceCategory(event.target.value)}
+                />
+                <Input placeholder="https://..." value={newSourceUrl} onChange={(event) => setNewSourceUrl(event.target.value)} />
+                <Select value={newSourceEnabled ? "true" : "false"} onValueChange={(value) => setNewSourceEnabled(value === "true")}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="启用状态" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="true">enabled</SelectItem>
+                    <SelectItem value="false">disabled</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button
+                  disabled={creatingSource || !newSourceName.trim() || !newSourceCategory.trim() || !newSourceUrl.trim()}
+                  onClick={async () => {
+                    setCreatingSource(true);
+                    try {
+                      await onCreateNewsSource({
+                        name: newSourceName.trim(),
+                        category: newSourceCategory.trim(),
+                        url: newSourceUrl.trim(),
+                        enabled: newSourceEnabled,
+                      });
+                      setNewSourceName("");
+                      setNewSourceCategory("finance");
+                      setNewSourceUrl("");
+                      setNewSourceEnabled(true);
+                    } finally {
+                      setCreatingSource(false);
+                    }
+                  }}
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  新增来源
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-          <div className="grid gap-3 rounded-xl border border-border/80 bg-muted/20 p-4 md:grid-cols-[1fr_160px_2fr_120px_auto]">
-            <Input placeholder="来源名称" value={newSourceName} onChange={(event) => setNewSourceName(event.target.value)} />
-            <Input
-              placeholder="分类（finance/policy）"
-              value={newSourceCategory}
-              onChange={(event) => setNewSourceCategory(event.target.value)}
-            />
-            <Input placeholder="https://..." value={newSourceUrl} onChange={(event) => setNewSourceUrl(event.target.value)} />
-            <Select value={newSourceEnabled ? "true" : "false"} onValueChange={(value) => setNewSourceEnabled(value === "true")}>
-              <SelectTrigger>
-                <SelectValue placeholder="启用状态" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="true">enabled</SelectItem>
-                <SelectItem value="false">disabled</SelectItem>
-              </SelectContent>
-            </Select>
-            <Button
-              disabled={creatingSource || !newSourceName.trim() || !newSourceCategory.trim() || !newSourceUrl.trim()}
-              onClick={async () => {
-                setCreatingSource(true);
-                try {
-                  await onCreateNewsSource({
-                    name: newSourceName.trim(),
-                    category: newSourceCategory.trim(),
-                    url: newSourceUrl.trim(),
-                    enabled: newSourceEnabled,
-                  });
-                  setNewSourceName("");
-                  setNewSourceCategory("finance");
-                  setNewSourceUrl("");
-                  setNewSourceEnabled(true);
-                } finally {
-                  setCreatingSource(false);
-                }
-              }}
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              新增来源
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+        {/* ==================== 集成 Tab ==================== */}
+        <TabsContent value="integration" className="space-y-4">
+          {/* Longbridge OpenAPI */}
+          <Card className="border-indigo-200/60 bg-gradient-to-br from-white to-indigo-50/40 dark:from-slate-900 dark:to-indigo-950/20">
+            <CardHeader className="flex flex-row items-start justify-between gap-3">
+              <div>
+                <CardTitle className="text-base">
+                  Longbridge OpenAPI
+                  {config.longbridge.enabled ? (
+                    <Badge className="ml-2 bg-emerald-100 text-emerald-700" variant="secondary">已启用</Badge>
+                  ) : (
+                    <Badge className="ml-2" variant="secondary">未启用</Badge>
+                  )}
+                </CardTitle>
+                <CardDescription>
+                  配置 Longbridge 行情数据源凭证。保存后自动启用，用于行情、K 线、分时、基本面等数据获取。
+                </CardDescription>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  disabled={!config.longbridge.enabled}
+                  onClick={async () => {
+                    setLbSaving(true);
+                    try {
+                      await onDeleteLongbridgeToken();
+                    } finally {
+                      setLbSaving(false);
+                    }
+                  }}
+                >
+                  <Trash2 className="mr-1 h-3.5 w-3.5" />
+                  清除凭证
+                </Button>
+                <Button
+                  disabled={lbSaving || !lbAppKey.trim() || !lbAppSecret.trim() || !lbAccessToken.trim()}
+                  onClick={async () => {
+                    setLbSaving(true);
+                    try {
+                      await onSaveLongbridgeToken({
+                        app_key: lbAppKey.trim(),
+                        app_secret: lbAppSecret.trim(),
+                        access_token: lbAccessToken.trim(),
+                      });
+                    } finally {
+                      setLbSaving(false);
+                    }
+                  }}
+                >
+                  <Save className="mr-2 h-4 w-4" />
+                  {lbSaving ? "保存中..." : "保存凭证"}
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-3">
+                <div className="space-y-2">
+                  <Label htmlFor="lb_app_key">App Key</Label>
+                  <Input
+                    id="lb_app_key"
+                    value={lbAppKey}
+                    placeholder="Longbridge App Key"
+                    onChange={(e) => setLbAppKey(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="lb_app_secret">App Secret</Label>
+                  <Input
+                    id="lb_app_secret"
+                    type="password"
+                    value={lbAppSecret}
+                    placeholder={config.longbridge.app_secret === "***" ? "已配置（留空不修改）" : "Longbridge App Secret"}
+                    onChange={(e) => setLbAppSecret(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="lb_access_token">Access Token</Label>
+                  <Input
+                    id="lb_access_token"
+                    type="password"
+                    value={lbAccessToken}
+                    placeholder={config.longbridge.access_token === "***" ? "已配置（留空不修改）" : "Longbridge Access Token"}
+                    onChange={(e) => setLbAccessToken(e.target.value)}
+                  />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
 
-      <ProvidersPage
-        providers={analysisProviders}
-        providerConfigs={providerConfigs}
-        defaultProvider={config.analysis.default_provider}
-        defaultModel={config.analysis.default_model}
-        onSetDefault={onSetDefault}
-        onSaveSecret={onSaveSecret}
-        onConnectAuth={onConnectAuth}
-        onDisconnectAuth={onDisconnectAuth}
-        onLoadModels={onLoadModels}
-        onCheckAvailability={onCheckAvailability}
-        onDeleteProvider={onDeleteProvider}
-        onSaveProviderConfig={onSaveProviderConfig}
-      />
+          {/* Telegram */}
+          <Card className="border-emerald-200/60 bg-gradient-to-br from-white to-emerald-50/40 dark:from-slate-900 dark:to-emerald-950/20">
+            <CardHeader className="flex flex-row items-start justify-between gap-3">
+              <div>
+                <CardTitle className="text-base">
+                  Telegram 报告推送
+                  {config.telegram.enabled ? (
+                    <Badge className="ml-2 bg-emerald-100 text-emerald-700" variant="secondary">已启用</Badge>
+                  ) : (
+                    <Badge className="ml-2" variant="secondary">未启用</Badge>
+                  )}
+                </CardTitle>
+                <CardDescription>
+                  报告任务完成后发送 Telegram 通知。配置存储在数据库中（加密保存）。
+                </CardDescription>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  disabled={tgSaving || (!hasTelegramTokenConfigured && !tgChatId.trim())}
+                  onClick={async () => {
+                    setTgSaving(true);
+                    try {
+                      await onDeleteTelegramConfig();
+                      setTgEnabled(false);
+                      setTgChatId("");
+                      setTgBotToken("");
+                      setTgTimeoutSeconds(10);
+                    } finally {
+                      setTgSaving(false);
+                    }
+                  }}
+                >
+                  <Trash2 className="mr-1 h-3.5 w-3.5" />
+                  清空配置
+                </Button>
+                <Button
+                  disabled={tgSaving || !tgChatId.trim() || (!tgBotToken.trim() && !hasTelegramTokenConfigured)}
+                  onClick={async () => {
+                    setTgSaving(true);
+                    try {
+                      await onSaveTelegramConfig({
+                        enabled: tgEnabled,
+                        chat_id: tgChatId.trim(),
+                        bot_token: tgBotToken.trim() || "***",
+                        timeout_seconds: Math.min(60, Math.max(3, Number(tgTimeoutSeconds || 10))),
+                      });
+                    } finally {
+                      setTgSaving(false);
+                    }
+                  }}
+                >
+                  <Save className="mr-2 h-4 w-4" />
+                  {tgSaving ? "保存中..." : "保存 Telegram 配置"}
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-4">
+                <div className="space-y-2">
+                  <Label htmlFor="tg_enabled">启用推送</Label>
+                  <Select value={tgEnabled ? "true" : "false"} onValueChange={(value) => setTgEnabled(value === "true")}>
+                    <SelectTrigger id="tg_enabled">
+                      <SelectValue placeholder="启用状态" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="true">enabled</SelectItem>
+                      <SelectItem value="false">disabled</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="tg_chat_id">Chat ID</Label>
+                  <Input
+                    id="tg_chat_id"
+                    value={tgChatId}
+                    placeholder="例如：-100123456789"
+                    onChange={(event) => setTgChatId(event.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="tg_bot_token">Bot Token</Label>
+                  <Input
+                    id="tg_bot_token"
+                    type="password"
+                    value={tgBotToken}
+                    placeholder={hasTelegramTokenConfigured ? "已配置（留空保持不变）" : "123456:ABC-DEF..."}
+                    onChange={(event) => setTgBotToken(event.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="tg_timeout">请求超时(秒)</Label>
+                  <Input
+                    id="tg_timeout"
+                    type="number"
+                    min={3}
+                    max={60}
+                    value={tgTimeoutSeconds}
+                    onChange={(event) => setTgTimeoutSeconds(Math.min(60, Math.max(3, Number(event.target.value || 10))))}
+                  />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* MCP Server Configuration */}
+          <McpConfigSection />
+        </TabsContent>
+
+        {/* ==================== AI 分析 Tab ==================== */}
+        <TabsContent value="ai">
+          <ProvidersPage
+            providers={analysisProviders}
+            providerConfigs={providerConfigs}
+            defaultProvider={config.analysis.default_provider}
+            defaultModel={config.analysis.default_model}
+            onSetDefault={onSetDefault}
+            onSaveSecret={onSaveSecret}
+            onConnectAuth={onConnectAuth}
+            onDisconnectAuth={onDisconnectAuth}
+            onLoadModels={onLoadModels}
+            onCheckAvailability={onCheckAvailability}
+            onDeleteProvider={onDeleteProvider}
+            onSaveProviderConfig={onSaveProviderConfig}
+          />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
