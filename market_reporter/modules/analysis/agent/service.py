@@ -19,10 +19,6 @@ from market_reporter.modules.analysis.agent.tools.builtin_metrics_tool import (
     BuiltinMetricsTool,
     get_definition as get_metrics_definition,
 )
-from market_reporter.modules.analysis.agent.tools.builtin_news_tool import (
-    BuiltinNewsTool,
-    get_definition as get_news_definition,
-)
 from market_reporter.modules.analysis.agent.tools.mcp_tool import McpManager
 
 
@@ -34,15 +30,6 @@ def _build_tool_registry(config: AppConfig) -> ToolRegistry:
     registry.register(
         definition=get_metrics_definition(),
         executor=metrics_tool.execute,
-    )
-
-    news_tool = BuiltinNewsTool(
-        news_service=None,
-        lb_config=config.longbridge,
-    )
-    registry.register(
-        definition=get_news_definition(),
-        executor=news_tool.execute,
     )
 
     return registry

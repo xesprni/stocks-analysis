@@ -45,7 +45,6 @@ class OpenAIToolRuntime:
         context: Dict[str, Any],
         tool_specs: List[Dict[str, Any]],
         tool_executor: ToolExecutor,
-        max_steps: int,
         max_tool_calls: int,
         skill_content: Optional[str] = None,
         on_step: Optional[Any] = None,
@@ -86,7 +85,9 @@ class OpenAIToolRuntime:
         wall_deadline = time.monotonic() + wall_timeout_seconds
         finish_reason: str | None = None
 
-        for step_idx in range(max_steps):
+        step_idx = 0
+        while True:
+            step_idx += 1
             # Wall-clock timeout check
             elapsed_total = time.monotonic() - (wall_deadline - wall_timeout_seconds)
             if time.monotonic() >= wall_deadline:
@@ -108,7 +109,7 @@ class OpenAIToolRuntime:
                 try:
                     await on_step({
                         "tool": "__model_thinking__",
-                        "arguments": {"step": step_idx + 1, "max_steps": max_steps},
+                        "arguments": {"step": step_idx},
                         "result_preview": {},
                         "status": "thinking",
                     })
@@ -186,11 +187,7 @@ class OpenAIToolRuntime:
             break
 
         if structured is None and not content_text and finish_reason is None:
-            structured = self._step_budget_exhausted_payload(
-                max_steps=max_steps,
-                tool_calls=used_calls,
-            )
-            finish_reason = "step_budget_exhausted"
+            structured = self._unstructured_content_payload("Agent loop ended without final response.")
 
         if structured is None:
             structured = parse_json(content_text)
@@ -205,7 +202,7 @@ class OpenAIToolRuntime:
                         "tool": "__agent_finished__",
                         "arguments": {
                             "reason": finish_reason or "unknown",
-                            "steps": max_steps,
+                            "steps": step_idx,
                             "tool_calls": used_calls,
                         },
                         "result_preview": {
@@ -371,7 +368,7 @@ class OpenAIToolRuntime:
             "sentiment": "neutral",
             "key_levels": [],
             "risks": ["Agent 执行超时，分析可能不完整。"],
-            "action_items": ["检查 LLM provider 响应速度，或降低 max_steps。"],
+            "action_items": ["检查 LLM provider 响应速度，或检查任务复杂度。"],
             "confidence": 0.3,
             "conclusions": [summary],
             "scenario_assumptions": {},
@@ -429,27 +426,4 @@ class OpenAIToolRuntime:
             "markdown": "模型在达到工具调用上限后未返回最终结构化结论。",
             "tool_budget_exhausted": True,
             "requested_tools_after_limit": deduped_tools,
-        }
-
-    @staticmethod
-    def _step_budget_exhausted_payload(
-        *,
-        max_steps: int,
-        tool_calls: int,
-    ) -> Dict[str, Any]:
-        summary = (
-            f"已达到 LLM 循环轮次上限（{max_steps} 轮），"
-            f"已完成 {tool_calls} 次工具调用，但模型未返回最终结构化结论。"
-        )
-        return {
-            "summary": summary,
-            "sentiment": "neutral",
-            "key_levels": [],
-            "risks": ["模型在达到最大轮次后仍未完成最终归纳。"],
-            "action_items": ["降低任务复杂度，或适度提高 max_steps。"],
-            "confidence": 0.35,
-            "conclusions": [summary],
-            "scenario_assumptions": {},
-            "markdown": summary,
-            "step_budget_exhausted": True,
         }

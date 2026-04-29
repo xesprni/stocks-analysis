@@ -126,7 +126,6 @@ export const appConfigSchema = z.object({
   }),
   agent: z.object({
     enabled: z.boolean(),
-    max_steps: z.number(),
     max_tool_calls: z.number(),
     consistency_tolerance: z.number(),
     default_news_window_days: z.number(),

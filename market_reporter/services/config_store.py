@@ -187,7 +187,6 @@ class ConfigStore:
             return True
         required_keys = {
             "enabled",
-            "max_steps",
             "max_tool_calls",
             "consistency_tolerance",
             "default_news_window_days",

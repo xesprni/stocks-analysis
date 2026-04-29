@@ -98,7 +98,7 @@ function StepCard({ step, index, isLatest }: { step: Record<string, unknown>; in
   // Model thinking step
   if (tool === "__model_thinking__") {
     const stepNum = args?.step as number | undefined;
-    const maxSteps = args?.max_steps as number | undefined;
+    const maxSteps = args?.steps as number | undefined;
     return (
       <div className="rounded-lg border border-violet-200 bg-violet-50/50 px-4 py-3 dark:border-violet-800 dark:bg-violet-950/30">
         <div className="flex items-center gap-2">

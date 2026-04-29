@@ -66,7 +66,6 @@ class AgentOrchestrator:
             context=context,
             tool_specs=tool_specs,
             tool_executor=executor,
-            max_steps=self.config.agent.max_steps,
             max_tool_calls=self.config.agent.max_tool_calls,
             skill_content=skill_content,
             on_step=on_step,

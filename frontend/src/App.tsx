@@ -83,7 +83,6 @@ const emptyConfig: AppConfig = {
   },
   agent: {
     enabled: true,
-    max_steps: 8,
     max_tool_calls: 12,
     consistency_tolerance: 0.05,
     default_news_window_days: 30,

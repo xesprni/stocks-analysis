@@ -97,7 +97,6 @@ class DashboardConfig(BaseModel):
 
 class AgentConfig(BaseModel):
     enabled: bool = True
-    max_steps: int = Field(default=8, ge=1, le=30)
     max_tool_calls: int = Field(default=12, ge=1, le=50)
     consistency_tolerance: float = Field(default=0.05, ge=0.0, le=1.0)
     default_news_window_days: int = Field(default=30, ge=1, le=3650)
