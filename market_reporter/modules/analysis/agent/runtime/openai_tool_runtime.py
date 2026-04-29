@@ -134,8 +134,10 @@ class OpenAIToolRuntime:
                     break
 
                 messages.append(response)
+                budget_exhausted_mid_batch = False
                 for call in tool_calls:
                     if used_calls >= max_tool_calls:
+                        budget_exhausted_mid_batch = True
                         break
                     name = str(call.get("name") or "").strip()
                     arguments = call.get("args")
@@ -180,6 +182,13 @@ class OpenAIToolRuntime:
                             tool_call_id=call_id,
                         )
                     )
+                if budget_exhausted_mid_batch:
+                    structured = self._tool_budget_exhausted_payload(
+                        tool_calls=tool_calls,
+                        max_tool_calls=max_tool_calls,
+                    )
+                    finish_reason = "tool_budget_exhausted"
+                    break
                 continue
 
             content_text = self._content_to_text(response.content)
